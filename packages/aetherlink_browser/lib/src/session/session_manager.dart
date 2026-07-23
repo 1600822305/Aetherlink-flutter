@@ -10,14 +10,18 @@ import 'browser_session.dart';
 typedef SessionFactory = BrowserSession Function();
 
 /// 会话所有权（升级设计 §2.4 M4d，借鉴 ego-lite Task Space 模型）。
+/// 宽松共驾语义：所有权只标记“谁在主导”，不限制另一方操作——
+/// 非 agent 所有时 agent 工具仍可调用，只在结果中提示用户可能
+/// 同时在操作；用户则随时可在共驾页查看/操作任意会话。
 enum SessionOwnership {
-  /// agent 拥有：工具可正常操作。
+  /// agent 主导。
   agent,
 
-  /// agent 已交给用户（登录/验证码等），等用户交回；工具操作硬停止。
+  /// agent 已交给用户（登录/验证码等），等用户完成；会话不参与
+  /// 空闲释放/LRU 回收。
   delegatedToUser,
 
-  /// 用户主动接管；工具操作硬停止。
+  /// 用户主导（在共驾页主动标记）；同上，不参与回收。
   user,
 }
 
@@ -44,8 +48,8 @@ class BrowserSessionInfo {
 /// 真多会话池——按 id 建/复用独立 WebView（上限 [maxSessions]，LRU
 /// 回收 agent 拥有的空闲会话），cookie 全局共享（WebView 平台特性）。
 /// 每个会话独立互斥队列串行 + 空闲超时释放；所有权为 agent 之外的
-/// 会话对工具调用硬停止（返回明确错误，agent 不得重试绕过），且不参与
-/// LRU 回收与空闲释放。
+/// 会话不参与 LRU 回收与空闲释放（用户可能正在看/操作），但不限制
+/// agent 工具调用（宽松共驾）。
 class BrowserSessionManager extends ChangeNotifier {
   BrowserSessionManager({
     required SessionFactory factory,
@@ -81,20 +85,10 @@ class BrowserSessionManager extends ChangeNotifier {
     String? sessionId,
   }) {
     if (_closed) {
-      throw const BrowserException(
-        BrowserErrorKind.sessionGone,
-        '浏览器管理器已关闭',
-      );
+      throw const BrowserException(BrowserErrorKind.sessionGone, '浏览器管理器已关闭');
     }
     final id = _normalize(sessionId);
     final entry = _entryFor(id);
-    if (entry.ownership != SessionOwnership.agent) {
-      throw BrowserException(
-        BrowserErrorKind.userControlled,
-        '会话 "$id" 当前由用户控制中（${entry.ownership.name}）：不要重试，'
-        '等用户操作完成后用 browser_take_over 收回，或改用其他会话',
-      );
-    }
     final result = entry.queue.then((_) => _runLocked(entry, action));
     entry.queue = result.then<void>((_) {}, onError: (_) {});
     return result;
@@ -164,8 +158,8 @@ class BrowserSessionManager extends ChangeNotifier {
     );
   }
 
-  /// agent 把会话交给用户（登录/验证码/滑块等）。之后该会话的工具
-  /// 操作硬停止，直到 [takeOver]。
+  /// agent 把会话交给用户（登录/验证码/滑块等）：标记主导方并提醒
+  /// 用户去共驾页操作；不限制 agent 后续调用（宽松共驾）。
   void handOff(String? sessionId, {String? note, String? url}) {
     final entry = _entryFor(_normalize(sessionId));
     entry.ownership = SessionOwnership.delegatedToUser;
@@ -193,6 +187,10 @@ class BrowserSessionManager extends ChangeNotifier {
     entry.idleTimer = null;
     notifyListeners();
   }
+
+  /// 取已存在的会话实例（不创建；共驾页可见挂载用）。
+  BrowserSession? peekSession(String? sessionId) =>
+      _entries[_normalize(sessionId)]?.session;
 
   /// 会话所有权（不存在的会话视为 agent 拥有——首次使用即创建）。
   SessionOwnership ownershipOf(String? sessionId) =>

@@ -47,7 +47,7 @@
       }
       const refs = window.__aetherRefs;
       if (!refs || !refs[n] || !refs[n].isConnected) {
-        throw new Error(input + ' 引用已失效，请重新 aether.snapshot()');
+        throw new Error(input + ' 引用已失效：可先 aether.snapshot() 重建，或改用 role:/CSS 定位');
       }
       return refs[n];
     }
@@ -113,6 +113,17 @@
 
     /** 解析定位目标为元素本身（不等待），找不到返回 null。 */
     queryElement: (target) => resolveOnce(target),
+
+    /**
+     * 重建 @N ref 映射并返回语义快照文本（与顶层 browser_snapshot_dom
+     * 同一套逻辑）：run 内 @N 失效或页面变化后调用，旧编号一律作废。
+     */
+    snapshot() {
+      if (typeof window.__aetherSnapshot !== 'function') {
+        throw new Error('snapshot 不可用：请改用顶层 browser_snapshot_dom');
+      }
+      return window.__aetherSnapshot();
+    },
 
     /** auto-wait 后点击。 */
     async click(target) {

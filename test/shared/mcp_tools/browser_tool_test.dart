@@ -424,7 +424,7 @@ void main() {
       expect(result.isError, isTrue);
     });
 
-    test('browser_hand_off 交给用户后工具硬停止，take_over 恢复', () async {
+    test('browser_hand_off 后工具仍可用并附共驾提示，take_over 收回', () async {
       final session = _FakeSession()..url = 'https://a.com/login';
       final manager = _managerOf(session);
       final handOff = await runBrowserTool(
@@ -433,7 +433,7 @@ void main() {
         manager: manager,
       );
       expect(handOff.isError, isFalse);
-      expect(handOff.text, contains('已将浏览器会话交给用户控制'));
+      expect(handOff.text, contains('已将浏览器会话交给用户主导'));
       expect(handOff.text, contains('请完成登录'));
       expect(handOff.text, contains('https://a.com/login'));
       expect(
@@ -441,13 +441,14 @@ void main() {
         SessionOwnership.delegatedToUser,
       );
 
-      final blocked = await runBrowserTool(
+      // 宽松共驾：交接期间工具仍可调用，结果附提示。
+      final duringHandOff = await runBrowserTool(
         'browser_read',
         {},
         manager: manager,
       );
-      expect(blocked.isError, isTrue);
-      expect(blocked.text, contains('userControlled'));
+      expect(duringHandOff.isError, isFalse);
+      expect(duringHandOff.text, contains('共驾提示'));
 
       final takeOver = await runBrowserTool(
         'browser_take_over',
@@ -455,9 +456,18 @@ void main() {
         manager: manager,
       );
       expect(takeOver.isError, isFalse);
-      expect(takeOver.text, contains('已收回浏览器会话控制权'));
+      expect(takeOver.text, contains('已收回会话主导权'));
       expect(takeOver.text, contains('https://a.com/login'));
       expect(manager.ownershipOf(null), SessionOwnership.agent);
+
+      // 收回后不再附共驾提示。
+      final afterTakeOver = await runBrowserTool(
+        'browser_read',
+        {},
+        manager: manager,
+      );
+      expect(afterTakeOver.isError, isFalse);
+      expect(afterTakeOver.text, isNot(contains('共驾提示')));
     });
 
     test('browser_hand_off 会话未建/无 URL 也可交接', () async {
@@ -529,7 +539,7 @@ void main() {
       expect(browserToolNeedsConfirmation('browser_click'), isTrue);
       expect(browserToolNeedsConfirmation('browser_input'), isTrue);
       expect(browserToolNeedsConfirmation('browser_run'), isTrue);
-      expect(browserToolNeedsConfirmation('browser_take_over'), isTrue);
+      expect(browserToolNeedsConfirmation('browser_take_over'), isFalse);
       expect(browserToolNeedsConfirmation('browser_hand_off'), isFalse);
       expect(browserToolNeedsConfirmation('browser_open'), isFalse);
       expect(browserToolNeedsConfirmation('browser_snapshot_dom'), isFalse);

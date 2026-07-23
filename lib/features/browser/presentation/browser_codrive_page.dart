@@ -1,7 +1,6 @@
-// 浏览共驾页（升级设计 §2.4 M4d）：agent 用 browser_hand_off 把会话交给
-// 用户后，用户在这里亲自完成登录/验证码/滑块等操作，再交回给 agent。
-// 可见 WebView 与 headless 会话是不同实例，但 cookie/登录态全局共享
-// （WebView 平台特性），用户登录后 agent 的会话直接复用登录态。
+// 浏览共驾页（升级设计 §2.4 M4d，宽松共驾）：始终实时渲染 agent
+// 正在用的同一个 WebView（headless 转可见 + keepAlive），不管谁在
+// 主导都能看、都能操作；「接管/交回」只切换主导标记，不限制双方。
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -46,22 +45,21 @@ class _BrowserCoDrivePageState extends State<BrowserCoDrivePage> {
                 onSelect: (id) => setState(() => _selectedId = id),
               ),
               _OwnershipBanner(info: selected, manager: _manager),
-              Expanded(
-                child: selected.ownership == SessionOwnership.agent
-                    ? const _AgentOwnedPlaceholder()
-                    : CoDriveWebView(
-                        // 会话切换/交接后重建 WebView，加载交接时的页面。
-                        key: ValueKey(
-                          '${selected.id}:${selected.handOffUrl ?? ''}',
-                        ),
-                        initialUrl: selected.handOffUrl,
-                      ),
-              ),
+              Expanded(child: _liveView(selected)),
             ],
           );
         },
       ),
     );
+  }
+
+  /// 始终渲染会话自己的 WebView（存活时），无关谁在主导。
+  Widget _liveView(BrowserSessionInfo selected) {
+    final session = _manager.peekSession(selected.id);
+    if (session is! HeadlessBrowserSession || session.disposed) {
+      return const _NoLiveSessionPlaceholder();
+    }
+    return CoDriveWebView(key: ValueKey(selected.id), session: session);
   }
 }
 
@@ -115,9 +113,9 @@ class _OwnershipBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (label, icon) = switch (info.ownership) {
-      SessionOwnership.agent => ('智能体控制中', LucideIcons.bot),
+      SessionOwnership.agent => ('智能体主导（你也可直接操作）', LucideIcons.bot),
       SessionOwnership.delegatedToUser => ('等你操作', LucideIcons.user),
-      SessionOwnership.user => ('你已接管', LucideIcons.user),
+      SessionOwnership.user => ('你在主导（智能体仍可调用）', LucideIcons.user),
     };
     final note = info.handOffNote;
     return Material(
@@ -153,8 +151,8 @@ class _OwnershipBanner extends StatelessWidget {
   }
 }
 
-class _AgentOwnedPlaceholder extends StatelessWidget {
-  const _AgentOwnedPlaceholder();
+class _NoLiveSessionPlaceholder extends StatelessWidget {
+  const _NoLiveSessionPlaceholder();
 
   @override
   Widget build(BuildContext context) {
@@ -172,15 +170,15 @@ class _AgentOwnedPlaceholder extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              '该会话由智能体控制中',
+              '该会话的页面尚未加载',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              '智能体在后台（无界面）浏览。点「接管」可暂停智能体、'
-              '由你在可见窗口继续操作；登录态与智能体会话共享。',
+              '智能体打开页面后，这里会实时显示同一个页面；'
+              '你可以直接操作，也可点「接管」标记由你主导。',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
