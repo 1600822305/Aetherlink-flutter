@@ -230,11 +230,16 @@ class HeadlessBrowserSession implements BrowserSession {
     _ensureNavigated();
     final js = await _loadDomSnapshotJs();
     final result = await _evaluate(js);
-    final text = (result as String?) ?? '';
+    var text = (result as String?) ?? '';
+    if (text.trim().isEmpty) {
+      // 页面刚导航/脚本刚改完 DOM 时偶发空结果，短延迟后重试一次。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      text = ((await _evaluate(js)) as String?) ?? '';
+    }
     if (text.trim().isEmpty) {
       throw const BrowserException(
         BrowserErrorKind.internal,
-        '语义快照生成失败：页面未返回快照文本',
+        '语义快照生成失败：页面未返回快照文本；可重新 browser_open 后重试',
       );
     }
     return normalizeExtractedText(text);
@@ -245,8 +250,10 @@ class HeadlessBrowserSession implements BrowserSession {
   static const _actionWait = Duration(seconds: 5);
   static const _actionPollInterval = Duration(milliseconds: 200);
 
-  /// 动作后等待导航开始的宽限期与新页加载上限。
+  /// 动作后等待导航开始的宽限期与新页加载上限。求值结果丢失
+  /// （JS 上下文被销毁）强暗示导航，用更长的宽限期免误报。
   static const _navigationGrace = Duration(milliseconds: 1200);
+  static const _evalLostNavigationGrace = Duration(seconds: 4);
   static const _navigationWait = Duration(seconds: 15);
 
   @override
@@ -304,6 +311,7 @@ class HeadlessBrowserSession implements BrowserSession {
       loadStart,
       loadStop,
       preUrl,
+      grace: evalLost ? _evalLostNavigationGrace : _navigationGrace,
     );
     if (evalLost && !result.navigated) {
       throw BrowserException(
@@ -354,19 +362,23 @@ class HeadlessBrowserSession implements BrowserSession {
 
   /// 动作后解析导航：宽限期内 onLoadStart 未触发视为页内动作；
   /// 触发了则等新页加载完成（超时截停，页面部分可读）。
-  /// 额外以 URL 变化兑底：快导航/重定向链可能追不上 onLoadStart
-  /// 门控，URL 变了就按已导航处理（旧 @N 必须作废）。
+  /// 宽限期内持续轮询 URL 变化兑底：快导航/重定向链可能追不上
+  /// onLoadStart 门控，URL 变了就按已导航处理（旧 @N 必须作废）；
+  /// 只在宽限期末检查一次会漏掉检查后才开始的提交导航。
   Future<InteractResult> _resolveNavigation(
     InAppWebViewController controller,
     Completer<void> loadStart,
     Completer<void> loadStop,
-    String? preUrl,
-  ) async {
-    var started = await Future.any<bool>([
-      loadStart.future.then((_) => true),
-      Future<void>.delayed(_navigationGrace).then((_) => false),
-    ]);
-    if (!started) {
+    String? preUrl, {
+    Duration grace = _navigationGrace,
+  }) async {
+    var started = false;
+    final graceDeadline = DateTime.now().add(grace);
+    while (true) {
+      if (loadStart.isCompleted) {
+        started = true;
+        break;
+      }
       // 忽略 fragment：锥点变化不重建 DOM，不应让旧 @N 被误判失效
       //（hash 路由 SPA 若真换了内容，交互时会报 stale 引导重新快照）。
       final url = (await controller.getUrl())?.toString();
@@ -374,7 +386,10 @@ class HeadlessBrowserSession implements BrowserSession {
           url.isNotEmpty &&
           _stripFragment(url) != _stripFragment(preUrl ?? '')) {
         started = true;
+        break;
       }
+      if (DateTime.now().isAfter(graceDeadline)) break;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
     }
     if (started) {
       final blocked = _blockedNavigation;
@@ -427,11 +442,18 @@ const aether = window.__aetherMakeHelpers();
 return await (async () => {
 $script
 })();''';
+    // 脚本内动作触发导航会销毁 JS 上下文，callAsyncJavaScript 永不
+    // 回调——用导航门控兑底：新页加载完成后给结果回传一点时间，
+    // 仍无结果则按「无返回值（被导航中断）」返回，而非等到超时。
+    final loadStart = _loadStart = Completer<void>();
+    final loadStop = _loadStop = Completer<void>();
+    _blockedNavigation = null;
     final CallAsyncJavaScriptResult? result;
     try {
-      result = await controller
-          .callAsyncJavaScript(functionBody: body)
-          .timeout(timeout ?? _runScriptTimeout);
+      result = await Future.any<CallAsyncJavaScriptResult?>([
+        controller.callAsyncJavaScript(functionBody: body),
+        _navigationDestroysContext(loadStart, loadStop),
+      ]).timeout(timeout ?? _runScriptTimeout);
     } on TimeoutException {
       // 递增代数取消残留脚本（页内无法强杀，协作式自杀），
       // 避免其后续动作与下一个工具调用交错。
@@ -459,6 +481,22 @@ $script
     final value = result.value;
     if (value == null) return '';
     return value is String ? value : jsonEncode(value);
+  }
+
+  /// 等待「脚本触发的导航已销毁执行上下文」：导航开始 → 新页
+  /// 加载完成（或超时截止）→ 短宽限期（若结果其实能回传，让它先赢）。
+  Future<CallAsyncJavaScriptResult?> _navigationDestroysContext(
+    Completer<void> loadStart,
+    Completer<void> loadStop,
+  ) async {
+    await loadStart.future;
+    final poller = PageLoadPoller(
+      timeout: _navigationWait,
+      pollInterval: _poller.pollInterval,
+    );
+    await poller.wait(loadStop: loadStop.future, probe: _probeReadyState);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    return null;
   }
 
   @override

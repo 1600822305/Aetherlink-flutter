@@ -62,6 +62,9 @@
         throw new Error('无效的元素引用 ' + JSON.stringify(input));
       }
       const refs = window.__aetherRefs;
+      if (refs && !(n in refs)) {
+        throw new Error(input + ' 不在当前快照中：可先 aether.snapshot() 查看可用编号');
+      }
       if (!refs || !refs[n] || !refs[n].isConnected) {
         throw new Error(input + ' 引用已失效：可先 aether.snapshot() 重建，或改用 role:/CSS 定位');
       }
@@ -192,6 +195,9 @@
 
     /**
      * 向目标（缺省 activeElement）派发按键事件（如 'Enter'）。
+     * 合成键盘事件不产生文本输入（非可信事件），单字符键与 Backspace
+     * 对 input/textarea 按光标位置同步修改 value 并派发 input 事件
+     * （页面 preventDefault 了 keydown 则不修改）。
      * 页面自己处理了 Enter（preventDefault）则不再兜底提交，避免重复提交。
      */
     async press(key, target) {
@@ -204,6 +210,41 @@
       };
       const proceed = el.dispatchEvent(new KeyboardEvent('keydown', init));
       el.dispatchEvent(new KeyboardEvent('keypress', init));
+      const editable = el instanceof HTMLInputElement ||
+          el instanceof HTMLTextAreaElement;
+      if (proceed && editable && (key.length === 1 || key === 'Backspace')) {
+        let start = el.value.length;
+        let end = start;
+        try {
+          if (el.selectionStart != null) start = el.selectionStart;
+          if (el.selectionEnd != null) end = el.selectionEnd;
+        } catch (e) { /* 部分 input 类型不支持 selection */ }
+        let value = el.value;
+        let caret = start;
+        if (key === 'Backspace') {
+          if (start === end && start > 0) {
+            value = value.slice(0, start - 1) + value.slice(end);
+            caret = start - 1;
+          } else {
+            value = value.slice(0, start) + value.slice(end);
+          }
+        } else {
+          value = value.slice(0, start) + key + value.slice(end);
+          caret = start + key.length;
+        }
+        const proto = el instanceof HTMLTextAreaElement
+            ? HTMLTextAreaElement.prototype
+            : HTMLInputElement.prototype;
+        const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (desc && desc.set) desc.set.call(el, value); else el.value = value;
+        try { el.setSelectionRange(caret, caret); } catch (e) { /* 同上 */ }
+        el.dispatchEvent(new InputEvent('input', {
+          bubbles: true,
+          inputType: key === 'Backspace'
+              ? 'deleteContentBackward' : 'insertText',
+          data: key === 'Backspace' ? null : key,
+        }));
+      }
       el.dispatchEvent(new KeyboardEvent('keyup', init));
       if (proceed && key === 'Enter' && el.form &&
           typeof el.form.requestSubmit === 'function') {
