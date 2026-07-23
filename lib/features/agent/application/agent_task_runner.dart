@@ -355,6 +355,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     final tasks = ref.read(agentTasksProvider);
     for (final e in removed.whereType<ToolCallEvent>()) {
       await deleteAgentOverflowFile(e.resultOverflowPath);
+      await deleteAgentOverflowFile(e.imagePath);
       final childId = subagentTaskIdFor(e.id);
       if (!tasks.any((t) => t.id == childId)) continue;
       // 后台子代理仍在跑时不删（其回填会因源事件已删而跳过）。

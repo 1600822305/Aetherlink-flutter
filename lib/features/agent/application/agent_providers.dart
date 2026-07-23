@@ -276,6 +276,7 @@ class AgentTasks extends _$AgentTasks {
       final events = await ref.read(agentDaoProvider).getEvents(taskId);
       for (final e in events.whereType<ToolCallEvent>()) {
         await deleteAgentOverflowFile(e.resultOverflowPath);
+        await deleteAgentOverflowFile(e.imagePath);
       }
     } catch (_) {}
   }

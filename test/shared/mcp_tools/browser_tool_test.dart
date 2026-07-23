@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:aetherlink_browser/aetherlink_browser.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
@@ -209,6 +210,14 @@ void main() {
         tools.map((t) => t.name),
         containsAll(['browser_open', 'browser_read', 'browser_snapshot']),
       );
+    });
+
+    test('open/read 在 microcompact 白名单（网页内容可重取），snapshot 不在', () {
+      expect(
+        kMicroCompactableTools,
+        containsAll(['browser_open', 'browser_read']),
+      );
+      expect(kMicroCompactableTools, isNot(contains('browser_snapshot')));
     });
 
     test('@aether/browser 属于本地可执行内置服务器且在服务器目录里', () {
