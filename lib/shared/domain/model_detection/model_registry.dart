@@ -90,6 +90,7 @@ class ModelRegistry {
 
   final Map<String, ModelCapabilities> _byId = {};
   final Map<String, ModelCapabilities> _byNormId = {};
+  final Map<String, ModelCapabilities> _bySizedNormId = {};
   bool _loaded = false;
   Future<void>? _loading;
 
@@ -125,9 +126,9 @@ class ModelRegistry {
       final mapped = mapRegistryEntryToCapabilities(capabilities: caps, inputModalities: inputs);
       if (mapped == null) continue;
       _byId[id] = mapped;
-      final nid = normalizeModelId(id);
       _byId[id.toLowerCase()] ??= mapped;
-      _byNormId.putIfAbsent(nid, () => mapped);
+      _byNormId.putIfAbsent(normalizeModelId(id), () => mapped);
+      _bySizedNormId.putIfAbsent(normalizeModelId(id, keepParameterSize: true), () => mapped);
     }
   }
 
@@ -139,9 +140,16 @@ class ModelRegistry {
   /// have awaited [ensureLoaded].
   ModelCapabilities? capabilitiesFor(String modelId) {
     if (modelId.isEmpty) return null;
-    return _byId[modelId] ??
-        _byId[modelId.toLowerCase()] ??
-        _byNormId[normalizeModelId(modelId)];
+    final exact = _byId[modelId] ?? _byId[modelId.toLowerCase()];
+    if (exact != null) return exact;
+    // A registry-tag id (`gpt-oss:20b`) carries its size/quant AFTER a colon.
+    // Match it size-first so `:20b` lands on `gpt-oss-20b`, never collapsing
+    // onto the `gpt-oss-120b` sibling that shares the size-agnostic key. If no
+    // exact-size row exists, return null rather than a wrong-size guess.
+    if (colonVariantTagToHyphen(modelId) != modelId) {
+      return _bySizedNormId[normalizeModelId(modelId, keepParameterSize: true)];
+    }
+    return _byNormId[normalizeModelId(modelId)];
   }
 
   /// Number of indexed preset models (distinct ids). For diagnostics/tests.
