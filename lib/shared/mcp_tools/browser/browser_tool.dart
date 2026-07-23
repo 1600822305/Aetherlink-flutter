@@ -13,12 +13,14 @@ import 'package:path_provider/path_provider.dart';
 /// browser_input / browser_run。SSRF 校验在包内（UrlPolicy），
 /// 错误以分类消息回填。
 
-/// 交互类浏览器工具（会改变页面/站点状态）：进审批门，不进
-/// Ask/Plan 只读集。
+/// 需用户确认的浏览器工具：交互类（会改变页面/站点状态），以及
+/// 从用户手中收回控制权的 take_over；均不进 Ask/Plan 只读集。
+/// hand_off 是把控制权交给用户，无需确认。
 const Set<String> kBrowserInteractiveTools = {
   'browser_click',
   'browser_input',
   'browser_run',
+  'browser_take_over',
 };
 
 /// 交互类浏览器工具是否需要用户审批（审批门复用）。
@@ -77,6 +79,10 @@ Future<McpToolResult> runBrowserTool(
         return await _wait(sessions, args);
       case 'browser_run':
         return await _run(sessions, args);
+      case 'browser_hand_off':
+        return await _handOff(sessions, args);
+      case 'browser_take_over':
+        return await _takeOver(sessions, args);
       case 'browser_snapshot':
         return await _snapshot(
           sessions,
@@ -270,6 +276,56 @@ Future<McpToolResult> _wait(
   });
 }
 
+/// 交给用户（升级设计 §2.4 M4d）：登录/验证码/滑块等 agent 搞不定的
+/// 环节交给用户在「浏览共驾」页面亲自操作；之后该会话对工具硬停止，
+/// 直到 browser_take_over。
+Future<McpToolResult> _handOff(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final sessionId = args['session'] as String?;
+  final note = _trimmedOrNull(args['note']);
+  // 先在仍属 agent 的窗口内取当前 URL（供共驾页面打开同一位置）。
+  String? url;
+  try {
+    url = await sessions.run(
+      sessionId: sessionId,
+      (session) => session.currentUrl(),
+    );
+  } on BrowserException {
+    url = null; // 未导航/会话未建也允许交接（用户自己导航）。
+  }
+  sessions.handOff(sessionId, note: note, url: url);
+  return McpToolResult(
+    '已将浏览器会话交给用户控制${note == null ? '' : '（$note）'}。'
+    '用户可在「浏览共驾」页面操作${url == null ? '' : '（当前页面 $url）'}；'
+    '操作完成前不要对该会话调用其他浏览器工具（会被拒绝），'
+    '确认用户完成后用 browser_take_over 收回。',
+  );
+}
+
+/// 收回会话控制权（需用户确认），并回报当前页面状态。
+Future<McpToolResult> _takeOver(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final sessionId = args['session'] as String?;
+  sessions.takeOver(sessionId);
+  String state = '';
+  try {
+    state = await sessions.run(sessionId: sessionId, (session) async {
+      final url = await session.currentUrl();
+      return url == null ? '' : '当前 URL: $url。';
+    });
+  } on BrowserException {
+    state = '';
+  }
+  return McpToolResult(
+    '已收回浏览器会话控制权。$state'
+    '页面可能已被用户操作，旧 @N 编号不可信，建议先 browser_snapshot_dom。',
+  );
+}
+
 /// 脚本返回值进上下文前的长度上限（防止脚本一次 return 巨量文本）。
 const int _kRunResultMaxChars = 20000;
 
@@ -339,6 +395,9 @@ Future<McpToolResult> _snapshot(
     );
   });
 }
+
+/// 共享会话管理器（「浏览共驾」页面监听会话/所有权变化用）。
+BrowserSessionManager sharedBrowserManager() => _defaultManager();
 
 /// App 退出/测试收尾：释放共享 WebView。
 Future<void> disposeSharedBrowserManager() async {

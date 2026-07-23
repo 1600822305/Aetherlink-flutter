@@ -102,6 +102,9 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
           '${args['submit'] == true ? '并提交' : ''}';
     case 'browser_run':
       return '在内置浏览器页面执行批量脚本（多步交互）';
+    case 'browser_take_over':
+      return '从你手中收回浏览器会话'
+          '「${args['session'] ?? 'default'}」的控制权';
     // 只有 action=write 会走到确认（见 terminalToolNeedsConfirmation）。
     case 'terminal_session':
       return '向终端会话 ${args['session_id'] ?? ''} 的进程输入：${args['input'] ?? ''}';

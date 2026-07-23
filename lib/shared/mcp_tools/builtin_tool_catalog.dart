@@ -369,7 +369,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
         'required': ['url'],
@@ -400,7 +400,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -417,7 +417,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'session': {
             'type': 'string',
-            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -438,7 +438,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
         'required': ['target'],
@@ -469,7 +469,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
         'required': ['target', 'text'],
@@ -504,7 +504,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -537,10 +537,47 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
         'required': ['script'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'browser_hand_off',
+      description:
+          '把内置浏览器会话交给用户亲自操作（登录、验证码、滑块等 agent 无法'
+          '完成的环节）。交接后该会话的浏览器工具调用会被拒绝，直到 '
+          'browser_take_over 收回；用户在「浏览共驾」页面操作，登录态'
+          '（cookie）保留在会话里，收回后可继续使用。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'note': {
+            'type': 'string',
+            'description': '留给用户的说明（要做什么，如"请完成登录"）',
+          },
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
+      name: 'browser_take_over',
+      description:
+          '从用户手中收回内置浏览器会话的控制权（需用户确认）。收回后'
+          '页面可能已被用户操作过，旧 @N 编号不可信，应先 '
+          'browser_snapshot_dom 重新了解页面状态。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+          },
+        },
       },
     ),
     McpToolDefinition(
@@ -565,7 +602,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },

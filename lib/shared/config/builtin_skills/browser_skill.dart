@@ -69,6 +69,16 @@ browser_run(script: `
   （脚本走到导航为止，导航后重新快照再继续）。
 - `aether.waitFor` 超时返回 false 不抛异常，用返回值分支。
 
+## 多会话与人机共驾
+
+- 工具的 `session` 参数：不同 id 是独立浏览器窗口（登录态/cookie
+  全局共享），并行任务用不同 id 互不干扰；缺省共用 default。
+- 遇到登录、验证码、滑块等自己搞不定的环节：`browser_hand_off`
+  （带 note 说明要用户做什么）交给用户在「浏览共驾」页面亲自操作，
+  完成后 `browser_take_over` 收回继续。
+- 交接期间对该会话的工具调用会被拒绝（userControlled）——这是
+  硬停止，**不要重试绕过**；收回后旧 @N 已不可信，先重新快照。
+
 ## 省 token 纪律
 
 - 结果只要结论：browser_read 用 selector/分块，browser_run 用 return

@@ -424,6 +424,56 @@ void main() {
       expect(result.isError, isTrue);
     });
 
+    test('browser_hand_off 交给用户后工具硬停止，take_over 恢复', () async {
+      final session = _FakeSession()..url = 'https://a.com/login';
+      final manager = _managerOf(session);
+      final handOff = await runBrowserTool(
+        'browser_hand_off',
+        {'note': '请完成登录'},
+        manager: manager,
+      );
+      expect(handOff.isError, isFalse);
+      expect(handOff.text, contains('已将浏览器会话交给用户控制'));
+      expect(handOff.text, contains('请完成登录'));
+      expect(handOff.text, contains('https://a.com/login'));
+      expect(
+        manager.ownershipOf(null),
+        SessionOwnership.delegatedToUser,
+      );
+
+      final blocked = await runBrowserTool(
+        'browser_read',
+        {},
+        manager: manager,
+      );
+      expect(blocked.isError, isTrue);
+      expect(blocked.text, contains('userControlled'));
+
+      final takeOver = await runBrowserTool(
+        'browser_take_over',
+        {},
+        manager: manager,
+      );
+      expect(takeOver.isError, isFalse);
+      expect(takeOver.text, contains('已收回浏览器会话控制权'));
+      expect(takeOver.text, contains('https://a.com/login'));
+      expect(manager.ownershipOf(null), SessionOwnership.agent);
+    });
+
+    test('browser_hand_off 会话未建/无 URL 也可交接', () async {
+      final manager = _managerOf(_FakeSession());
+      final result = await runBrowserTool(
+        'browser_hand_off',
+        {},
+        manager: manager,
+      );
+      expect(result.isError, isFalse);
+      expect(
+        manager.ownershipOf(null),
+        SessionOwnership.delegatedToUser,
+      );
+    });
+
     test('browser_snapshot 截图落盘并回填 imagePath/imageMimeType', () async {
       final session = _FakeSession(bytes: Uint8List.fromList([9, 8, 7, 6]));
       final dir = await Directory.systemTemp.createTemp('browser_shot_test');
@@ -469,6 +519,8 @@ void main() {
           'browser_input',
           'browser_wait',
           'browser_run',
+          'browser_hand_off',
+          'browser_take_over',
         ]),
       );
     });
@@ -477,6 +529,8 @@ void main() {
       expect(browserToolNeedsConfirmation('browser_click'), isTrue);
       expect(browserToolNeedsConfirmation('browser_input'), isTrue);
       expect(browserToolNeedsConfirmation('browser_run'), isTrue);
+      expect(browserToolNeedsConfirmation('browser_take_over'), isTrue);
+      expect(browserToolNeedsConfirmation('browser_hand_off'), isFalse);
       expect(browserToolNeedsConfirmation('browser_open'), isFalse);
       expect(browserToolNeedsConfirmation('browser_snapshot_dom'), isFalse);
       expect(browserToolNeedsConfirmation('browser_wait'), isFalse);
