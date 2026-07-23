@@ -22,6 +22,7 @@ class _FakeSession implements BrowserSession {
       title: '示例页',
     ),
     this.waitForResult = true,
+    this.scriptResult = '',
   });
 
   final String text;
@@ -32,6 +33,7 @@ class _FakeSession implements BrowserSession {
   final BrowserException? interactError;
   final InteractResult interactResult;
   final bool waitForResult;
+  final String scriptResult;
 
   String? url;
   String? openedUrl;
@@ -43,6 +45,8 @@ class _FakeSession implements BrowserSession {
   bool? filledSubmit;
   WaitForCondition? waitedCondition;
   Duration? waitedTimeout;
+  String? ranScript;
+  Duration? ranTimeout;
   SnapshotOptions? snapshotOptions;
   bool closed = false;
 
@@ -94,6 +98,15 @@ class _FakeSession implements BrowserSession {
     waitedCondition = condition;
     waitedTimeout = timeout;
     return waitForResult;
+  }
+
+  @override
+  Future<String> runScript(String script, {Duration? timeout}) async {
+    final error = interactError;
+    if (error != null) throw error;
+    ranScript = script;
+    ranTimeout = timeout;
+    return scriptResult;
   }
 
   @override
@@ -376,6 +389,41 @@ void main() {
       expect(result.isError, isTrue);
     });
 
+    test('browser_run 透传脚本/超时，返回值走不可信边界包裹', () async {
+      final session = _FakeSession(scriptResult: '{"rows":3}');
+      session.url = 'https://example.com/';
+      final result = await runBrowserTool(
+        'browser_run',
+        {'script': 'return {rows: 3};', 'timeout_seconds': 30},
+        manager: _managerOf(session),
+      );
+      expect(result.isError, isFalse);
+      expect(session.ranScript, 'return {rows: 3};');
+      expect(session.ranTimeout, const Duration(seconds: 30));
+      expect(result.text,
+          contains('<untrusted-web-content src="https://example.com/">'));
+      expect(result.text, contains('{"rows":3}'));
+    });
+
+    test('browser_run 无返回值提示可能被导航中断', () async {
+      final result = await runBrowserTool(
+        'browser_run',
+        {'script': 'aether.click("@1");'},
+        manager: _managerOf(_FakeSession()),
+      );
+      expect(result.isError, isFalse);
+      expect(result.text, contains('脚本无返回值'));
+    });
+
+    test('browser_run 缺 script 返回错误', () async {
+      final result = await runBrowserTool(
+        'browser_run',
+        {},
+        manager: _managerOf(_FakeSession()),
+      );
+      expect(result.isError, isTrue);
+    });
+
     test('browser_snapshot 截图落盘并回填 imagePath/imageMimeType', () async {
       final session = _FakeSession(bytes: Uint8List.fromList([9, 8, 7, 6]));
       final dir = await Directory.systemTemp.createTemp('browser_shot_test');
@@ -420,6 +468,7 @@ void main() {
           'browser_click',
           'browser_input',
           'browser_wait',
+          'browser_run',
         ]),
       );
     });
@@ -427,6 +476,7 @@ void main() {
     test('交互工具需审批，只读工具不需要', () {
       expect(browserToolNeedsConfirmation('browser_click'), isTrue);
       expect(browserToolNeedsConfirmation('browser_input'), isTrue);
+      expect(browserToolNeedsConfirmation('browser_run'), isTrue);
       expect(browserToolNeedsConfirmation('browser_open'), isFalse);
       expect(browserToolNeedsConfirmation('browser_snapshot_dom'), isFalse);
       expect(browserToolNeedsConfirmation('browser_wait'), isFalse);
