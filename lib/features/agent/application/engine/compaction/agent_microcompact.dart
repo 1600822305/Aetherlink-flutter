@@ -151,4 +151,6 @@ ToolCallEvent _withClearedResult(
       argsDetail: event.argsDetail,
       resultDetail: placeholder,
       resultOverflowPath: event.resultOverflowPath,
+      imagePath: event.imagePath,
+      imageMimeType: event.imageMimeType,
     );

@@ -484,6 +484,8 @@ class AgentEngine {
               resultSummary: result.summary,
               resultDetail: result.detail,
               resultOverflowPath: result.overflowPath,
+              imagePath: result.imagePath,
+              imageMimeType: result.imageMimeType,
               elapsed: stopwatch.elapsed);
           budget.recordToolResult(ok: result.ok);
         }

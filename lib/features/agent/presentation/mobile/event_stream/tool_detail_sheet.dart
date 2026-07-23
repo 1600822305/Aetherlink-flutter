@@ -162,6 +162,10 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
                         event.argSummary,
                     maxHeight: 140,
                   ),
+                  if (event.imagePath != null) ...[
+                    const SizedBox(height: 14),
+                    _ImageSection(path: event.imagePath!),
+                  ],
                   const SizedBox(height: 14),
                   Expanded(
                     child: _Section(
@@ -197,6 +201,52 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 图片结果缩略图（截图类工具）：从落盘文件渲染，文件丢失时降级为提示行。
+class _ImageSection extends StatelessWidget {
+  const _ImageSection({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '截图',
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: cs.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 200),
+            child: Image.file(
+              File(path),
+              errorBuilder: (context, error, stackTrace) => Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                color: cs.onSurface.withValues(alpha: 0.04),
+                child: Text(
+                  '截图文件已丢失（$path）',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

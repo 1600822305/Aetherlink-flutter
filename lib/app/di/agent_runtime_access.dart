@@ -789,6 +789,15 @@ List<LlmMessage> _replayMessages(
     for (final event in folded.whereType<UserQuestionEvent>())
       event.id: event,
   };
+  // 截图淘汰（浏览器设计稿 §17.2/§20.3）：只让最近 N 张截图以图片
+  // 进上下文，更旧的重放为文本占位（文件仍在盘上，UI 回看不受影响）。
+  final imageEventIds = [
+    for (final event in folded)
+      if (event is ToolCallEvent && event.imagePath != null) event.id,
+  ];
+  final recentImageIds = imageEventIds
+      .skip(max(0, imageEventIds.length - kReplayScreenshotKeep))
+      .toSet();
   for (final event in folded) {
     switch (event) {
       case UserMessageEvent():
@@ -866,6 +875,13 @@ List<LlmMessage> _replayMessages(
             toolName: event.toolName,
           ),
         );
+        // 图片结果注入（浏览器设计稿 §14.4）：工具结果 turn 只能发文本，
+        // 图片以紧随其后的 user 图片消息进入上下文。
+        final image = _toolResultImage(
+          event,
+          recent: recentImageIds.contains(event.id),
+        );
+        if (image != null) messages.add(image);
       case CompactionEvent():
         messages.add(
           LlmMessage(
@@ -949,6 +965,41 @@ String _compactionTranscript(List<AgentEvent> events) {
     }
   }
   return lines.join('\n\n');
+}
+
+/// 上下文中保留的最近截图张数（浏览器设计稿 §17.2 建议 N=1~2）。
+const int kReplayScreenshotKeep = 2;
+
+/// 图片工具结果→紧随工具结果的 user 图片消息：读 [ToolCallEvent.imagePath]
+/// 文件转 base64 注入现成多模态管线；非最近截图或文件丢失时降级为
+/// 文本占位，不炸重放。
+LlmMessage? _toolResultImage(ToolCallEvent event, {required bool recent}) {
+  final path = event.imagePath;
+  if (path == null) return null;
+  if (!recent) {
+    return const LlmMessage(
+      role: MessageRole.user,
+      content: '[较早的截图已从上下文移除，需要时可重新截图]',
+    );
+  }
+  try {
+    final bytes = File(path).readAsBytesSync();
+    return LlmMessage(
+      role: MessageRole.user,
+      content: '[上一条 ${event.toolName} 工具结果的截图]',
+      images: [
+        LlmContentImage(
+          mimeType: event.imageMimeType ?? 'image/jpeg',
+          base64Data: base64Encode(bytes),
+        ),
+      ],
+    );
+  } catch (_) {
+    return const LlmMessage(
+      role: MessageRole.user,
+      content: '[截图文件已丢失]',
+    );
+  }
 }
 
 /// ask_user 提问的文本形态（重放/压缩共用）：问题 + 建议答案。
