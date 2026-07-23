@@ -7,9 +7,18 @@ import 'package:aetherlink_flutter/shared/mcp_tools/tools/tool_helpers.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// `@aether/browser` 工具执行 —— 主工程薄接入层（浏览器设计稿 §3/§18.2）：
-/// schema 校验 + 调 `aetherlink_browser` 包 API + 结果适配。只读三件套
-/// browser_open / browser_read / browser_snapshot；SSRF 校验在包内
-/// （UrlPolicy），错误以分类消息回填给模型。
+/// schema 校验 + 调 `aetherlink_browser` 包 API + 结果适配。只读：
+/// browser_open / browser_read / browser_snapshot_dom / browser_snapshot /
+/// browser_wait；交互（升级设计 §2.2 M4b，需审批）：browser_click /
+/// browser_input。SSRF 校验在包内（UrlPolicy），错误以分类消息回填。
+
+/// 交互类浏览器工具（会改变页面/站点状态）：进审批门，不进
+/// Ask/Plan 只读集。
+const Set<String> kBrowserInteractiveTools = {'browser_click', 'browser_input'};
+
+/// 交互类浏览器工具是否需要用户审批（审批门复用）。
+bool browserToolNeedsConfirmation(String toolName) =>
+    kBrowserInteractiveTools.contains(toolName);
 
 /// `@aether/browser` 内置服务器名（catalog / 路由 / 智能体工具组共用）。
 const String kBrowserServerName = '@aether/browser';
@@ -55,6 +64,12 @@ Future<McpToolResult> runBrowserTool(
         return await _read(sessions, args);
       case 'browser_snapshot_dom':
         return await _snapshotDom(sessions, args);
+      case 'browser_click':
+        return await _click(sessions, args);
+      case 'browser_input':
+        return await _input(sessions, args);
+      case 'browser_wait':
+        return await _wait(sessions, args);
       case 'browser_snapshot':
         return await _snapshot(
           sessions,
@@ -161,6 +176,96 @@ Future<McpToolResult> _snapshotDom(
       ..write('提示：@N 编号仅在本次快照后有效，页面导航或重新快照后需重新获取。');
     return McpToolResult(buf.toString());
   });
+}
+
+/// 交互结果的统一文本：动作后页面状态 + 导航提示 + ref 失效提醒。
+String _interactResultText(String action, InteractResult result) {
+  final buf = StringBuffer()
+    ..writeln('$action。')
+    ..writeln(result.navigated ? '页面已导航。' : '页面未导航（页内动作）。')
+    ..writeln('当前标题: ${result.title}')
+    ..write('当前 URL: ${result.url}');
+  if (result.navigated) {
+    buf
+      ..writeln()
+      ..write('提示：页面已导航，旧 @N 编号已失效，需重新 browser_snapshot_dom。');
+  }
+  return buf.toString();
+}
+
+Future<McpToolResult> _click(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final target = (args['target'] as String?)?.trim() ?? '';
+  if (target.isEmpty) {
+    return const McpToolResult('target 不能为空（@N / role:角色:名称 / CSS）',
+        isError: true);
+  }
+  final sessionId = args['session'] as String?;
+  return sessions.run(sessionId: sessionId, (session) async {
+    final result = await session.click(target);
+    return McpToolResult(_interactResultText('已点击「$target」', result));
+  });
+}
+
+Future<McpToolResult> _input(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final target = (args['target'] as String?)?.trim() ?? '';
+  if (target.isEmpty) {
+    return const McpToolResult('target 不能为空（@N / role:角色:名称 / CSS）',
+        isError: true);
+  }
+  final text = args['text'] as String?;
+  if (text == null) {
+    return const McpToolResult('text 不能为空', isError: true);
+  }
+  final submit = args['submit'] == true;
+  final sessionId = args['session'] as String?;
+  return sessions.run(sessionId: sessionId, (session) async {
+    final result = await session.fill(target, text, submit: submit);
+    return McpToolResult(_interactResultText(
+      '已向「$target」输入文本${submit ? '并提交' : ''}',
+      result,
+    ));
+  });
+}
+
+Future<McpToolResult> _wait(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final condition = WaitForCondition(
+    selector: _trimmedOrNull(args['selector']),
+    urlContains: _trimmedOrNull(args['url_contains']),
+    jsPredicate: _trimmedOrNull(args['js_predicate']),
+  );
+  if (condition.isEmpty) {
+    return const McpToolResult(
+      '需提供 selector / url_contains / js_predicate 至少一个等待条件',
+      isError: true,
+    );
+  }
+  final timeoutSeconds = asIntOr(args['timeout_seconds'], 10).clamp(1, 60);
+  final sessionId = args['session'] as String?;
+  return sessions.run(sessionId: sessionId, (session) async {
+    final met = await session.waitFor(
+      condition,
+      timeout: Duration(seconds: timeoutSeconds),
+    );
+    return McpToolResult(
+      met
+          ? '条件已成立。'
+          : '等待超时（${timeoutSeconds}s），条件未成立；可重新快照确认页面状态后换策略。',
+    );
+  });
+}
+
+String? _trimmedOrNull(Object? value) {
+  final s = (value as String?)?.trim();
+  return s == null || s.isEmpty ? null : s;
 }
 
 Future<McpToolResult> _snapshot(

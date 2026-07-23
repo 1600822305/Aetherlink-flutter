@@ -11,5 +11,7 @@ export 'src/security/url_policy.dart';
 export 'src/session/browser_session.dart';
 export 'src/session/page_load.dart' show PageLoadPoller;
 export 'src/session/session_manager.dart';
+export 'src/interaction/interaction_js.dart';
+export 'src/models/interact_result.dart';
 export 'src/snapshot/element_target.dart';
 export 'src/snapshot/screenshot.dart' show SnapshotOptions;

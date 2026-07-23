@@ -25,6 +25,23 @@ class _FakeSession implements BrowserSession {
   Future<String> snapshotDom() async => 'snapshot';
 
   @override
+  Future<InteractResult> click(String target) async =>
+      const InteractResult(navigated: false, url: '', title: '');
+
+  @override
+  Future<InteractResult> fill(String target, String text,
+      {bool submit = false}) async =>
+      const InteractResult(navigated: false, url: '', title: '');
+
+  @override
+  Future<InteractResult> selectOption(String target, String value) async =>
+      const InteractResult(navigated: false, url: '', title: '');
+
+  @override
+  Future<bool> waitFor(WaitForCondition condition, {Duration? timeout}) async =>
+      true;
+
+  @override
   Future<Uint8List> snapshot({
     SnapshotOptions options = const SnapshotOptions(),
   }) async =>
