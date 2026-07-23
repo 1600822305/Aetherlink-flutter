@@ -51,12 +51,34 @@ class Skills extends _$Skills {
         .toList();
 
     // Seed / merge built-ins: any catalog entry whose id isn't stored yet is
-    // added (port of `SkillManager.initializeBuiltinSkills`).
-    final ids = stored.map((s) => s.id).toSet();
-    final missing = kBuiltinSkills.where((b) => !ids.contains(b.id)).toList();
-    if (missing.isEmpty && stored.length == decoded.length) return stored;
+    // added (port of `SkillManager.initializeBuiltinSkills`), and stored
+    // built-ins whose shipped `version` changed are re-seeded in place
+    // (preserving enabled/usage state) so catalog updates reach users.
+    var upgraded = 0;
+    final now = DateTime.now().toUtc().toIso8601String();
+    final refreshed = stored.map((existing) {
+      if (existing.source != SkillSource.builtin) return existing;
+      final latest = kBuiltinSkills
+          .where((b) => b.id == existing.id)
+          .firstOrNull;
+      if (latest == null || latest.version == existing.version) return existing;
+      upgraded++;
+      return latest.copyWith(
+        enabled: existing.enabled,
+        usageCount: existing.usageCount,
+        lastUsedAt: existing.lastUsedAt,
+        createdAt: existing.createdAt,
+        updatedAt: now,
+      );
+    }).toList();
 
-    final merged = <Skill>[...stored, ...missing];
+    final ids = refreshed.map((s) => s.id).toSet();
+    final missing = kBuiltinSkills.where((b) => !ids.contains(b.id)).toList();
+    if (missing.isEmpty && upgraded == 0 && stored.length == decoded.length) {
+      return refreshed;
+    }
+
+    final merged = <Skill>[...refreshed, ...missing];
     await ref
         .read(appSettingsStoreProvider)
         .saveSetting(kSkillsSettingKey, _encode(merged));
