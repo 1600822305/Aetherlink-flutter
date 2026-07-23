@@ -604,3 +604,40 @@ test/shared/mcp_tools/browser_tool_test.dart
 - 截图：§17 的降采样 + JPEG 上限；
 - 首版不做资源级拦截（拦图片/视频会破坏截图）；仅当发现流量/内存问题
   再考虑按 Content-Type 拦大资源。
+
+## 20. 事件流表示与重放（已核实现有结构）
+
+### 20.1 现有结构直接可用的部分
+- `ToolCallEvent` 已有 `resultSummary`（单行）/ `resultDetail`（截断全文）/
+  `resultOverflowPath`（**大输出落盘路径**，详情面板"查看全文"）——
+  browser_open/read 的文本结果完全走现成通道。
+- microcompact（`agent_microcompact.dart`）已按工具白名单
+  `kMicroCompactableTools` 把旧的"可重取"输出替换为占位符，近期 5 条保护。
+
+### 20.2 browser 各工具的事件表示
+- **browser_open / browser_read**：普通 `ToolCallEvent`。
+  `argSummary` = URL 尾段；`resultSummary` = `页面标题 · 3.2s`；
+  `resultDetail` = 提取正文（截断，超限落盘 `resultOverflowPath`）。
+- **browser_snapshot：截图不进事件库，落盘存路径**。事件持久化 base64
+  会让事件库暴涨（一张图几百 KB，反复截图 = DB 膨胀 + 重放解码开销）。
+  方案：截图写任务级目录文件，`ToolCallEvent` 新增可选
+  `imagePath`（+ `imageMimeType`）字段；UI 工具行显示"已截图 · 768×…"，
+  详情抽屉从文件渲染缩略图。
+  这同时回答了 §14.5 的 M0 存储问题：**用事件上的文件路径承载，
+  不给 McpToolResult 塞 base64**。
+- **重放**（§14.4）：重放层读 `imagePath` → base64 → 在工具结果 turn 后
+  追加一条 user 图片消息。文件丢失时降级为文本占位（"[截图文件已
+  丢失]"），不炸重放。
+
+### 20.3 compaction / microcompact 对图片的处理
+1. **microcompact**：`browser_open` / `browser_read` 加入
+   `kMicroCompactableTools`（网页内容可重取，同 fetch）。
+2. **截图淘汰独立于 microcompact**（因为字符量核算看不见图片）：
+   重放层按 §17.2 只让**最近 N 张（1~2）截图**进上下文，更旧的
+   snapshot 重放为文本占位（"[较早的截图已从上下文移除，可重新
+   snapshot]"）；文件仍在盘上，UI 回看不受影响。
+3. **LLM compaction**：摘要是纯文本，被覆盖区间的截图自然不进摘要、
+   不随 restoredFiles 恢复——即压缩后图片全部丢弃，只留文字描述。
+4. **token 核算修正**：字符代理看不到图片成本。上下文核算与"上下文"
+   tab 需给在窗内的每张截图计一笔估算（按 provider 公式或粗略
+   ~800 token/张），否则压缩触发会系统性低估。
