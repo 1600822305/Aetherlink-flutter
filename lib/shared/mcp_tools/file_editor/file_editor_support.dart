@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_stor
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/utils/line_diff.dart';
 
 /// A resolved workspace plus its backend, ready for a read handler to use.
 class ResolvedWorkspace {
@@ -231,9 +232,13 @@ bool fileEditorPathsWithinRoot(
 }
 
 /// Resolves the backend for an opaque [path] by matching it to the workspace
-/// whose `root` contains [path] (longest match wins). Falls back to the single
-/// available backend when there's exactly one workspace. Shared by the read
-/// and write handlers so path→backend routing stays in one place.
+/// whose `root` contains [path] (longest match wins). When no root contains
+/// [path], a workspace with the same path style (posix vs 不透明 URI) is
+/// chosen — an exec-capable posix backend can address arbitrary posix paths
+/// (越不越界交给审批层决定). With no style-compatible workspace at all the
+/// call fails with an actionable error instead of blindly picking a backend
+/// that can't interpret the path. Shared by the read and write handlers so
+/// path→backend routing stays in one place.
 Future<WorkspaceBackend> backendForPath(Ref ref, String path) async {
   final workspaces = await loadWorkspaces(ref);
   if (workspaces.isEmpty) {
@@ -247,8 +252,39 @@ Future<WorkspaceBackend> backendForPath(Ref ref, String path) async {
       if (best == null || w.root.length > best.root.length) best = w;
     }
   }
-  final chosen = best ?? workspaces.first;
-  return resolveWorkspaceById(ref, chosen.id);
+  if (best == null) {
+    final wantsOpaque = path.contains('://');
+    for (final w in workspaces) {
+      if (w.root.contains('://') == wantsOpaque) {
+        best = w;
+        break;
+      }
+    }
+  }
+  if (best == null) {
+    final roots = workspaces.map((w) => '「${w.name}」${w.root}').join('；');
+    throw FileEditorError(
+      '路径不在任何工作区内，且当前工作区后端无法访问该路径：$path。'
+      '已打开的工作区根：$roots。'
+      '工作区内文件请用相对路径；工作区外的路径请改用终端工具'
+      '（run_command / terminal_execute）操作。',
+    );
+  }
+  return resolveWorkspaceById(ref, best.id);
+}
+
+/// Last path segment of a posix [path] (no trailing-slash handling needed —
+/// tool paths never carry one except the bare root, which yields '').
+String posixBasename(String path) {
+  final i = path.lastIndexOf('/');
+  return i < 0 ? path : path.substring(i + 1);
+}
+
+/// Parent directory of a posix [path]; '/' at the top.
+String posixDirname(String path) {
+  final i = path.lastIndexOf('/');
+  if (i < 0) return '';
+  return i == 0 ? '/' : path.substring(0, i);
 }
 
 /// Finds the immediate child named [name] inside the opaque directory [dir],
@@ -511,3 +547,70 @@ bool detectStrongCodeOmission(String content) =>
 bool detectCodeOmission(String content) =>
     detectStrongCodeOmission(content) ||
     _weakOmissionPatterns.any((p) => p.hasMatch(content));
+
+// ===== structured diff (returned by write/edit on modification) =====
+
+/// Max diff lines included in a tool result before truncation.
+const int kDiffSummaryMaxLines = 120;
+
+/// Context lines kept around each changed run in the rendered diff.
+const int kDiffSummaryContext = 2;
+
+/// Structured summary of the change [oldText] → [newText]: `linesAdded` /
+/// `linesRemoved` counts plus a unified-style `diff` text (±[kDiffSummaryContext]
+/// lines of context per hunk, capped at [kDiffSummaryMaxLines] lines).
+/// Returns null when the contents are identical.
+Map<String, Object?>? diffSummaryJson(String oldText, String newText) {
+  if (oldText == newText) return null;
+  final diff = computeLineDiff(oldText, newText);
+  return {
+    'linesAdded': diff.added,
+    'linesRemoved': diff.removed,
+    'diff': renderCompactDiff(diff),
+  };
+}
+
+/// Renders [diff] as unified-style text: changed lines prefixed `+`/`-`,
+/// [context] lines of surrounding context, hunks separated by `…`, truncated
+/// at [maxLines] with a trailing marker.
+String renderCompactDiff(
+  LineDiff diff, {
+  int context = kDiffSummaryContext,
+  int maxLines = kDiffSummaryMaxLines,
+}) {
+  final lines = diff.lines;
+  // Mark which indices to keep: changed lines and ±context around them.
+  final keep = List<bool>.filled(lines.length, false);
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].type == DiffLineType.context) continue;
+    final lo = i - context < 0 ? 0 : i - context;
+    final hi = i + context >= lines.length ? lines.length - 1 : i + context;
+    for (var j = lo; j <= hi; j++) {
+      keep[j] = true;
+    }
+  }
+  final out = <String>[];
+  var inGap = false;
+  for (var i = 0; i < lines.length; i++) {
+    if (!keep[i]) {
+      if (!inGap && out.isNotEmpty) {
+        out.add('…');
+        inGap = true;
+      }
+      continue;
+    }
+    inGap = false;
+    if (out.length >= maxLines) {
+      out.add('…（diff 过长，已截断）');
+      break;
+    }
+    final l = lines[i];
+    final prefix = switch (l.type) {
+      DiffLineType.added => '+',
+      DiffLineType.removed => '-',
+      DiffLineType.context => ' ',
+    };
+    out.add('$prefix${l.text}');
+  }
+  return out.join('\n');
+}
