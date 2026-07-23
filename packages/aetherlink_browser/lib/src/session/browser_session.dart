@@ -42,8 +42,11 @@ abstract class BrowserSession {
 
   /// 填表：原生 value setter + input/change 事件；[submit] 追加回车
   /// 提交（无导航时回退 form.requestSubmit）。
-  Future<InteractResult> fill(String target, String text,
-      {bool submit = false});
+  Future<InteractResult> fill(
+    String target,
+    String text, {
+    bool submit = false,
+  });
 
   /// 下拉选择：按 value 精确匹配，其次按可见文本匹配。
   Future<InteractResult> selectOption(String target, String value);
@@ -58,7 +61,9 @@ abstract class BrowserSession {
   Future<String> runScript(String script, {Duration? timeout});
 
   /// 截图（JPEG 字节，体积受 [options] 控制）。
-  Future<Uint8List> snapshot({SnapshotOptions options = const SnapshotOptions()});
+  Future<Uint8List> snapshot({
+    SnapshotOptions options = const SnapshotOptions(),
+  });
 
   /// 释放 WebView。释放后任何调用抛 [BrowserErrorKind.sessionGone]。
   Future<void> close();
@@ -69,21 +74,71 @@ abstract class BrowserSession {
 /// HeadlessInAppWebView 实现。生命周期由 SessionManager 管理，
 /// 不要直接长期持有。
 class HeadlessBrowserSession implements BrowserSession {
-  HeadlessBrowserSession({
-    UrlPolicy? urlPolicy,
-    PageLoadPoller? poller,
-  })  : _urlPolicy = urlPolicy ?? const UrlPolicy(),
-        _poller = poller ?? const PageLoadPoller();
+  HeadlessBrowserSession({UrlPolicy? urlPolicy, PageLoadPoller? poller})
+    : _urlPolicy = urlPolicy ?? const UrlPolicy(),
+      _poller = poller ?? const PageLoadPoller();
 
   final UrlPolicy _urlPolicy;
   final PageLoadPoller _poller;
 
   HeadlessInAppWebView? _headless;
   InAppWebViewController? _controller;
+  InAppWebViewKeepAlive? _keepAlive;
+  bool _visibleAttached = false;
   Completer<void>? _loadStart;
   Completer<void>? _loadStop;
   BrowserException? _blockedNavigation;
   bool _disposed = false;
+
+  // ---- 共驾可见挂载（M4d）----
+  // 共驾页用 InAppWebView(headlessWebView:) 把同一个原生 WebView 转为
+  // 可见渲染；keepAlive 保证页面退出后原生 WebView 不被销毁，
+  // 会话（及 agent 工具）继续可用。
+
+  /// 尚未转可见时的 headless 实例（转换后为 null，改用 [keepAlive]）。
+  HeadlessInAppWebView? get headlessWebView => _headless;
+
+  /// 可见挂载的 keepAlive 句柄（首次访问时创建，会话内复用）。
+  InAppWebViewKeepAlive get keepAlive => _keepAlive ??= InAppWebViewKeepAlive();
+
+  /// 是否已被可见 InAppWebView 接管渲染。
+  bool get visibleAttached => _visibleAttached;
+
+  /// 可见 InAppWebView 创建完成：接管同一个原生 WebView 的控制器。
+  void attachVisible(InAppWebViewController controller) {
+    if (_disposed) return;
+    _visibleAttached = true;
+    _headless = null;
+    _controller = controller;
+  }
+
+  /// 可见挂载使用：与 headless 回调同一套导航门控。
+  void notifyLoadStart() {
+    final loadStart = _loadStart;
+    if (loadStart != null && !loadStart.isCompleted) loadStart.complete();
+  }
+
+  /// 可见挂载使用：只认本次导航（onLoadStart 之后）的完成信号。
+  void notifyLoadStop() {
+    if (_loadStart?.isCompleted != true) return;
+    final loadStop = _loadStop;
+    if (loadStop != null && !loadStop.isCompleted) loadStop.complete();
+  }
+
+  /// 可见挂载使用：与 headless 同一套逐跳 URL 安全复检。
+  Future<NavigationActionPolicy> policeNavigation(
+    NavigationAction action,
+  ) async {
+    final target = action.request.url;
+    if (target == null) return NavigationActionPolicy.CANCEL;
+    try {
+      await _urlPolicy.validate(target.toString());
+      return NavigationActionPolicy.ALLOW;
+    } on BrowserException catch (e) {
+      _blockedNavigation = e;
+      return NavigationActionPolicy.CANCEL;
+    }
+  }
 
   /// JS 执行级超时（设计稿 §19.2）。
   static const _jsTimeout = Duration(seconds: 10);
@@ -194,19 +249,20 @@ class HeadlessBrowserSession implements BrowserSession {
       _interact(ElementTarget.parse(target), buildClickJs);
 
   @override
-  Future<InteractResult> fill(String target, String text,
-      {bool submit = false}) =>
-      _interact(
-        ElementTarget.parse(target),
-        (t) => buildFillJs(t, text, submit: submit),
-      );
+  Future<InteractResult> fill(
+    String target,
+    String text, {
+    bool submit = false,
+  }) => _interact(
+    ElementTarget.parse(target),
+    (t) => buildFillJs(t, text, submit: submit),
+  );
 
   @override
-  Future<InteractResult> selectOption(String target, String value) =>
-      _interact(
-        ElementTarget.parse(target),
-        (t) => buildSelectOptionJs(t, value),
-      );
+  Future<InteractResult> selectOption(String target, String value) => _interact(
+    ElementTarget.parse(target),
+    (t) => buildSelectOptionJs(t, value),
+  );
 
   Future<InteractResult> _interact(
     ElementTarget target,
@@ -225,9 +281,8 @@ class HeadlessBrowserSession implements BrowserSession {
     while (true) {
       status = ((await _evaluate(js)) as String?) ?? 'error: 无返回值';
       if (status == 'ok') break;
-      final retryable = status == 'invisible' ||
-          status == 'disabled' ||
-          status == 'notfound';
+      final retryable =
+          status == 'invisible' || status == 'disabled' || status == 'notfound';
       if (!retryable || DateTime.now().isAfter(deadline)) {
         throw _interactError(target, status);
       }
@@ -257,10 +312,7 @@ class HeadlessBrowserSession implements BrowserSession {
           transient: true,
         );
       default:
-        return BrowserException(
-          BrowserErrorKind.internal,
-          '交互动作失败：$status',
-        );
+        return BrowserException(BrowserErrorKind.internal, '交互动作失败：$status');
     }
   }
 
@@ -311,8 +363,8 @@ class HeadlessBrowserSession implements BrowserSession {
   /// 比单次 JS 求值宽。
   static const _runScriptTimeout = Duration(seconds: 60);
 
-  static Future<String> _loadRunHelpersJs() async => _runHelpersJs ??=
-      await rootBundle.loadString(
+  static Future<String> _loadRunHelpersJs() async =>
+      _runHelpersJs ??= await rootBundle.loadString(
         'packages/aetherlink_browser/assets/js/run_helpers.js',
       );
 
@@ -321,7 +373,13 @@ class HeadlessBrowserSession implements BrowserSession {
     _ensureAlive();
     final controller = _ensureNavigated();
     await _evaluate(await _loadRunHelpersJs());
-    final body = '''
+    // 供 aether.snapshot() 页内重建 @N ref（与顶层 snapshotDom 同一套逻辑）。
+    final snapshotSrc = await _loadDomSnapshotJs();
+    await _evaluate(
+      'window.__aetherSnapshot = function () { return (\n$snapshotSrc\n); };',
+    );
+    final body =
+        '''
 const aether = window.__aetherMakeHelpers();
 return await (async () => {
 $script
@@ -345,10 +403,7 @@ $script
     }
     final error = result.error;
     if (error != null) {
-      throw BrowserException(
-        BrowserErrorKind.internal,
-        '脚本执行出错：$error',
-      );
+      throw BrowserException(BrowserErrorKind.internal, '脚本执行出错：$error');
     }
     final value = result.value;
     if (value == null) return '';
@@ -412,7 +467,23 @@ $script
   }) async {
     _ensureAlive();
     final controller = _ensureNavigated();
-    final headless = _headless!;
+    final headless = _headless;
+    if (headless == null) {
+      // 已转可见挂载：无法调整尺寸，按当前视口截图。
+      final bytes = await controller.takeScreenshot(
+        screenshotConfiguration: ScreenshotConfiguration(
+          compressFormat: CompressFormat.JPEG,
+          quality: options.jpegQuality,
+        ),
+      );
+      if (bytes == null) {
+        throw const BrowserException(
+          BrowserErrorKind.internal,
+          '截图失败：WebView 未返回图像数据',
+        );
+      }
+      return bytes;
+    }
     final original = await headless.getSize() ?? const Size(1024, 1536);
     final width = options.maxWidth.toDouble().clamp(320.0, original.width);
     var height = original.height * (width / original.width);
@@ -458,6 +529,11 @@ $script
     final headless = _headless;
     _headless = null;
     await headless?.dispose();
+    final keepAlive = _keepAlive;
+    _keepAlive = null;
+    if (keepAlive != null) {
+      await InAppWebViewController.disposeKeepAlive(keepAlive);
+    }
   }
 
   Future<InAppWebViewController> _ensureWebView() async {
@@ -475,32 +551,11 @@ $script
       onWebViewCreated: (controller) {
         if (!created.isCompleted) created.complete(controller);
       },
-      onLoadStart: (controller, url) {
-        final loadStart = _loadStart;
-        if (loadStart != null && !loadStart.isCompleted) {
-          loadStart.complete();
-        }
-      },
-      onLoadStop: (controller, url) {
-        // 只认本次导航（onLoadStart 之后）的完成信号。
-        if (_loadStart?.isCompleted != true) return;
-        final loadStop = _loadStop;
-        if (loadStop != null && !loadStop.isCompleted) {
-          loadStop.complete();
-        }
-      },
-      shouldOverrideUrlLoading: (controller, action) async {
-        // 重定向/页内导航逐跳复检（设计稿 §15.2 第 3 条）。
-        final target = action.request.url;
-        if (target == null) return NavigationActionPolicy.CANCEL;
-        try {
-          await _urlPolicy.validate(target.toString());
-          return NavigationActionPolicy.ALLOW;
-        } on BrowserException catch (e) {
-          _blockedNavigation = e;
-          return NavigationActionPolicy.CANCEL;
-        }
-      },
+      onLoadStart: (controller, url) => notifyLoadStart(),
+      onLoadStop: (controller, url) => notifyLoadStop(),
+      // 重定向/页内导航逐跳复检（设计稿 §15.2 第 3 条）。
+      shouldOverrideUrlLoading: (controller, action) =>
+          policeNavigation(action),
     );
     _headless = headless;
     await headless.run();
@@ -541,17 +596,18 @@ $script
     return controller;
   }
 
-  static Future<String> _loadReadabilityJs() async => _readabilityJs ??=
-      await rootBundle.loadString(
+  static Future<String> _loadReadabilityJs() async =>
+      _readabilityJs ??= await rootBundle.loadString(
         'packages/aetherlink_browser/assets/js/readability.js',
       );
 
-  static Future<String> _loadDomSnapshotJs() async => _domSnapshotJs ??=
-      await rootBundle.loadString(
+  static Future<String> _loadDomSnapshotJs() async =>
+      _domSnapshotJs ??= await rootBundle.loadString(
         'packages/aetherlink_browser/assets/js/dom_snapshot.js',
       );
 
-  static String _jsString(String value) => "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll('\n', r'\n').replaceAll('\r', r'\r')}'";
+  static String _jsString(String value) =>
+      "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll('\n', r'\n').replaceAll('\r', r'\r')}'";
 
   static String _normalizeText(String text) => normalizeExtractedText(text);
 }

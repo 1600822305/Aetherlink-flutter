@@ -1,15 +1,17 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
-/// 人机共驾用的可见 WebView（升级设计 §2.4 M4d）：agent hand off 后，
-/// 用户在这里亲自操作（登录/验证码/滑块）。它与 headless 会话是不同的
-/// WebView 实例，但 cookie/登录态全局共享（WebView 平台特性），所以
-/// 用户在这里完成登录后，agent 收回的 headless 会话直接复用登录态。
-class CoDriveWebView extends StatefulWidget {
-  const CoDriveWebView({super.key, this.initialUrl, this.onUrlChanged});
+import '../session/browser_session.dart';
 
-  /// 初始加载的页面（通常是 hand off 时 agent 所在的 URL）。
-  final String? initialUrl;
+/// 人机共驾用的可见 WebView（升级设计 §2.4 M4d）：把会话的 headless
+/// WebView 转为可见渲染——用户看到并操作的就是 agent 正在用的**同一个**
+/// 原生 WebView（同页面、同登录态、同 JS 状态）。keepAlive 保证退出
+/// 共驾页后原生 WebView 不销毁，agent 工具继续可用。
+class CoDriveWebView extends StatefulWidget {
+  const CoDriveWebView({super.key, required this.session, this.onUrlChanged});
+
+  /// 要可见化的会话（必须是 headless 实现）。
+  final HeadlessBrowserSession session;
 
   final ValueChanged<String>? onUrlChanged;
 
@@ -20,22 +22,19 @@ class CoDriveWebView extends StatefulWidget {
 class _CoDriveWebViewState extends State<CoDriveWebView> {
   @override
   Widget build(BuildContext context) {
-    final url = widget.initialUrl;
+    final session = widget.session;
     return InAppWebView(
-      initialUrlRequest: url == null || url.isEmpty
-          ? null
-          : URLRequest(url: WebUri(url)),
-      initialSettings: InAppWebViewSettings(
-        // 用户亲自驾驶：只限制协议，不做 SSRF 网段复检（用户本来就能
-        // 用系统浏览器访问任何地址；这里防的是被诱导跳非 Web 协议）。
-        allowsBackForwardNavigationGestures: true,
-      ),
-      shouldOverrideUrlLoading: (controller, action) async {
-        final scheme = action.request.url?.scheme.toLowerCase();
-        return (scheme == 'http' || scheme == 'https')
-            ? NavigationActionPolicy.ALLOW
-            : NavigationActionPolicy.CANCEL;
-      },
+      // 首次：接管 headless 实例；之后：headlessWebView 为 null，
+      // 由同一个 keepAlive 复挂原生 WebView。
+      headlessWebView: session.headlessWebView,
+      keepAlive: session.keepAlive,
+      onWebViewCreated: session.attachVisible,
+      // 与 headless 同一套导航门控 / URL 安全复检，agent 工具的
+      // 加载判定在可见挂载下继续成立。
+      onLoadStart: (controller, url) => session.notifyLoadStart(),
+      onLoadStop: (controller, url) => session.notifyLoadStop(),
+      shouldOverrideUrlLoading: (controller, action) =>
+          session.policeNavigation(action),
       onUpdateVisitedHistory: (controller, url, isReload) {
         final s = url?.toString();
         if (s != null) widget.onUrlChanged?.call(s);

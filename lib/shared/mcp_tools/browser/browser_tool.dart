@@ -13,14 +13,13 @@ import 'package:path_provider/path_provider.dart';
 /// browser_input / browser_run。SSRF 校验在包内（UrlPolicy），
 /// 错误以分类消息回填。
 
-/// 需用户确认的浏览器工具：交互类（会改变页面/站点状态），以及
-/// 从用户手中收回控制权的 take_over；均不进 Ask/Plan 只读集。
-/// hand_off 是把控制权交给用户，无需确认。
+/// 需用户确认的浏览器工具：交互类（会改变页面/站点状态），
+/// 均不进 Ask/Plan 只读集。hand_off / take_over 只切换“谁在主导”
+/// 标记（宽松共驾，不限制双方操作），无需确认。
 const Set<String> kBrowserInteractiveTools = {
   'browser_click',
   'browser_input',
   'browser_run',
-  'browser_take_over',
 };
 
 /// 交互类浏览器工具是否需要用户审批（审批门复用）。
@@ -37,8 +36,8 @@ typedef ScreenshotDirProvider = Future<Directory> Function();
 /// 设计稿 §16.3）；懒建，空闲 5 分钟自动释放 WebView。
 BrowserSessionManager? _sharedManager;
 
-BrowserSessionManager _defaultManager() =>
-    _sharedManager ??= BrowserSessionManager(factory: HeadlessBrowserSession.new);
+BrowserSessionManager _defaultManager() => _sharedManager ??=
+    BrowserSessionManager(factory: HeadlessBrowserSession.new);
 
 Future<Directory> _defaultScreenshotDir() async {
   final docs = await getApplicationDocumentsDirectory();
@@ -64,38 +63,70 @@ Future<McpToolResult> runBrowserTool(
 }) async {
   final sessions = manager ?? _defaultManager();
   try {
-    switch (toolName) {
-      case 'browser_open':
-        return await _open(sessions, args);
-      case 'browser_read':
-        return await _read(sessions, args);
-      case 'browser_snapshot_dom':
-        return await _snapshotDom(sessions, args);
-      case 'browser_click':
-        return await _click(sessions, args);
-      case 'browser_input':
-        return await _input(sessions, args);
-      case 'browser_wait':
-        return await _wait(sessions, args);
-      case 'browser_run':
-        return await _run(sessions, args);
-      case 'browser_hand_off':
-        return await _handOff(sessions, args);
-      case 'browser_take_over':
-        return await _takeOver(sessions, args);
-      case 'browser_snapshot':
-        return await _snapshot(
-          sessions,
-          args,
-          screenshotDir ?? _defaultScreenshotDir,
-        );
-    }
-    return McpToolResult('未知的工具: $toolName', isError: true);
+    final result = await _dispatch(toolName, args, sessions, screenshotDir);
+    return _withCoDriveHint(toolName, args, sessions, result);
   } on BrowserException catch (e) {
     return McpToolResult('浏览器错误（${e.kind.name}）：${e.message}', isError: true);
   } catch (e) {
     return McpToolResult('浏览器工具执行失败: $e', isError: true);
   }
+}
+
+/// 宽松共驾提示：会话由用户主导时不硬拦工具，只在结果里附提示。
+McpToolResult _withCoDriveHint(
+  String toolName,
+  Map<String, Object?> args,
+  BrowserSessionManager sessions,
+  McpToolResult result,
+) {
+  if (result.isError ||
+      toolName == 'browser_hand_off' ||
+      toolName == 'browser_take_over') {
+    return result;
+  }
+  final ownership = sessions.ownershipOf(args['session'] as String?);
+  if (ownership == SessionOwnership.agent) return result;
+  return McpToolResult(
+    '${result.text}\n（共驾提示：该会话当前由用户主导，用户可能同时在操作，'
+    '页面/旧 @N 随时可能变化；关键操作前建议重新快照。）',
+    imagePath: result.imagePath,
+    imageMimeType: result.imageMimeType,
+  );
+}
+
+Future<McpToolResult> _dispatch(
+  String toolName,
+  Map<String, Object?> args,
+  BrowserSessionManager sessions,
+  ScreenshotDirProvider? screenshotDir,
+) async {
+  switch (toolName) {
+    case 'browser_open':
+      return await _open(sessions, args);
+    case 'browser_read':
+      return await _read(sessions, args);
+    case 'browser_snapshot_dom':
+      return await _snapshotDom(sessions, args);
+    case 'browser_click':
+      return await _click(sessions, args);
+    case 'browser_input':
+      return await _input(sessions, args);
+    case 'browser_wait':
+      return await _wait(sessions, args);
+    case 'browser_run':
+      return await _run(sessions, args);
+    case 'browser_hand_off':
+      return await _handOff(sessions, args);
+    case 'browser_take_over':
+      return await _takeOver(sessions, args);
+    case 'browser_snapshot':
+      return await _snapshot(
+        sessions,
+        args,
+        screenshotDir ?? _defaultScreenshotDir,
+      );
+  }
+  return McpToolResult('未知的工具: $toolName', isError: true);
 }
 
 Future<McpToolResult> _open(
@@ -121,7 +152,8 @@ Future<McpToolResult> _open(
       preview = '';
     }
     if (preview.length > _kOpenPreviewChars) {
-      preview = '${preview.substring(0, _kOpenPreviewChars)}\n'
+      preview =
+          '${preview.substring(0, _kOpenPreviewChars)}\n'
           '…（正文已截断，完整内容请用 browser_read 分块读取）';
     }
     final buf = StringBuffer()
@@ -212,8 +244,10 @@ Future<McpToolResult> _click(
 ) async {
   final target = (args['target'] as String?)?.trim() ?? '';
   if (target.isEmpty) {
-    return const McpToolResult('target 不能为空（@N / role:角色:名称 / CSS）',
-        isError: true);
+    return const McpToolResult(
+      'target 不能为空（@N / role:角色:名称 / CSS）',
+      isError: true,
+    );
   }
   final sessionId = args['session'] as String?;
   return sessions.run(sessionId: sessionId, (session) async {
@@ -228,8 +262,10 @@ Future<McpToolResult> _input(
 ) async {
   final target = (args['target'] as String?)?.trim() ?? '';
   if (target.isEmpty) {
-    return const McpToolResult('target 不能为空（@N / role:角色:名称 / CSS）',
-        isError: true);
+    return const McpToolResult(
+      'target 不能为空（@N / role:角色:名称 / CSS）',
+      isError: true,
+    );
   }
   final text = args['text'] as String?;
   if (text == null) {
@@ -239,10 +275,9 @@ Future<McpToolResult> _input(
   final sessionId = args['session'] as String?;
   return sessions.run(sessionId: sessionId, (session) async {
     final result = await session.fill(target, text, submit: submit);
-    return McpToolResult(_interactResultText(
-      '已向「$target」输入文本${submit ? '并提交' : ''}',
-      result,
-    ));
+    return McpToolResult(
+      _interactResultText('已向「$target」输入文本${submit ? '并提交' : ''}', result),
+    );
   });
 }
 
@@ -269,16 +304,14 @@ Future<McpToolResult> _wait(
       timeout: Duration(seconds: timeoutSeconds),
     );
     return McpToolResult(
-      met
-          ? '条件已成立。'
-          : '等待超时（${timeoutSeconds}s），条件未成立；可重新快照确认页面状态后换策略。',
+      met ? '条件已成立。' : '等待超时（${timeoutSeconds}s），条件未成立；可重新快照确认页面状态后换策略。',
     );
   });
 }
 
-/// 交给用户（升级设计 §2.4 M4d）：登录/验证码/滑块等 agent 搞不定的
-/// 环节交给用户在「浏览共驾」页面亲自操作；之后该会话对工具硬停止，
-/// 直到 browser_take_over。
+/// 交给用户（升级设计 §2.4 M4d，宽松共驾）：登录/验证码/滑块等
+/// agent 搞不定的环节提醒用户在「浏览共驾」页面亲自操作；不硬拦
+/// agent 后续调用，只在结果中提示可能存在并发操作。
 Future<McpToolResult> _handOff(
   BrowserSessionManager sessions,
   Map<String, Object?> args,
@@ -297,14 +330,15 @@ Future<McpToolResult> _handOff(
   }
   sessions.handOff(sessionId, note: note, url: url);
   return McpToolResult(
-    '已将浏览器会话交给用户控制${note == null ? '' : '（$note）'}。'
-    '用户可在「浏览共驾」页面操作${url == null ? '' : '（当前页面 $url）'}；'
-    '操作完成前不要对该会话调用其他浏览器工具（会被拒绝），'
-    '确认用户完成后用 browser_take_over 收回。',
+    '已将浏览器会话交给用户主导${note == null ? '' : '（$note）'}。'
+    '用户可在「浏览共驾」页面直接操作同一页面'
+    '${url == null ? '' : '（当前 $url）'}；等用户完成期间尽量不要'
+    '操作该会话（页面可能随时被用户改变），完成后用 '
+    'browser_take_over 标记收回并重新快照。',
   );
 }
 
-/// 收回会话控制权（需用户确认），并回报当前页面状态。
+/// 收回主导权标记，并回报当前页面状态。
 Future<McpToolResult> _takeOver(
   BrowserSessionManager sessions,
   Map<String, Object?> args,
@@ -321,7 +355,7 @@ Future<McpToolResult> _takeOver(
     state = '';
   }
   return McpToolResult(
-    '已收回浏览器会话控制权。$state'
+    '已收回会话主导权。$state'
     '页面可能已被用户操作，旧 @N 编号不可信，建议先 browser_snapshot_dom。',
   );
 }
@@ -345,7 +379,8 @@ Future<McpToolResult> _run(
       timeout: Duration(seconds: timeoutSeconds),
     );
     if (value.length > _kRunResultMaxChars) {
-      value = '${value.substring(0, _kRunResultMaxChars)}\n'
+      value =
+          '${value.substring(0, _kRunResultMaxChars)}\n'
           '…（返回值已截断，共 ${value.length} 字符；请在脚本内精简 return 内容）';
     }
     final src = (await session.currentUrl()) ?? '当前页面';
@@ -353,8 +388,10 @@ Future<McpToolResult> _run(
     if (value.trim().isEmpty) {
       buf
         ..writeln()
-        ..write('脚本无返回值（若预期有返回，可能因页面导航被中断；'
-            '可重新快照确认页面状态）。');
+        ..write(
+          '脚本无返回值（若预期有返回，可能因页面导航被中断；'
+          '可重新快照确认页面状态）。',
+        );
     } else {
       buf
         ..writeln()
@@ -384,7 +421,8 @@ Future<McpToolResult> _snapshot(
     final dir = await screenshotDir();
     await dir.create(recursive: true);
     final suffix = Random().nextInt(0xffffff).toRadixString(16);
-    final path = '${dir.path}/'
+    final path =
+        '${dir.path}/'
         '${DateTime.now().microsecondsSinceEpoch}_$suffix.jpg';
     await File(path).writeAsBytes(bytes);
     return McpToolResult(

@@ -112,7 +112,7 @@ void main() {
     await manager.closeAll();
   });
 
-  test('handOff 后工具调用硬停止，takeOver 恢复', () async {
+  test('handOff 只切换主导标记，不限制工具调用（宽松共驾）；takeOver 收回', () async {
     final manager = BrowserSessionManager(factory: _FakeSession.new);
     await manager.run((s) async {});
     manager.handOff(null, note: '请完成登录', url: 'https://example.com/login');
@@ -120,13 +120,8 @@ void main() {
       manager.ownershipOf(null),
       SessionOwnership.delegatedToUser,
     );
-    expect(
-      () => manager.run((s) async {}),
-      throwsA(
-        isA<BrowserException>()
-            .having((e) => e.kind, 'kind', BrowserErrorKind.userControlled),
-      ),
-    );
+    // 宽松共驾：交接期间 agent 工具仍可调用。
+    await manager.run((s) async {});
     final info =
         manager.sessionInfos.singleWhere((i) => i.id == 'default');
     expect(info.handOffNote, '请完成登录');

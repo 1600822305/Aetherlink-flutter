@@ -516,10 +516,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '多步"读→判→点→等→验"，比逐个调用单步工具更快更省 token。脚本内'
           '注入 aether 助手：await aether.click(target) / '
           'aether.fill(target, text) / aether.press(key) / '
-          'aether.selectOption(target, value) / aether.read(target?) / '
+          'aether.selectOption(target, value) / '
           'await aether.waitFor({selector?, urlContains?, predicate?, '
-          'timeoutMs?})（超时返回 false）/ aether.query(target) / '
-          'await aether.sleep(ms)。target 支持 @N / role:角色:名称 / CSS。'
+          'timeoutMs?})（超时返回 false）/ aether.query(target)（返回 '
+          '{tag,name,value?,checked?,...} 元数据）/ aether.queryElement(target)'
+          '（返回 DOM 节点）/ aether.read(target)（控件返回 value）/ '
+          'aether.snapshot()（重建 @N 并返回语义快照文本）/ '
+          'await aether.sleep(ms)。target 支持 @N / role:角色:名称 / CSS；'
+          '@N 失效时先 aether.snapshot() 重建。'
           '脚本 return 的值（可为对象，自动 JSON 序列化）作为结果返回。'
           '注意：动作触发页面导航会中断脚本执行，跨页任务应拆成多次调用；'
           '先把可预测的观察/动作/验证编码进一段脚本再调用。',
@@ -546,10 +550,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'browser_hand_off',
       description:
-          '把内置浏览器会话交给用户亲自操作（登录、验证码、滑块等 agent 无法'
-          '完成的环节）。交接后该会话的浏览器工具调用会被拒绝，直到 '
-          'browser_take_over 收回；用户在「浏览共驾」页面操作，登录态'
-          '（cookie）保留在会话里，收回后可继续使用。',
+          '把内置浏览器会话交给用户主导（登录、验证码、滑块等 agent 无法'
+          '完成的环节）。用户在「浏览共驾」页面直接看到并操作同一个'
+          '页面（同登录态）；交接只切换主导标记，不硬拦工具调用，但'
+          '用户操作期间尽量不要动该会话，完成后用 browser_take_over '
+          '标记收回并重新快照。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -567,9 +572,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'browser_take_over',
       description:
-          '从用户手中收回内置浏览器会话的控制权（需用户确认）。收回后'
-          '页面可能已被用户操作过，旧 @N 编号不可信，应先 '
-          'browser_snapshot_dom 重新了解页面状态。',
+          '收回内置浏览器会话的主导权标记（宽松共驾，不限制用户继续'
+          '查看）。收回后页面可能已被用户操作过，旧 @N 编号不可信，'
+          '应先 browser_snapshot_dom 重新了解页面状态。',
       inputSchema: {
         'type': 'object',
         'properties': {
