@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:aetherlink_devtools/aetherlink_devtools.dart';
 import 'package:aetherlink_perf/aetherlink_perf.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +11,7 @@ import 'package:aetherlink_flutter/app/di/app_main_mode.dart';
 import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_tool.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/shared/widgets/ime_editing_panel_support.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
@@ -39,7 +42,8 @@ class AetherlinkApp extends ConsumerStatefulWidget {
   ConsumerState<AetherlinkApp> createState() => _AetherlinkAppState();
 }
 
-class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
+class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
+    with WidgetsBindingObserver {
   /// Created once, the moment the persisted onboarding flag first resolves, so
   /// theme rebuilds (and the later `markStarted()` flip) never recreate it and
   /// reset navigation. First-time users land on the welcome page; the decision
@@ -70,6 +74,29 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     // re-asserted to the display on every launch (it does not survive process
     // death on the platform side).
     ref.read(displayRefreshRateControllerProvider);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// 后台策略（浏览器设计稿 §8 M3）：内存吃紧或 App 退出时释放
+  /// 共享无头 WebView（cookies 由 CookieManager 持久，登录态不丢；
+  /// 下次调用懒重建）。普通切后台（paused）不释放，避免打断
+  /// 后台智能体任务正在进行的浏览。
+  @override
+  void didHaveMemoryPressure() {
+    unawaited(disposeSharedBrowserManager());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      unawaited(disposeSharedBrowserManager());
+    }
   }
 
   @override

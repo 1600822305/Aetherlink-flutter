@@ -19,6 +19,9 @@ class _FakeSession implements BrowserSession {
   Future<String> readText({String? selector}) async => 'text';
 
   @override
+  Future<String?> currentUrl() async => null;
+
+  @override
   Future<Uint8List> snapshot({
     SnapshotOptions options = const SnapshotOptions(),
   }) async =>
