@@ -214,6 +214,7 @@ class HeadlessBrowserSession implements BrowserSession {
   ) async {
     _ensureAlive();
     final controller = _ensureNavigated();
+    final preUrl = (await controller.getUrl())?.toString();
     // 新建导航门控再动作：动作可能触发导航（点链接/提交表单）。
     final loadStart = _loadStart = Completer<void>();
     final loadStop = _loadStop = Completer<void>();
@@ -232,7 +233,7 @@ class HeadlessBrowserSession implements BrowserSession {
       }
       await Future<void>.delayed(_actionPollInterval);
     }
-    return _resolveNavigation(controller, loadStart, loadStop);
+    return _resolveNavigation(controller, loadStart, loadStop, preUrl);
   }
 
   BrowserException _interactError(ElementTarget target, String status) {
@@ -265,15 +266,22 @@ class HeadlessBrowserSession implements BrowserSession {
 
   /// 动作后解析导航：宽限期内 onLoadStart 未触发视为页内动作；
   /// 触发了则等新页加载完成（超时截停，页面部分可读）。
+  /// 额外以 URL 变化兑底：快导航/重定向链可能追不上 onLoadStart
+  /// 门控，URL 变了就按已导航处理（旧 @N 必须作废）。
   Future<InteractResult> _resolveNavigation(
     InAppWebViewController controller,
     Completer<void> loadStart,
     Completer<void> loadStop,
+    String? preUrl,
   ) async {
-    final started = await Future.any<bool>([
+    var started = await Future.any<bool>([
       loadStart.future.then((_) => true),
       Future<void>.delayed(_navigationGrace).then((_) => false),
     ]);
+    if (!started) {
+      final url = (await controller.getUrl())?.toString();
+      if (url != null && url.isNotEmpty && url != preUrl) started = true;
+    }
     if (started) {
       final blocked = _blockedNavigation;
       if (blocked != null) throw blocked;

@@ -25,10 +25,14 @@
     return rect.width > 0 && rect.height > 0;
   }
 
+  // 与快照 nameOf 一致：label 关联优先于 placeholder/title，保证
+  // snapshot 展示的 role+name 可直接用于 role:角色:名称。
   function nameOf(el) {
-    return (el.getAttribute('aria-label') || el.textContent ||
-        el.getAttribute('placeholder') || el.getAttribute('title') ||
-        el.getAttribute('alt') || el.value || '').replace(/\s+/g, ' ').trim();
+    return (el.getAttribute('aria-label') ||
+        (el.labels && el.labels.length ? el.labels[0].textContent : '') ||
+        el.textContent || el.getAttribute('placeholder') ||
+        el.getAttribute('title') || el.getAttribute('alt') || el.value ||
+        '').replace(/\s+/g, ' ').trim();
   }
 
   function resolveOnce(target) {
@@ -81,9 +85,34 @@
     }
   }
 
+  // 元素元数据（供脚本断言）：控件返回 value/checked 等可用字段。
+  function describe(el) {
+    if (!el) return null;
+    const tag = el.tagName ? el.tagName.toLowerCase() : '';
+    const info = { tag: tag, name: nameOf(el) };
+    if ('value' in el && typeof el.value === 'string') info.value = el.value;
+    if (typeof el.checked === 'boolean') info.checked = el.checked;
+    if (typeof el.disabled === 'boolean' && el.disabled) info.disabled = true;
+    const href = el.getAttribute && el.getAttribute('href');
+    if (href) info.href = href;
+    const role = el.getAttribute && el.getAttribute('role');
+    if (role) info.role = role;
+    if (tag === 'select' && el.selectedOptions && el.selectedOptions[0]) {
+      info.selected = (el.selectedOptions[0].textContent || '').trim();
+    }
+    return info;
+  }
+
   window.__aetherMakeHelpers = () => ({
-    /** 解析定位目标为元素（不等待），找不到返回 null。 */
-    query: (target) => resolveOnce(target),
+    /**
+     * 解析定位目标（不等待），返回元数据对象
+     * { tag, name, value?, checked?, disabled?, href?, role?, selected? }；
+     * 找不到返回 null。需要元素本身用 queryElement。
+     */
+    query: (target) => describe(resolveOnce(target)),
+
+    /** 解析定位目标为元素本身（不等待），找不到返回 null。 */
+    queryElement: (target) => resolveOnce(target),
 
     /** auto-wait 后点击。 */
     async click(target) {
@@ -143,10 +172,17 @@
       el.dispatchEvent(new Event('change', { bubbles: true }));
     },
 
-    /** 读取目标元素（缺省 body）的可见文本。 */
+    /**
+     * 读取目标元素（缺省 body）：input/textarea/select 返回 value，
+     * 其余返回可见文本。
+     */
     read(target) {
       const el = target ? resolveOnce(target) : document.body;
       if (!el) throw new Error('未找到元素 ' + JSON.stringify(target));
+      const tag = el.tagName ? el.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+        return String(el.value == null ? '' : el.value);
+      }
       return (el.innerText || el.textContent || '').trim();
     },
 
