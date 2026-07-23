@@ -31,6 +31,10 @@ class ContextSection {
   final int estimatedTokens;
 }
 
+/// 单张图片的粗略 token 估算（浏览器设计稿 §20.3：字符代理看不到
+/// 图片成本，按 provider 公式量级取 ~800 token/张）。
+const int kEstimatedTokensPerImage = 800;
+
 /// 字符数启发式估 token：CJK ≈ 1.5 字符/token，其余 ≈ 4 字符/token。
 int estimateContextTokens(String text) {
   var cjk = 0;
@@ -64,8 +68,10 @@ AgentContextBreakdown computeContextBreakdown({
   var assistantText = 0;
   var toolTraffic = 0;
   var compaction = 0;
+  var images = 0;
   for (final m in messages) {
     var tokens = estimateContextTokens(m.content);
+    images += (m.images?.length ?? 0) * kEstimatedTokensPerImage;
     for (final call in m.toolCalls ?? const <LlmToolCall>[]) {
       tokens += estimateContextTokens('${call.name}${call.arguments}');
     }
@@ -96,6 +102,7 @@ AgentContextBreakdown computeContextBreakdown({
       ContextSection(label: '工具调用与结果', estimatedTokens: toolTraffic),
       if (compaction > 0)
         ContextSection(label: '压缩摘要', estimatedTokens: compaction),
+      if (images > 0) ContextSection(label: '图片', estimatedTokens: images),
     ],
   );
 }

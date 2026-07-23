@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/context_breakdown.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
@@ -67,6 +68,27 @@ void main() {
       breakdown.estimatedTotal,
       byLabel.values.fold(0, (a, b) => a + b),
     );
+  });
+
+  test('computeContextBreakdown：图片按每张固定估算单列', () {
+    final breakdown = computeContextBreakdown(
+      systemPrompt: 's',
+      toolDefinitions: const [],
+      messages: const [
+        LlmMessage(
+          role: MessageRole.user,
+          content: '[上一条 browser_snapshot 工具结果的截图]',
+          images: [
+            LlmContentImage(mimeType: 'image/jpeg', base64Data: 'aGk='),
+            LlmContentImage(mimeType: 'image/png', base64Data: 'aGk='),
+          ],
+        ),
+      ],
+    );
+    final byLabel = {
+      for (final s in breakdown.sections) s.label: s.estimatedTokens,
+    };
+    expect(byLabel['图片'], 2 * kEstimatedTokensPerImage);
   });
 
   test('computeContextBreakdown：无压缩摘要时不出该分类', () {

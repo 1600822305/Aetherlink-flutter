@@ -183,6 +183,8 @@ String encodeAgentEventPayload(AgentEvent event) {
       :final argsDetail,
       :final resultDetail,
       :final resultOverflowPath,
+      :final imagePath,
+      :final imageMimeType,
     ) =>
       {
         'toolName': toolName,
@@ -193,6 +195,8 @@ String encodeAgentEventPayload(AgentEvent event) {
         'argsDetail': argsDetail,
         'resultDetail': resultDetail,
         'resultOverflowPath': resultOverflowPath,
+        if (imagePath != null) 'imagePath': imagePath,
+        if (imageMimeType != null) 'imageMimeType': imageMimeType,
       },
     PlanUpdateEvent(:final items) => {
         'items': [
@@ -302,6 +306,8 @@ AgentEvent decodeAgentEvent({
         argsDetail: p['argsDetail'] as String?,
         resultDetail: p['resultDetail'] as String?,
         resultOverflowPath: p['resultOverflowPath'] as String?,
+        imagePath: p['imagePath'] as String?,
+        imageMimeType: p['imageMimeType'] as String?,
       );
     case 'plan_update':
       return PlanUpdateEvent(

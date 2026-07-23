@@ -8,6 +8,8 @@ class AgentToolResult {
     required this.summary,
     this.detail,
     this.overflowPath,
+    this.imagePath,
+    this.imageMimeType,
   });
 
   final bool ok;
@@ -20,6 +22,13 @@ class AgentToolResult {
 
   /// 大输出全文落盘路径（未截断时为 null；详情面板「查看全文」用）。
   final String? overflowPath;
+
+  /// 图片结果落盘路径（截图类工具用；图片不进事件库，
+  /// 重放层读文件注入多模态图片消息）。
+  final String? imagePath;
+
+  /// [imagePath] 图片的 MIME 类型（如 `image/jpeg`）。
+  final String? imageMimeType;
 }
 
 /// 同一只读并发段内最多并行执行的工具数（对标 CC
