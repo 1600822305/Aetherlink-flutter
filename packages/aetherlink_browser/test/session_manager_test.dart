@@ -7,9 +7,13 @@ import 'package:aetherlink_browser/aetherlink_browser.dart';
 
 class _FakeSession implements BrowserSession {
   bool closed = false;
+  bool visible = false;
 
   @override
   bool get disposed => closed;
+
+  @override
+  bool get visibleAttached => visible;
 
   @override
   Future<PageLoadResult> open(String url, {Duration? timeout}) async =>
@@ -29,9 +33,11 @@ class _FakeSession implements BrowserSession {
       const InteractResult(navigated: false, url: '', title: '');
 
   @override
-  Future<InteractResult> fill(String target, String text,
-      {bool submit = false}) async =>
-      const InteractResult(navigated: false, url: '', title: '');
+  Future<InteractResult> fill(
+    String target,
+    String text, {
+    bool submit = false,
+  }) async => const InteractResult(navigated: false, url: '', title: '');
 
   @override
   Future<InteractResult> selectOption(String target, String value) async =>
@@ -47,12 +53,13 @@ class _FakeSession implements BrowserSession {
   @override
   Future<Uint8List> snapshot({
     SnapshotOptions options = const SnapshotOptions(),
-  }) async =>
-      Uint8List(0);
+  }) async => Uint8List(0);
 
   @override
   Future<void> close() async => closed = true;
 }
+
+int _liveCount(List<_FakeSession> all) => all.where((s) => !s.closed).length;
 
 void main() {
   test('并发调用互斥串行（按提交顺序）', () async {
@@ -116,14 +123,10 @@ void main() {
     final manager = BrowserSessionManager(factory: _FakeSession.new);
     await manager.run((s) async {});
     manager.handOff(null, note: '请完成登录', url: 'https://example.com/login');
-    expect(
-      manager.ownershipOf(null),
-      SessionOwnership.delegatedToUser,
-    );
+    expect(manager.ownershipOf(null), SessionOwnership.delegatedToUser);
     // 宽松共驾：交接期间 agent 工具仍可调用。
     await manager.run((s) async {});
-    final info =
-        manager.sessionInfos.singleWhere((i) => i.id == 'default');
+    final info = manager.sessionInfos.singleWhere((i) => i.id == 'default');
     expect(info.handOffNote, '请完成登录');
     expect(info.handOffUrl, 'https://example.com/login');
     manager.takeOver(null);
@@ -145,6 +148,79 @@ void main() {
     await manager.closeAll();
   });
 
+  test('释放后无特殊状态的条目从 sessionInfos 移除（不累积幽灵条目）', () async {
+    final manager = BrowserSessionManager(
+      factory: _FakeSession.new,
+      idleTimeout: const Duration(milliseconds: 50),
+    );
+    await manager.run((s) async {}, sessionId: 'a');
+    expect(manager.sessionInfos.map((i) => i.id), contains('a'));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(manager.sessionInfos.map((i) => i.id), isNot(contains('a')));
+    await manager.closeAll();
+  });
+
+  test('handOff/takeOver/userClaim 对未知会话不创建幽灵条目', () async {
+    final manager = BrowserSessionManager(factory: _FakeSession.new);
+    manager.handOff('ghost1', note: 'x');
+    manager.takeOver('ghost2');
+    manager.userClaim('ghost3');
+    expect(manager.sessionInfos, isEmpty);
+    await manager.closeAll();
+  });
+
+  test('共驾可见挂载的会话不被空闲回收', () async {
+    _FakeSession? last;
+    final manager = BrowserSessionManager(
+      factory: () => last = _FakeSession(),
+      idleTimeout: const Duration(milliseconds: 50),
+    );
+    await manager.run((s) async {});
+    last!.visible = true;
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(last!.closed, isFalse);
+    await manager.closeAll();
+  });
+
+  test('共驾可见挂载的会话不被 LRU 回收', () async {
+    final sessions = <String, _FakeSession>{};
+    String? next;
+    final manager = BrowserSessionManager(
+      factory: () => sessions[next!] = _FakeSession(),
+      maxSessions: 2,
+    );
+    next = 'a';
+    await manager.run((s) async {}, sessionId: 'a');
+    sessions['a']!.visible = true;
+    next = 'b';
+    await manager.run((s) async {}, sessionId: 'b');
+    next = 'c';
+    await manager.run((s) async {}, sessionId: 'c');
+    await Future<void>.delayed(Duration.zero);
+    expect(sessions['a']!.closed, isFalse); // 可见挂载被跳过。
+    expect(sessions['b']!.closed, isTrue);
+    await manager.closeAll();
+  });
+
+  test('LRU 回收完成后才新建：存活数不瞬时超上限', () async {
+    final live = <_FakeSession>[];
+    var peak = 0;
+    final manager = BrowserSessionManager(
+      factory: () {
+        final s = _FakeSession();
+        live.add(s);
+        peak = peak > _liveCount(live) ? peak : _liveCount(live);
+        return s;
+      },
+      maxSessions: 1,
+    );
+    await manager.run((s) async {}, sessionId: 'a');
+    await manager.run((s) async {}, sessionId: 'b');
+    await manager.run((s) async {}, sessionId: 'c');
+    expect(peak, 1);
+    await manager.closeAll();
+  });
+
   test('全部会话在用户控制中且达上限时新建报 sessionLimit', () async {
     final manager = BrowserSessionManager(
       factory: _FakeSession.new,
@@ -155,8 +231,11 @@ void main() {
     expect(
       () => manager.run((s) async {}, sessionId: 'b'),
       throwsA(
-        isA<BrowserException>()
-            .having((e) => e.kind, 'kind', BrowserErrorKind.sessionLimit),
+        isA<BrowserException>().having(
+          (e) => e.kind,
+          'kind',
+          BrowserErrorKind.sessionLimit,
+        ),
       ),
     );
     await manager.closeAll();
@@ -253,8 +332,11 @@ void main() {
     expect(
       () => manager.run((s) async {}),
       throwsA(
-        isA<BrowserException>()
-            .having((e) => e.kind, 'kind', BrowserErrorKind.sessionGone),
+        isA<BrowserException>().having(
+          (e) => e.kind,
+          'kind',
+          BrowserErrorKind.sessionGone,
+        ),
       ),
     );
   });

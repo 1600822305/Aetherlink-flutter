@@ -37,6 +37,19 @@ void main() {
       expect(js, contains("key: 'Enter'"));
       expect(js, contains('requestSubmit'));
     });
+
+    test('回车事件可取消：页面 preventDefault 后不再兜底提交', () {
+      final js = buildFillJs(ElementTarget.parse('@1'), 'x', submit: true);
+      expect(js, contains('cancelable: true'));
+      expect(js, contains('const proceed = el.dispatchEvent'));
+      expect(js, contains('if (proceed && el.form'));
+    });
+
+    test('select/非填写控件返回 notfillable 状态', () {
+      final js = buildFillJs(ElementTarget.parse('@1'), 'x');
+      expect(js, contains("return 'notfillable-select'"));
+      expect(js, contains("return 'notfillable'"));
+    });
   });
 
   group('buildSelectOptionJs', () {

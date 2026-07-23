@@ -89,7 +89,16 @@ class BrowserSessionManager extends ChangeNotifier {
     }
     final id = _normalize(sessionId);
     final entry = _entryFor(id);
-    final result = entry.queue.then((_) => _runLocked(entry, action));
+    // 即将新建 WebView 时先回收触底的 LRU 会话，并等回收完成再建，
+    // 保证存活 WebView 数不瞬时超过 maxSessions。
+    final evicted = entry.session == null && entry.pending == 0
+        ? _evictIfNeeded(entry)
+        : null;
+    entry.pending++;
+    final result = entry.queue.then((_) async {
+      if (evicted != null) await evicted;
+      return _runLocked(entry, action);
+    });
     entry.queue = result.then<void>((_) {}, onError: (_) {});
     return result;
   }
@@ -117,43 +126,55 @@ class BrowserSessionManager extends ChangeNotifier {
       }
       rethrow;
     } finally {
+      entry.pending--;
       if (!_closed &&
           entry.session != null &&
           entry.ownership == SessionOwnership.agent) {
-        entry.idleTimer = Timer(idleTimeout, () => _disposeEntry(entry));
+        entry.idleTimer = Timer(idleTimeout, () {
+          // 共驾页可见挂载的会话不回收（用户可能正在看）。
+          if (entry.session?.visibleAttached == true) return;
+          _disposeEntry(entry);
+        });
       }
     }
   }
 
-  /// 取/建会话条目，并做 LRU 触底回收（只回收 agent 拥有的其他会话）。
+  /// 取/建会话条目（不触发回收；回收在 [run] 即将新建 WebView 时做）。
   _SessionEntry _entryFor(String id) {
     final existing = _entries.remove(id);
     if (existing != null) {
       _entries[id] = existing; // 移到末尾（最近使用）。
       return existing;
     }
-    _evictIfNeeded();
     final entry = _SessionEntry(id);
     _entries[id] = entry;
     notifyListeners();
     return entry;
   }
 
-  void _evictIfNeeded() {
+  /// 只查不建：所有权/交接类操作不应为不存在的会话创建幽灵条目。
+  _SessionEntry? _existingEntry(String? sessionId) =>
+      _entries[_normalize(sessionId)];
+
+  /// LRU 触底回收（跳过 [about] 自身、非 agent 所有及共驾可见挂载的
+  /// 会话）；返回回收完成的 Future（无需回收时为 null）。
+  Future<void>? _evictIfNeeded(_SessionEntry about) {
     final live = _entries.values.where((e) => e.session != null).length;
-    if (live < maxSessions) return;
+    if (live < maxSessions) return null;
     for (final entry in _entries.values) {
-      if (entry.session != null && entry.ownership == SessionOwnership.agent) {
+      if (entry == about) continue;
+      if (entry.session != null &&
+          entry.ownership == SessionOwnership.agent &&
+          entry.session?.visibleAttached != true) {
         // 回收挂进该会话自己的队列，不打断正在执行的操作。
-        entry.queue = entry.queue
-            .then((_) => _disposeEntry(entry))
-            .then<void>((_) {}, onError: (_) {});
-        return;
+        final disposed = entry.queue.then((_) => _disposeEntry(entry));
+        entry.queue = disposed.then<void>((_) {}, onError: (_) {});
+        return disposed;
       }
     }
     throw BrowserException(
       BrowserErrorKind.sessionLimit,
-      '浏览器会话数已达上限（$maxSessions）且均在用户控制中，'
+      '浏览器会话数已达上限（$maxSessions）且均在用户控制/查看中，'
       '无法新建；可等用户交回或复用现有会话',
     );
   }
@@ -161,7 +182,8 @@ class BrowserSessionManager extends ChangeNotifier {
   /// agent 把会话交给用户（登录/验证码/滑块等）：标记主导方并提醒
   /// 用户去共驾页操作；不限制 agent 后续调用（宽松共驾）。
   void handOff(String? sessionId, {String? note, String? url}) {
-    final entry = _entryFor(_normalize(sessionId));
+    final entry = _existingEntry(sessionId);
+    if (entry == null) return; // 从未用过的会话无可交接，不建幽灵条目。
     entry.ownership = SessionOwnership.delegatedToUser;
     entry.handOffNote = note;
     entry.handOffUrl = url;
@@ -172,7 +194,8 @@ class BrowserSessionManager extends ChangeNotifier {
 
   /// 收回会话控制权（用户确认后由工具层调用；用户也可在 UI 主动交回）。
   void takeOver(String? sessionId) {
-    final entry = _entryFor(_normalize(sessionId));
+    final entry = _existingEntry(sessionId);
+    if (entry == null) return;
     entry.ownership = SessionOwnership.agent;
     entry.handOffNote = null;
     entry.handOffUrl = null;
@@ -181,7 +204,8 @@ class BrowserSessionManager extends ChangeNotifier {
 
   /// 用户从 UI 主动接管会话（对应 [SessionOwnership.user]）。
   void userClaim(String? sessionId) {
-    final entry = _entryFor(_normalize(sessionId));
+    final entry = _existingEntry(sessionId);
+    if (entry == null) return;
     entry.ownership = SessionOwnership.user;
     entry.idleTimer?.cancel();
     entry.idleTimer = null;
@@ -223,6 +247,14 @@ class BrowserSessionManager extends ChangeNotifier {
     entry.idleTimer = null;
     final session = entry.session;
     entry.session = null;
+    // 无特殊状态且无排队调用的条目直接移除，避免 _entries 只增不减
+    //（共驾页会话列表无限累积）。
+    if (!_closed &&
+        entry.pending == 0 &&
+        entry.ownership == SessionOwnership.agent &&
+        _entries[entry.id] == entry) {
+      _entries.remove(entry.id);
+    }
     if (session != null) {
       await session.close();
       notifyListeners();
@@ -250,6 +282,10 @@ class _SessionEntry {
   BrowserSession? session;
   Future<void> queue = Future<void>.value();
   Timer? idleTimer;
+
+  /// 已排队/执行中的调用数：>0 时不从 [_entries] 移除，防止后续
+  /// 排队调用在孤儿条目上重建会话。
+  int pending = 0;
   int consecutiveFailures = 0;
   SessionOwnership ownership = SessionOwnership.agent;
   String? handOffNote;

@@ -6,12 +6,13 @@ import 'package:aetherlink_flutter/shared/domain/skill.dart';
 const Skill kBrowserSkill = Skill(
   id: 'builtin-browser',
   name: '内置浏览器',
-  description: '内置浏览器工具（@aether/browser）的完整用法：fetch 与 browser '
+  description:
+      '内置浏览器工具（@aether/browser）的完整用法：fetch 与 browser '
       '的选择、语义快照与 @N 定位、交互与等待纪律、browser_run 批量脚本',
   emoji: '🌏',
   tags: ['浏览器', '网页', '自动化'],
   source: SkillSource.builtin,
-  version: '1.3.0',
+  version: '1.4.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -28,7 +29,9 @@ const Skill kBrowserSkill = Skill(
 2. `browser_snapshot_dom` 看语义快照：标题结构 + 可见交互元素，每个元素
    带 `@N` 编号、角色、名称、状态。比截图省 token，优先用它而非截图。
 3. 用 `@N` 定位交互：`browser_click(target: "@3")` /
-   `browser_input(target: "@2", text: "...", submit: true)`。
+   `browser_input(target: "@2", text: "...", submit: true)` /
+   下拉框用 `browser_select(target: "@4", value: "选项")`（browser_input
+   对 select 会报错并提示改用它）。
    定位优先级（按可靠度）：`@N` 最稳 > `role:角色:名称`（名称以
    snapshot 展示为准）> CSS（可用但失败时立即改 @N，不要反复试）。
 4. **@N 生命周期**：页面导航或重新快照后旧编号一律失效，交互结果里
@@ -91,7 +94,8 @@ browser_run(script: `
 
 1. open → snapshot_dom（确认 textbox/radio/checkbox/button 的 @N
    与 checked/value）。
-2. input/click 用 @N；再 snapshot 或 run 内 `aether.read/query` 校验。
+2. input/click 用 @N，下拉框用 browser_select；再 snapshot 或 run 内
+   `aether.read/query` 校验。
 3. click 提交按钮；若 URL 变 → 重新 snapshot/read。
 4. 提交控件以 snapshot 的 role/name 为准，不要假设是
    `input[type=submit]`。
@@ -119,6 +123,12 @@ browser_run(script: `
   ⑤连续 2-3 次仍失败再问用户；不要反复重试同一操作。
 
 ## 已知限制
+
+- 快照与交互都**不进 iframe**：iframe 内的登录表单/验证码无法用
+  @N/role/CSS 定位（快照会标注可见 iframe 但不收录内容）；遇到时
+  考虑 `browser_hand_off` 让用户操作。
+- `browser_run` 超时后残留脚本会被协作式取消（在下一个等待点终止），
+  但已执行的动作不会回滚；超时后先重新快照确认页面状态。
 
 - Android WebView 可能拒绝明文 `http://`（ERR_CLEARTEXT_NOT_PERMITTED），
   优先用 `https://`。

@@ -55,34 +55,29 @@
     return '';
   }
 
-  function nameOf(el) {
-    var aria = el.getAttribute('aria-label');
-    if (aria) return aria;
-    var labelledBy = el.getAttribute('aria-labelledby');
-    if (labelledBy) {
-      var parts = [];
-      labelledBy.split(/\s+/).forEach(function (id) {
-        var ref = document.getElementById(id);
-        if (ref) parts.push(ref.textContent || '');
-      });
-      if (parts.join(' ').trim()) return parts.join(' ');
+  // 可访问名称计算（对齐 accname 顺序）。必须与 element_target.dart 的
+  // kAccessibleNameFallbackJs 及 run_helpers.js 保持同一份逻辑：快照展示
+  // 的名称必须能直接用于 role:角色:名称 定位。
+  var nameOf = function (el) {
+    var t = function (s) {
+      return s == null ? '' : String(s).replace(/\s+/g, ' ').trim();
+    };
+    var ids = el.getAttribute('aria-labelledby');
+    if (ids) {
+      var byIds = t(ids.split(/\s+/).map(function (id) {
+        var n = document.getElementById(id);
+        return n ? n.textContent || '' : '';
+      }).join(' '));
+      if (byIds) return byIds;
     }
-    if (el.labels && el.labels.length) {
-      return el.labels[0].textContent || '';
-    }
-    var placeholder = el.getAttribute('placeholder');
-    if (placeholder) return placeholder;
-    var alt = el.getAttribute('alt');
-    if (alt) return alt;
-    var text = el.textContent || '';
-    if (text.trim()) return text;
-    var title = el.getAttribute('title');
-    if (title) return title;
-    if (el.tagName.toLowerCase() === 'input') {
-      return el.getAttribute('value') || el.getAttribute('name') || '';
-    }
-    return '';
-  }
+    return t(el.getAttribute('aria-label')) ||
+        t(el.labels && el.labels.length ? el.labels[0].textContent : '') ||
+        t(el.getAttribute('alt')) || t(el.textContent) ||
+        t(el.getAttribute('placeholder')) || t(el.getAttribute('title')) ||
+        (el.tagName && el.tagName.toLowerCase() === 'input'
+            ? t(el.getAttribute('value')) || t(el.getAttribute('name'))
+            : '');
+  };
 
   function stateOf(el) {
     var bits = [];
@@ -165,9 +160,26 @@
     lines.push('（页面无可见交互元素）');
   }
 
+  // iframe 盲区显式标注：快照/交互不进 frame，避免模型误以为页面空白。
+  var frameLines = [];
+  document.querySelectorAll('iframe').forEach(function (f) {
+    if (!isVisible(f)) return;
+    if (frameLines.length >= 10) return;
+    var src = f.getAttribute('src') || '';
+    frameLines.push('[iframe' +
+        (src ? ' src=' + JSON.stringify(truncate(src, MAX_HREF)) : '') +
+        ' 内容未收录，无法用 @N/role 定位其内部元素]');
+  });
+  if (frameLines.length) {
+    lines.push('');
+    lines.push.apply(lines, frameLines);
+  }
+
   // 每次快照整体重建 ref 映射；旧 @N 一律失效（借 ego-lite 语义）。
   window.__aetherRefs = refs;
   window.__aetherRefSnapshotUrl = location.href;
+  // 暴露同一份名称计算供 role: 定位复用（快照展示名 ≡ 定位名）。
+  window.__aetherNameOf = nameOf;
 
   return lines.join('\n');
 })()

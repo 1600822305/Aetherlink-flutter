@@ -25,14 +25,30 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  // 与快照 nameOf 一致：label 关联优先于 placeholder/title，保证
-  // snapshot 展示的 role+name 可直接用于 role:角色:名称。
+  // 可访问名称计算：优先复用快照暴露的同一份实现，未快照时用同语义
+  // 回退（与 element_target.dart 的 kAccessibleNameFallbackJs 保持同步，
+  // 单测锁两侧），保证 snapshot 展示的 role+name 可直接用于 role:角色:名称。
+  const accNameFallback = (el) => {
+    const t = (s) => (s == null ? '' : String(s).replace(/\s+/g, ' ').trim());
+    const ids = el.getAttribute('aria-labelledby');
+    if (ids) {
+      const byIds = t(ids.split(/\s+/).map((id) => {
+        const n = document.getElementById(id);
+        return n ? n.textContent || '' : '';
+      }).join(' '));
+      if (byIds) return byIds;
+    }
+    return t(el.getAttribute('aria-label')) ||
+        t(el.labels && el.labels.length ? el.labels[0].textContent : '') ||
+        t(el.getAttribute('alt')) || t(el.textContent) ||
+        t(el.getAttribute('placeholder')) || t(el.getAttribute('title')) ||
+        (el.tagName && el.tagName.toLowerCase() === 'input'
+            ? t(el.getAttribute('value')) || t(el.getAttribute('name'))
+            : '');
+  };
+
   function nameOf(el) {
-    return (el.getAttribute('aria-label') ||
-        (el.labels && el.labels.length ? el.labels[0].textContent : '') ||
-        el.textContent || el.getAttribute('placeholder') ||
-        el.getAttribute('title') || el.getAttribute('alt') || el.value ||
-        '').replace(/\s+/g, ' ').trim();
+    return (window.__aetherNameOf || accNameFallback)(el);
   }
 
   function resolveOnce(target) {
@@ -68,23 +84,6 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  async function resolveUsable(target, timeoutMs) {
-    const deadline = Date.now() + (timeoutMs || 5000);
-    for (;;) {
-      const el = resolveOnce(target);
-      if (el && isVisible(el) && !el.disabled) {
-        el.scrollIntoView({ block: 'center', inline: 'center' });
-        return el;
-      }
-      if (Date.now() > deadline) {
-        throw new Error(
-          '元素 ' + JSON.stringify(target) +
-          (el ? ' 不可见或被禁用' : ' 不存在'));
-      }
-      await sleep(200);
-    }
-  }
-
   // 元素元数据（供脚本断言）：控件返回 value/checked 等可用字段。
   function describe(el) {
     if (!el) return null;
@@ -103,7 +102,40 @@
     return info;
   }
 
-  window.__aetherMakeHelpers = () => ({
+  window.__aetherMakeHelpers = () => {
+  // 协作式取消（generation token）：Dart 侧每次 browser_run 前递增
+  // __aetherRunGen，超时后再递增一次；残留脚本在下一个轮询/延时检查点
+  // 发现代数过期即抛出异常终止，不再与后续工具调用交错。
+  const gen = window.__aetherRunGen || 0;
+  const ensureAlive = () => {
+    if ((window.__aetherRunGen || 0) !== gen) {
+      throw new Error('脚本已被取消（超时或新脚本开始）');
+    }
+  };
+  const guardedSleep = async (ms) => {
+    await sleep(ms);
+    ensureAlive();
+  };
+
+  async function resolveUsable(target, timeoutMs) {
+    const deadline = Date.now() + (timeoutMs || 5000);
+    for (;;) {
+      ensureAlive();
+      const el = resolveOnce(target);
+      if (el && isVisible(el) && !el.disabled) {
+        el.scrollIntoView({ block: 'center', inline: 'center' });
+        return el;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          '元素 ' + JSON.stringify(target) +
+          (el ? ' 不可见或被禁用' : ' 不存在'));
+      }
+      await guardedSleep(200);
+    }
+  }
+
+  return {
     /**
      * 解析定位目标（不等待），返回元数据对象
      * { tag, name, value?, checked?, disabled?, href?, role?, selected? }；
@@ -140,6 +172,14 @@
         el.dispatchEvent(new InputEvent('input', { bubbles: true }));
         return;
       }
+      if (el instanceof HTMLSelectElement) {
+        throw new Error('目标是下拉框，请用 aether.selectOption(target, value)');
+      }
+      if (!(el instanceof HTMLInputElement ||
+          el instanceof HTMLTextAreaElement)) {
+        throw new Error('目标 ' + JSON.stringify(target) +
+            ' 不是可填写控件（input/textarea/contenteditable）');
+      }
       el.focus();
       const proto = el instanceof HTMLTextAreaElement
           ? HTMLTextAreaElement.prototype
@@ -150,18 +190,26 @@
       el.dispatchEvent(new Event('change', { bubbles: true }));
     },
 
-    /** 向目标（缺省 activeElement）派发按键事件（如 'Enter'）。 */
+    /**
+     * 向目标（缺省 activeElement）派发按键事件（如 'Enter'）。
+     * 页面自己处理了 Enter（preventDefault）则不再兜底提交，避免重复提交。
+     */
     async press(key, target) {
       const el = target
           ? await resolveUsable(target)
           : (document.activeElement || document.body);
-      const init = { key: key, code: key, bubbles: true };
-      el.dispatchEvent(new KeyboardEvent('keydown', init));
+      const init = {
+        key: key, code: key, keyCode: key === 'Enter' ? 13 : 0,
+        bubbles: true, cancelable: true,
+      };
+      const proceed = el.dispatchEvent(new KeyboardEvent('keydown', init));
       el.dispatchEvent(new KeyboardEvent('keypress', init));
       el.dispatchEvent(new KeyboardEvent('keyup', init));
-      if (key === 'Enter' && el.form &&
+      if (proceed && key === 'Enter' && el.form &&
           typeof el.form.requestSubmit === 'function') {
-        el.form.requestSubmit();
+        // 给页面自身 handler 先跑的窗口，与顶层 browser_input 对齐。
+        await sleep(100);
+        if (el.isConnected) el.form.requestSubmit();
       }
     },
 
@@ -205,6 +253,7 @@
       const c = cond || {};
       const deadline = Date.now() + (c.timeoutMs || 10000);
       for (;;) {
+        ensureAlive();
         let met = true;
         if (c.selector) {
           const el = resolveOnce(c.selector);
@@ -216,11 +265,12 @@
         }
         if (met) return true;
         if (Date.now() > deadline) return false;
-        await sleep(200);
+        await guardedSleep(200);
       }
     },
 
-    /** 短暂等待（毫秒）。 */
-    sleep: sleep,
-  });
+    /** 短暂等待（毫秒）；脚本被取消（超时）时抛出异常终止。 */
+    sleep: guardedSleep,
+  };
+  };
 })();
