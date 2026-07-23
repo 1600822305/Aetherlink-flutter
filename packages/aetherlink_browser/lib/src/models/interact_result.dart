@@ -5,10 +5,15 @@ class InteractResult {
     required this.navigated,
     required this.url,
     required this.title,
+    this.sameDocument = false,
   });
 
   /// 动作是否触发了页面导航（已等待新页面加载完成或超时截停）。
   final bool navigated;
+
+  /// URL 变化是否为页内路由（pushState 类，JS 上下文未销毁）：
+  /// 此时旧 @N 引用仍有效，不需要重新快照。
+  final bool sameDocument;
 
   /// 动作后的当前页面 URL。
   final String url;

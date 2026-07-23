@@ -144,6 +144,18 @@ class _FakeSession implements BrowserSession {
 
   @override
   bool get visibleAttached => false;
+
+  @override
+  bool get crashed => false;
+
+  @override
+  String? get lastUrl => url;
+
+  @override
+  void scheduleRestore(String url) {}
+
+  @override
+  Future<bool> isResponsive() async => true;
 }
 
 /// nonce 定界符：断言开/闭标签成对且 src 正确，不依赖具体 nonce 值。

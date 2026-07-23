@@ -31,8 +31,9 @@ class _CoDriveWebViewState extends State<CoDriveWebView> {
       onWebViewCreated: session.attachVisible,
       // 与 headless 同一套导航门控 / URL 安全复检，agent 工具的
       // 加载判定在可见挂载下继续成立。
-      onLoadStart: (controller, url) => session.notifyLoadStart(),
-      onLoadStop: (controller, url) => session.notifyLoadStop(),
+      onLoadStart: (controller, url) =>
+          session.notifyLoadStart(url?.toString()),
+      onLoadStop: (controller, url) => session.notifyLoadStop(url?.toString()),
       shouldOverrideUrlLoading: (controller, action) =>
           session.policeNavigation(action),
       onUpdateVisitedHistory: (controller, url, isReload) {

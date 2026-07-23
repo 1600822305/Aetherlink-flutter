@@ -12,7 +12,7 @@ const Skill kBrowserSkill = Skill(
   emoji: '🌏',
   tags: ['浏览器', '网页', '自动化'],
   source: SkillSource.builtin,
-  version: '1.5.0',
+  version: '1.6.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -143,6 +143,13 @@ browser_run(script: `
   JS 上下文），立即 `browser_snapshot_dom` 或核对当前 URL 确认，
   不要假设未导航就盲目重试同一动作。
 - 会话空闲约 5 分钟会被回收；同时存活会话有上限（超出后最久
-  未用的被回收）。遇到 sessionGone 不要反复 snapshot，直接重新
-  `browser_open(url)` 恢复；并行任务控制命名会话数量。''',
+  未用的被回收）。被回收的会话在下次调用时会**自动重开上次
+  页面透明恢复**（登录态不丢，但旧 @N 失效需重新快照，表单未
+  提交内容会丢）；仍报 sessionGone 时直接重新 `browser_open(url)`。
+- 页面的 alert/confirm/prompt 对话框会被自动处理（alert 确认，
+  confirm/prompt 取消）；需要「确认」的危险操作不会被默认同意。
+- 点 target=_blank / window.open 链接会在**当前窗口**打开（不支持
+  多窗口），旧页面需要时用历史回退或重新 open。
+- 交互结果报「页内路由变化」时（SPA pushState）旧 @N 仍有效，
+  不必重新快照；报「页面已导航」才需要。''',
 );
