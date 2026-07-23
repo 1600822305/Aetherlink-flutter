@@ -914,8 +914,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'parent_path': {
             'type': 'string',
-            'description': '新建文件（旧用法，与 path 二选一）：父目录路径（相对路径按工作区根目录解析，'
-                '也可传 list_files 返回的句柄）',
+            'description': '新建文件（旧用法，与 path 二选一）：父目录路径。'
+                '相对路径以工作区根为起点、支持 ~/ 前缀，缺失目录自动创建；'
+                '也可传 list_files 返回的句柄（此时父目录必须已存在）',
           },
           'name': {'type': 'string', 'description': '新建文件（旧用法）：文件名（含扩展名）'},
           'content': {'type': 'string', 'description': '要写入的完整文件内容'},
