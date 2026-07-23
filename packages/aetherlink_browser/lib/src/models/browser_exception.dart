@@ -22,6 +22,13 @@ enum BrowserErrorKind {
   /// @N ref 已失效（页面已导航/快照已重建），应重新 browser_snapshot_dom。
   refStale,
 
+  /// 会话由用户控制中（已 hand off / 用户接管）——硬停止：不得重试
+  /// 绕过，需等用户交回（browser_take_over）或换会话。
+  userControlled,
+
+  /// 会话数达到上限且没有可回收的空闲会话。
+  sessionLimit,
+
   /// 其他内部错误。
   internal,
 }

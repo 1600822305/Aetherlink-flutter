@@ -235,6 +235,24 @@ class _BottomActionRow extends ConsumerWidget {
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
+              onTap: () => context.push(AppRouter.browserCoDrivePath),
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Icon(
+                  LucideIcons.globe,
+                  size: 22,
+                  color: textPrimary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
               onTap: () => context.push(AppRouter.buddyPath),
               borderRadius: BorderRadius.circular(12),
               child: SizedBox(

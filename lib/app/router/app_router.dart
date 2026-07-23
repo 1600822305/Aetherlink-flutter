@@ -60,6 +60,7 @@ import 'package:aetherlink_flutter/features/voice/presentation/mobile/voice_sett
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_page.dart';
+import 'package:aetherlink_flutter/features/browser/presentation/browser_codrive_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/termux_setup_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/git/git_review_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_management_page.dart';
@@ -134,6 +135,7 @@ abstract final class AppRouter {
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
   static const String workspacePath = '/workspace';
+  static const String browserCoDrivePath = '/browser-codrive';
 
   /// 电子宠物页：侧边栏底部按钮入口，独立页面压栈。
   static const String buddyPath = '/buddy';
@@ -227,6 +229,12 @@ abstract final class AppRouter {
         path: workspacePath,
         name: 'workspace',
         pageBuilder: (context, state) => _instant(state, const WorkspacePage()),
+      ),
+      GoRoute(
+        path: browserCoDrivePath,
+        name: 'browser-codrive',
+        pageBuilder: (context, state) =>
+            _instant(state, const BrowserCoDrivePage()),
       ),
       GoRoute(
         path: buddyPath,

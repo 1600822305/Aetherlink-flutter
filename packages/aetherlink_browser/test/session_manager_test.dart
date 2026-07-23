@@ -71,7 +71,7 @@ void main() {
     expect(order, [1, 2, 3]);
   });
 
-  test('单实例共享：多次 run 拿到同一个会话', () async {
+  test('同 id 复用会话，不同 id 建独立会话', () async {
     var created = 0;
     final manager = BrowserSessionManager(
       factory: () {
@@ -79,11 +79,92 @@ void main() {
         return _FakeSession();
       },
     );
-    BrowserSession? a, b;
+    BrowserSession? a, b, c;
     await manager.run((s) async => a = s);
-    await manager.run((s) async => b = s, sessionId: 'other');
+    await manager.run((s) async => b = s); // 缺省 = default
+    await manager.run((s) async => c = s, sessionId: 'other');
     expect(identical(a, b), isTrue);
-    expect(created, 1);
+    expect(identical(a, c), isFalse);
+    expect(created, 2);
+    await manager.closeAll();
+  });
+
+  test('LRU 触底回收：超上限时回收最久未用的 agent 会话', () async {
+    final sessions = <String, _FakeSession>{};
+    String? next;
+    final manager = BrowserSessionManager(
+      factory: () => sessions[next!] = _FakeSession(),
+      maxSessions: 2,
+    );
+    next = 'a';
+    await manager.run((s) async {}, sessionId: 'a');
+    next = 'b';
+    await manager.run((s) async {}, sessionId: 'b');
+    next = 'a';
+    await manager.run((s) async {}, sessionId: 'a'); // a 变为最近使用
+    next = 'c';
+    await manager.run((s) async {}, sessionId: 'c');
+    // 等回收（挂队列异步执行）落地。
+    await Future<void>.delayed(Duration.zero);
+    expect(sessions['b']!.closed, isTrue);
+    expect(sessions['a']!.closed, isFalse);
+    expect(sessions['c']!.closed, isFalse);
+    await manager.closeAll();
+  });
+
+  test('handOff 后工具调用硬停止，takeOver 恢复', () async {
+    final manager = BrowserSessionManager(factory: _FakeSession.new);
+    await manager.run((s) async {});
+    manager.handOff(null, note: '请完成登录', url: 'https://example.com/login');
+    expect(
+      manager.ownershipOf(null),
+      SessionOwnership.delegatedToUser,
+    );
+    expect(
+      () => manager.run((s) async {}),
+      throwsA(
+        isA<BrowserException>()
+            .having((e) => e.kind, 'kind', BrowserErrorKind.userControlled),
+      ),
+    );
+    final info =
+        manager.sessionInfos.singleWhere((i) => i.id == 'default');
+    expect(info.handOffNote, '请完成登录');
+    expect(info.handOffUrl, 'https://example.com/login');
+    manager.takeOver(null);
+    expect(manager.ownershipOf(null), SessionOwnership.agent);
+    await manager.run((s) async {});
+    await manager.closeAll();
+  });
+
+  test('用户控制中的会话不参与空闲释放', () async {
+    _FakeSession? last;
+    final manager = BrowserSessionManager(
+      factory: () => last = _FakeSession(),
+      idleTimeout: const Duration(milliseconds: 50),
+    );
+    await manager.run((s) async {});
+    manager.handOff(null);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(last!.closed, isFalse);
+    await manager.closeAll();
+  });
+
+  test('全部会话在用户控制中且达上限时新建报 sessionLimit', () async {
+    final manager = BrowserSessionManager(
+      factory: _FakeSession.new,
+      maxSessions: 1,
+    );
+    await manager.run((s) async {}, sessionId: 'a');
+    manager.userClaim('a');
+    expect(
+      () => manager.run((s) async {}, sessionId: 'b'),
+      throwsA(
+        isA<BrowserException>()
+            .having((e) => e.kind, 'kind', BrowserErrorKind.sessionLimit),
+      ),
+    );
+    await manager.closeAll();
   });
 
   test('空闲超时释放，下次调用重建', () async {
