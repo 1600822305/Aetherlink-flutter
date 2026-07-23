@@ -6,12 +6,12 @@ import 'package:aetherlink_browser/aetherlink_browser.dart';
 
 void main() {
   UrlPolicy policyResolving(Map<String, String> hosts) => UrlPolicy(
-        resolver: (host) async {
-          final ip = hosts[host];
-          if (ip == null) throw const SocketException('no address');
-          return [InternetAddress(ip)];
-        },
-      );
+    resolver: (host) async {
+      final ip = hosts[host];
+      if (ip == null) throw const SocketException('no address');
+      return [InternetAddress(ip)];
+    },
+  );
 
   group('协议白名单', () {
     final policy = policyResolving({'example.com': '93.184.216.34'});
@@ -34,8 +34,11 @@ void main() {
         await expectLater(
           policy.validate(url),
           throwsA(
-            isA<BrowserException>()
-                .having((e) => e.kind, 'kind', BrowserErrorKind.blockedUrl),
+            isA<BrowserException>().having(
+              (e) => e.kind,
+              'kind',
+              BrowserErrorKind.blockedUrl,
+            ),
           ),
           reason: url,
         );
@@ -76,8 +79,11 @@ void main() {
         await expectLater(
           policy.validate('https://evil.com/steal'),
           throwsA(
-            isA<BrowserException>()
-                .having((e) => e.kind, 'kind', BrowserErrorKind.blockedUrl),
+            isA<BrowserException>().having(
+              (e) => e.kind,
+              'kind',
+              BrowserErrorKind.blockedUrl,
+            ),
           ),
           reason: ip,
         );
@@ -113,8 +119,11 @@ void main() {
       await expectLater(
         policy.validate('https://nonexistent.example'),
         throwsA(
-          isA<BrowserException>()
-              .having((e) => e.kind, 'kind', BrowserErrorKind.network),
+          isA<BrowserException>().having(
+            (e) => e.kind,
+            'kind',
+            BrowserErrorKind.network,
+          ),
         ),
       );
     });
@@ -130,6 +139,52 @@ void main() {
         policy.validate('https://rebind.example'),
         throwsA(isA<BrowserException>()),
       );
+    });
+  });
+
+  group('DNS 结果短 TTL 缓存（收窄 rebinding 窗口）', () {
+    test('TTL 内重复校验同一 host 不重新解析', () async {
+      var lookups = 0;
+      final policy = UrlPolicy(
+        resolver: (_) async {
+          lookups++;
+          return [InternetAddress('93.184.216.34')];
+        },
+      );
+      await policy.validate('https://a.com/1');
+      await policy.validate('https://a.com/2');
+      await policy.validate('https://a.com/3');
+      expect(lookups, 1);
+    });
+
+    test('TTL 过期后重新解析', () async {
+      var lookups = 0;
+      final policy = UrlPolicy(
+        dnsCacheTtl: Duration.zero,
+        resolver: (_) async {
+          lookups++;
+          return [InternetAddress('93.184.216.34')];
+        },
+      );
+      await policy.validate('https://a.com/1');
+      await policy.validate('https://a.com/2');
+      expect(lookups, 2);
+    });
+
+    test('TTL 内 rebinding 到内网的第二次解析不生效（仍用缓存结果放行决策）', () async {
+      var lookups = 0;
+      final policy = UrlPolicy(
+        resolver: (_) async {
+          lookups++;
+          return [
+            InternetAddress(lookups == 1 ? '93.184.216.34' : '192.168.0.10'),
+          ];
+        },
+      );
+      await policy.validate('https://rebind.example/');
+      // 逐跳复检复用缓存，不给恶意 DNS 第二次机会。
+      await policy.validate('https://rebind.example/next');
+      expect(lookups, 1);
     });
   });
 

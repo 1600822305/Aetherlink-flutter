@@ -69,13 +69,17 @@ abstract class BrowserSession {
   Future<void> close();
 
   bool get disposed;
+
+  /// 是否已被共驾页可见挂载（用户可能正在看）：会话管理器据此
+  /// 跳过空闲释放与 LRU 回收，避免把用户眼前的页面销毁。
+  bool get visibleAttached;
 }
 
 /// HeadlessInAppWebView 实现。生命周期由 SessionManager 管理，
 /// 不要直接长期持有。
 class HeadlessBrowserSession implements BrowserSession {
   HeadlessBrowserSession({UrlPolicy? urlPolicy, PageLoadPoller? poller})
-    : _urlPolicy = urlPolicy ?? const UrlPolicy(),
+    : _urlPolicy = urlPolicy ?? UrlPolicy(),
       _poller = poller ?? const PageLoadPoller();
 
   final UrlPolicy _urlPolicy;
@@ -85,6 +89,7 @@ class HeadlessBrowserSession implements BrowserSession {
   InAppWebViewController? _controller;
   InAppWebViewKeepAlive? _keepAlive;
   bool _visibleAttached = false;
+  int _runGeneration = 0;
   Completer<void>? _loadStart;
   Completer<void>? _loadStop;
   BrowserException? _blockedNavigation;
@@ -102,6 +107,7 @@ class HeadlessBrowserSession implements BrowserSession {
   InAppWebViewKeepAlive get keepAlive => _keepAlive ??= InAppWebViewKeepAlive();
 
   /// 是否已被可见 InAppWebView 接管渲染。
+  @override
   bool get visibleAttached => _visibleAttached;
 
   /// 可见 InAppWebView 创建完成：接管同一个原生 WebView 的控制器。
@@ -330,6 +336,17 @@ class HeadlessBrowserSession implements BrowserSession {
           '${_actionWait.inSeconds}s）；页面可能仍在加载或需先展开/滚动',
           transient: true,
         );
+      case 'notfillable-select':
+        return BrowserException(
+          BrowserErrorKind.elementNotFound,
+          '目标 「$target」是下拉框（select），请改用 browser_select 选择选项',
+        );
+      case 'notfillable':
+        return BrowserException(
+          BrowserErrorKind.elementNotFound,
+          '目标 「$target」不是可填写控件（input/textarea/contenteditable）；'
+          '可用 browser_snapshot_dom 确认控件角色后换定位',
+        );
       default:
         return BrowserException(BrowserErrorKind.internal, '交互动作失败：$status');
     }
@@ -350,8 +367,14 @@ class HeadlessBrowserSession implements BrowserSession {
       Future<void>.delayed(_navigationGrace).then((_) => false),
     ]);
     if (!started) {
+      // 忽略 fragment：锥点变化不重建 DOM，不应让旧 @N 被误判失效
+      //（hash 路由 SPA 若真换了内容，交互时会报 stale 引导重新快照）。
       final url = (await controller.getUrl())?.toString();
-      if (url != null && url.isNotEmpty && url != preUrl) started = true;
+      if (url != null &&
+          url.isNotEmpty &&
+          _stripFragment(url) != _stripFragment(preUrl ?? '')) {
+        started = true;
+      }
     }
     if (started) {
       final blocked = _blockedNavigation;
@@ -389,6 +412,10 @@ class HeadlessBrowserSession implements BrowserSession {
     _ensureAlive();
     final controller = _ensureNavigated();
     await _evaluate(await _loadRunHelpersJs());
+    // 协作式取消代数：helper 工厂捕获当前代数，超时/新脚本递增后
+    // 残留脚本在下一个检查点自行终止。
+    _runGeneration++;
+    await _evaluate('window.__aetherRunGen = $_runGeneration;');
     // 供 aether.snapshot() 页内重建 @N ref（与顶层 snapshotDom 同一套逻辑）。
     final snapshotSrc = await _loadDomSnapshotJs();
     await _evaluate(
@@ -406,10 +433,18 @@ $script
           .callAsyncJavaScript(functionBody: body)
           .timeout(timeout ?? _runScriptTimeout);
     } on TimeoutException {
+      // 递增代数取消残留脚本（页内无法强杀，协作式自杀），
+      // 避免其后续动作与下一个工具调用交错。
+      _runGeneration++;
+      try {
+        await _evaluate('window.__aetherRunGen = $_runGeneration;');
+      } on BrowserException {
+        // 页面挂死/导航时取消信号发不进去也不阻塞报错。
+      }
       throw BrowserException(
         BrowserErrorKind.scriptTimeout,
         '脚本执行超时（${(timeout ?? _runScriptTimeout).inSeconds}s）；'
-        '可拆分脚本或改用单步工具',
+        '残留脚本已取消，可拆分脚本或改用单步工具',
         transient: true,
       );
     }
@@ -631,6 +666,11 @@ $script
       _domSnapshotJs ??= await rootBundle.loadString(
         'packages/aetherlink_browser/assets/js/dom_snapshot.js',
       );
+
+  static String _stripFragment(String url) {
+    final i = url.indexOf('#');
+    return i < 0 ? url : url.substring(0, i);
+  }
 
   static String _jsString(String value) =>
       "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll('\n', r'\n').replaceAll('\r', r'\r')}'";

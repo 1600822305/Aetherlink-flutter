@@ -1,5 +1,30 @@
 import '../models/browser_exception.dart';
 
+/// 可访问名称计算的页内回退实现（对齐 accname 顺序：aria-labelledby →
+/// aria-label → label → alt → 内容文本 → placeholder → title → value/name）。
+/// 快照运行后优先复用 `window.__aetherNameOf`（dom_snapshot.js 暴露的
+/// 同一份实现），保证快照展示名 ≡ role: 定位名；未快照时用本回退。
+/// run_helpers.js 中有一份语义相同的副本，单测锁两侧同步。
+const String kAccessibleNameFallbackJs = '''
+(el) => {
+  const t = (s) => (s == null ? '' : String(s).replace(/\\s+/g, ' ').trim());
+  const ids = el.getAttribute('aria-labelledby');
+  if (ids) {
+    const byIds = t(ids.split(/\\s+/).map((id) => {
+      const n = document.getElementById(id);
+      return n ? n.textContent || '' : '';
+    }).join(' '));
+    if (byIds) return byIds;
+  }
+  return t(el.getAttribute('aria-label')) ||
+      t(el.labels && el.labels.length ? el.labels[0].textContent : '') ||
+      t(el.getAttribute('alt')) || t(el.textContent) ||
+      t(el.getAttribute('placeholder')) || t(el.getAttribute('title')) ||
+      (el.tagName && el.tagName.toLowerCase() === 'input'
+          ? t(el.getAttribute('value')) || t(el.getAttribute('name'))
+          : '');
+}''';
+
 /// 元素定位方式（浏览器升级设计 §2.1 M4a，借鉴 ego-lite element-resolver）。
 enum ElementTargetKind {
   /// `@N`——语义快照产出的编号，映射存在页面侧 `window.__aetherRefs`。
@@ -93,13 +118,9 @@ class ElementTarget {
     return r.width > 0 && r.height > 0;
   });
   if (name === null) return visible[0] ?? null;
-  // 与快照 nameOf 一致：label 关联优先于 placeholder/title，
+  // 优先用快照暴露的同一份名称计算，未快照时用同语义回退：
   // 保证 snapshot 展示的 role+name 可直接用于 role:角色:名称。
-  const nameOf = (el) => (el.getAttribute('aria-label') ||
-      (el.labels && el.labels.length ? el.labels[0].textContent : '') ||
-      el.textContent || el.getAttribute('placeholder') ||
-      el.getAttribute('title') || el.getAttribute('alt') || el.value ||
-      '').replace(/\\s+/g, ' ').trim();
+  const nameOf = window.__aetherNameOf || ($kAccessibleNameFallbackJs);
   return visible.find((el) => nameOf(el) === name) ||
       visible.find((el) => nameOf(el).includes(name)) || null;
 })()''';
@@ -119,6 +140,7 @@ class ElementTarget {
   }
 }
 
-/// Dart 字符串 → JS 单引号字符串字面量（转义反斜杠/引号/换行）。
+/// Dart 字符串 → JS 单引号字符串字面量（转义反斜杠/引号/换行，
+/// 含 JS 字面量中同样非法的 U+2028/U+2029 行分隔符）。
 String jsStringLiteral(String value) =>
-    "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll('\n', r'\n').replaceAll('\r', r'\r')}'";
+    "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll('\n', r'\n').replaceAll('\r', r'\r').replaceAll('\u2028', r'\u2028').replaceAll('\u2029', r'\u2029')}'";

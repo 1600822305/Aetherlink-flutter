@@ -8,6 +8,8 @@ import '../snapshot/element_target.dart';
 /// - `stale`     —— @N ref 已失效（页面导航/快照重建，permanent）；
 /// - `invisible` —— 元素存在但不可见（transient，可等待重试）；
 /// - `disabled`  —— 元素存在但被禁用（transient）；
+/// - `notfillable-select` / `notfillable` —— fill 的目标不是可填写控件
+///   （permanent：下拉框改用 browser_select，其余换定位）；
 /// - 其他        —— 动作抛出的异常消息。
 
 /// ref 目标专用：区分 `notfound`（从未有映射）与 `stale`（映射被重建）。
@@ -37,7 +39,8 @@ String _checkUsableJs() => '''
       el.scrollIntoView({ block: 'center', inline: 'center' });
 ''';
 
-String _wrap(ElementTarget target, String actionJs) => '''
+String _wrap(ElementTarget target, String actionJs) =>
+    '''
 (() => {
   try {
 ${_resolveWithStatusJs(target)}
@@ -65,6 +68,11 @@ String buildFillJs(ElementTarget target, String text, {bool submit = false}) =>
       el.textContent = value;
       el.dispatchEvent(new InputEvent('input', { bubbles: true }));
     } else {
+      if (el instanceof HTMLSelectElement) return 'notfillable-select';
+      if (!(el instanceof HTMLInputElement ||
+          el instanceof HTMLTextAreaElement)) {
+        return 'notfillable';
+      }
       el.focus();
       const proto = el instanceof HTMLTextAreaElement
           ? HTMLTextAreaElement.prototype
@@ -77,12 +85,17 @@ String buildFillJs(ElementTarget target, String text, {bool submit = false}) =>
     ${submit ? _submitJs() : ''}
 ''');
 
+/// Enter 提交：页面自己处理了 Enter（keydown 被 preventDefault，
+/// dispatchEvent 返回 false）则不再兜底 requestSubmit，避免重复提交。
 String _submitJs() => '''
-    const keyInit = { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true };
-    el.dispatchEvent(new KeyboardEvent('keydown', keyInit));
+    const keyInit = {
+      key: 'Enter', code: 'Enter', keyCode: 13,
+      bubbles: true, cancelable: true,
+    };
+    const proceed = el.dispatchEvent(new KeyboardEvent('keydown', keyInit));
     el.dispatchEvent(new KeyboardEvent('keypress', keyInit));
     el.dispatchEvent(new KeyboardEvent('keyup', keyInit));
-    if (el.form && typeof el.form.requestSubmit === 'function') {
+    if (proceed && el.form && typeof el.form.requestSubmit === 'function') {
       setTimeout(() => {
         if (el.isConnected) el.form.requestSubmit();
       }, 100);
@@ -107,7 +120,8 @@ String buildSelectOptionJs(ElementTarget target, String value) =>
 ''');
 
 /// waitFor 的单次探测 JS：selector 存在且可见 → true。
-String buildSelectorProbeJs(ElementTarget target) => '''
+String buildSelectorProbeJs(ElementTarget target) =>
+    '''
 (() => {
   try {
     const el = ${target.toResolveJs()};

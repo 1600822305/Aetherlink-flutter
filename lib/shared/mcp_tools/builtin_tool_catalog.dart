@@ -369,7 +369,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
         'required': ['url'],
@@ -384,10 +385,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'selector': {
-            'type': 'string',
-            'description': '可选 CSS 选择器，只提取该元素的文本',
-          },
+          'selector': {'type': 'string', 'description': '可选 CSS 选择器，只提取该元素的文本'},
           'max_length': {
             'type': 'integer',
             'description': '返回内容的最大字符数（默认 5000）',
@@ -400,7 +398,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -417,7 +416,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -438,7 +438,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
         'required': ['target'],
@@ -458,10 +459,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'string',
             'description': '元素定位：@N / role:角色:名称 / CSS 选择器',
           },
-          'text': {
-            'type': 'string',
-            'description': '要填入的文本（覆盖原值）',
-          },
+          'text': {'type': 'string', 'description': '要填入的文本（覆盖原值）'},
           'submit': {
             'type': 'boolean',
             'description': '填完后是否按回车提交（默认 false）',
@@ -469,10 +467,37 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
         'required': ['target', 'text'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'browser_select',
+      description:
+          '在内置浏览器当前页面的下拉框（select）中选择选项：优先按 option 的 '
+          'value 精确匹配，其次按可见文本精确/包含匹配。target 定位方式同 '
+          'browser_click。返回是否触发导航及当前页面状态。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'target': {
+            'type': 'string',
+            'description': '元素定位：@N / role:角色:名称 / CSS 选择器（须是 select）',
+          },
+          'value': {
+            'type': 'string',
+            'description': '要选择的选项（option 的 value 或可见文本）',
+          },
+          'session': {
+            'type': 'string',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+          },
+        },
+        'required': ['target', 'value'],
       },
     ),
     McpToolDefinition(
@@ -489,14 +514,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'string',
             'description': '等待该元素出现且可见（@N / role:角色:名称 / CSS）',
           },
-          'url_contains': {
-            'type': 'string',
-            'description': '等待当前 URL 包含该子串',
-          },
-          'js_predicate': {
-            'type': 'string',
-            'description': '等待该 JS 表达式求值为真',
-          },
+          'url_contains': {'type': 'string', 'description': '等待当前 URL 包含该子串'},
+          'js_predicate': {'type': 'string', 'description': '等待该 JS 表达式求值为真'},
           'timeout_seconds': {
             'type': 'integer',
             'description': '等待超时秒数（默认 10，范围 1-60）',
@@ -504,7 +523,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -541,7 +561,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
         'required': ['script'],
@@ -558,13 +579,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'note': {
-            'type': 'string',
-            'description': '留给用户的说明（要做什么，如"请完成登录"）',
-          },
+          'note': {'type': 'string', 'description': '留给用户的说明（要做什么，如"请完成登录"）'},
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -580,7 +599,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -607,7 +627,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'session': {
             'type': 'string',
-            'description': '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
+            'description':
+                '可选会话标识：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 default',
           },
         },
       },
@@ -625,7 +646,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'q': {'type': 'string', 'description': '搜索关键词'},
           'scope': {
             'type': 'string',
-            'enum': ['webpage', 'document', 'scholar', 'image', 'video', 'podcast'],
+            'enum': [
+              'webpage',
+              'document',
+              'scholar',
+              'image',
+              'video',
+              'podcast',
+            ],
             'description': '搜索范围（默认 webpage）',
             'default': 'webpage',
           },
@@ -634,11 +662,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'description': '返回结果数量（1-50，默认 10）',
             'default': 10,
           },
-          'page': {
-            'type': 'integer',
-            'description': '页码（默认 1）',
-            'default': 1,
-          },
+          'page': {'type': 'integer', 'description': '页码（默认 1）', 'default': 1},
           'includeSummary': {
             'type': 'boolean',
             'description': '是否返回 AI 摘要（默认 false）',
@@ -664,11 +688,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'url': {
-            'type': 'string',
-            'format': 'uri',
-            'description': '目标网页 URL',
-          },
+          'url': {'type': 'string', 'format': 'uri', 'description': '目标网页 URL'},
           'format': {
             'type': 'string',
             'enum': ['markdown', 'text'],
@@ -738,7 +758,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'sources': {
             'type': 'array',
-            'items': {'type': 'string', 'enum': ['web', 'x', 'news']},
+            'items': {
+              'type': 'string',
+              'enum': ['web', 'x', 'news'],
+            },
             'description': '搜索数据源列表，默认 web+x',
           },
         },
@@ -897,7 +920,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
   '@aether/file-editor': [
     McpToolDefinition(
       name: 'list_files',
-      description: '列出目录内容。两种寻址方式二选一：传 workspace（可配 sub_path）从工作区入口列出；'
+      description:
+          '列出目录内容。两种寻址方式二选一：传 workspace（可配 sub_path）从工作区入口列出；'
           '或传 path（已知目录的不透明句柄，来自之前的列表结果）。支持浅层或递归。',
       inputSchema: {
         'type': 'object',
@@ -908,7 +932,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'sub_path': {
             'type': 'string',
-            'description': '配合 workspace 使用的子目录相对路径（可选，默认根目录）。例如 "src/components"',
+            'description':
+                '配合 workspace 使用的子目录相对路径（可选，默认根目录）。例如 "src/components"',
           },
           'path': {
             'type': 'string',
@@ -924,13 +949,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'pattern': {
             'type': 'string',
-            'description': '文件名 glob 过滤（可选，支持 * 和 ?），如 "*.dart"。'
+            'description':
+                '文件名 glob 过滤（可选，支持 * 和 ?），如 "*.dart"。'
                 '设置后只返回名称匹配的文件（目录不进结果，递归时仍会下探）',
           },
           'sort': {
             'type': 'string',
             'enum': ['name', 'mtime'],
-            'description': '排序方式（可选，默认 name：目录在前按名称）。mtime 为最近修改在前，'
+            'description':
+                '排序方式（可选，默认 name：目录在前按名称）。mtime 为最近修改在前，'
                 '适合找「最近在改的文件」',
           },
         },
@@ -938,7 +965,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'read_file',
-      description: '读取文件内容。支持单文件(path)或批量(files 数组)读取。大文件建议指定行范围（1-based，含端点）：'
+      description:
+          '读取文件内容。支持单文件(path)或批量(files 数组)读取。大文件建议指定行范围（1-based，含端点）：'
           'start_line/end_line 可单独使用——只给 start_line 表示读到文件末尾，只给 end_line 表示从第 1 行开始。'
           '超长行会被截断、超大文件会拒绝整读并提示改用行范围分段读取；'
           '同一文件同一范围的重复读取，若文件未变化会返回 unchanged=true 存根（内容以早前结果为准）；'
@@ -948,15 +976,27 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '单个文件路径（与 files 二选一）；相对路径按工作区根目录解析'},
+          'path': {
+            'type': 'string',
+            'description': '单个文件路径（与 files 二选一）；相对路径按工作区根目录解析',
+          },
           'files': {
             'type': 'array',
             'items': {
               'type': 'object',
               'properties': {
-                'path': {'type': 'string', 'description': '文件路径（相对路径按工作区根目录解析）'},
-                'start_line': {'type': 'number', 'description': '起始行号 (1-based)'},
-                'end_line': {'type': 'number', 'description': '结束行号 (1-based, 包含)'},
+                'path': {
+                  'type': 'string',
+                  'description': '文件路径（相对路径按工作区根目录解析）',
+                },
+                'start_line': {
+                  'type': 'number',
+                  'description': '起始行号 (1-based)',
+                },
+                'end_line': {
+                  'type': 'number',
+                  'description': '结束行号 (1-based, 包含)',
+                },
               },
             },
             'description': '批量读取的文件列表（与 path 二选一）',
@@ -989,7 +1029,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'search_files',
-      description: '在目录中搜索文件。支持按文件名或内容搜索，可选正则、glob 路径过滤、大小写开关。'
+      description:
+          '在目录中搜索文件。支持按文件名或内容搜索，可选正则、glob 路径过滤、大小写开关。'
           '结果按修改时间降序（最近改过的在前）。'
           '内容搜索（content/both）默认返回每个命中文件的 matches：命中行的行号与内容'
           '（每文件默认最多 5 条，可用 max_matches_per_file 调大，命中被截断时带'
@@ -999,8 +1040,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'directory': {'type': 'string', 'description': '搜索的目录路径（相对路径按工作区根目录解析）'},
-          'query': {'type': 'string', 'description': '搜索关键词，或正则表达式（当 use_regex=true）'},
+          'directory': {
+            'type': 'string',
+            'description': '搜索的目录路径（相对路径按工作区根目录解析）',
+          },
+          'query': {
+            'type': 'string',
+            'description': '搜索关键词，或正则表达式（当 use_regex=true）',
+          },
           'search_type': {
             'type': 'string',
             'enum': ['name', 'content', 'both'],
@@ -1013,7 +1060,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'glob': {
             'type': 'string',
-            'description': 'glob 路径过滤，如 "*.dart" 或 "src/**/*.ts"'
+            'description':
+                'glob 路径过滤，如 "*.dart" 或 "src/**/*.ts"'
                 '（* 不跨目录、** 跨目录、? 单字符；含 / 时按相对路径匹配，否则按文件名）',
           },
           'use_regex': {
@@ -1031,7 +1079,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'output_mode': {
             'type': 'string',
             'enum': ['content', 'files_with_matches', 'count'],
-            'description': '输出模式：content(命中行，默认), files_with_matches(仅文件列表), count(每文件命中行数)',
+            'description':
+                '输出模式：content(命中行，默认), files_with_matches(仅文件列表), count(每文件命中行数)',
           },
           'max_results': {
             'type': 'number',
@@ -1039,12 +1088,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'max_matches_per_file': {
             'type': 'number',
-            'description': '每文件最多返回多少条命中行（1-100，默认 5）。'
+            'description':
+                '每文件最多返回多少条命中行（1-100，默认 5）。'
                 '命中密集时调大以免漏结果',
           },
           'offset': {
             'type': 'number',
-            'description': '跳过前 N 个命中文件（翻页用，默认 0）。'
+            'description':
+                '跳过前 N 个命中文件（翻页用，默认 0）。'
                 '搭配上次返回的 nextOffset 使用',
           },
         },
@@ -1053,7 +1104,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'get_diagnostics',
-      description: '运行项目静态分析并回读诊断（错误/告警清单）。按项目根目录自动选择只读分析命令：'
+      description:
+          '运行项目静态分析并回读诊断（错误/告警清单）。按项目根目录自动选择只读分析命令：'
           'pubspec.yaml→dart analyze、tsconfig.json→npx tsc --noEmit、'
           'go.mod→go vet ./...、Cargo.toml→cargo check。'
           '改完代码后调用以自检，避免把编译错误留给用户。'
@@ -1088,13 +1140,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'path': {
             'type': 'string',
-            'description': '目标文件路径（存在则覆盖，不存在则自动创建，含缺失父目录）。'
+            'description':
+                '目标文件路径（存在则覆盖，不存在则自动创建，含缺失父目录）。'
                 '相对路径以工作区根目录为起点（勿再重复根目录名）；'
                 '支持 ~/ 前缀（按后端用户 home 展开，适用于工作区外如 ~/.bashrc）和绝对路径',
           },
           'parent_path': {
             'type': 'string',
-            'description': '新建文件（旧用法，与 path 二选一）：父目录路径。'
+            'description':
+                '新建文件（旧用法，与 path 二选一）：父目录路径。'
                 '相对路径以工作区根为起点、支持 ~/ 前缀，缺失目录自动创建；'
                 '也可传 list_files 返回的句柄（此时父目录必须已存在）',
           },
@@ -1129,12 +1183,16 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'move',
-      description: '移动/重命名文件或目录：只传 new_name 为原地改名；传 destination_path 移动到目标父目录下，'
+      description:
+          '移动/重命名文件或目录：只传 new_name 为原地改名；传 destination_path 移动到目标父目录下，'
           '可同时改名。会触发用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '要移动/重命名的文件或目录路径（相对路径按工作区根目录解析）'},
+          'path': {
+            'type': 'string',
+            'description': '要移动/重命名的文件或目录路径（相对路径按工作区根目录解析）',
+          },
           'destination_path': {
             'type': 'string',
             'description': '目标父目录路径（相对路径按工作区根目录解析）。省略则仅原地改名（需传 new_name）',
@@ -1157,7 +1215,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'source_path': {'type': 'string', 'description': '要复制的文件/目录路径（相对路径按工作区根目录解析）'},
+          'source_path': {
+            'type': 'string',
+            'description': '要复制的文件/目录路径（相对路径按工作区根目录解析）',
+          },
           'destination_path': {
             'type': 'string',
             'description': '目标父目录路径（相对路径按工作区根目录解析）',
@@ -1173,11 +1234,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'delete_file',
-      description: '删除文件或目录。会触发用户确认。删除非空目录需显式传 recursive=true（默认 false，防止误删整棵目录树）。',
+      description:
+          '删除文件或目录。会触发用户确认。删除非空目录需显式传 recursive=true（默认 false，防止误删整棵目录树）。',
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '要删除的文件/目录路径（相对路径按工作区根目录解析）'},
+          'path': {
+            'type': 'string',
+            'description': '要删除的文件/目录路径（相对路径按工作区根目录解析）',
+          },
           'recursive': {
             'type': 'boolean',
             'description': '删除目录时是否递归删除其内容，默认 false。删除非空目录必须为 true',
@@ -1188,7 +1253,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'edit',
-      description: '在文件中精确查找并替换文本（增量修改首选），支持字面量或正则。会触发用户确认。'
+      description:
+          '在文件中精确查找并替换文本（增量修改首选），支持字面量或正则。会触发用户确认。'
           '编辑前必须先用 read_file 读过目标文件（行范围读也可），未读过会被拒绝。'
           'search 需与文件内容完全一致（含缩进/空白，不含 read_file 的行号前缀；'
           '仅弯引号/行尾空白差异会自动按文件实际文本恢复匹配），'
@@ -1202,7 +1268,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'type': 'object',
         'properties': {
           'path': {'type': 'string', 'description': '目标文件路径（相对路径按工作区根目录解析）'},
-          'search': {'type': 'string', 'description': '要查找的文本或正则表达式（与 edits 二选一）'},
+          'search': {
+            'type': 'string',
+            'description': '要查找的文本或正则表达式（与 edits 二选一）',
+          },
           'replace': {'type': 'string', 'description': '替换后的文本（与 edits 二选一）'},
           'edits': {
             'type': 'array',
@@ -1210,7 +1279,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
               'type': 'object',
               'properties': {
                 'search': {'type': 'string', 'description': '要查找的文本或正则'},
-                'replace': {'type': 'string', 'description': '替换后的文本（需与 search 不同）'},
+                'replace': {
+                  'type': 'string',
+                  'description': '替换后的文本（需与 search 不同）',
+                },
                 'replace_all': {
                   'type': 'boolean',
                   'description': '本条 edit 是否替换所有匹配（省略时沿用顶层 replace_all）',
@@ -1226,7 +1298,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'replace_all': {
             'type': 'boolean',
-            'description': '是否替换所有匹配，默认 false（命中多处会报错）；edits 元素可用自己的 replace_all 覆盖',
+            'description':
+                '是否替换所有匹配，默认 false（命中多处会报错）；edits 元素可用自己的 replace_all 覆盖',
           },
           'case_sensitive': {
             'type': 'boolean',
@@ -1240,8 +1313,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
   '@aether/knowledge': [
     McpToolDefinition(
       name: 'kb_list',
-      description:
-          '列出所有知识库；传入 base_id 时改为列出该库下的条目（文档）。只读操作，无需确认。',
+      description: '列出所有知识库；传入 base_id 时改为列出该库下的条目（文档）。只读操作，无需确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1265,17 +1337,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'string',
             'description': '限定检索的知识库 ID（可选）。省略时检索所有知识库。',
           },
-          'top_k': {
-            'type': 'number',
-            'description': '返回的最大片段数（可选，默认 5）。',
-          },
+          'top_k': {'type': 'number', 'description': '返回的最大片段数（可选，默认 5）。'},
         },
         'required': ['query'],
       },
     ),
     McpToolDefinition(
       name: 'kb_read',
-      description: '按 base_id + document_id（来自 kb_search 结果的 documentId）读取某个条目的完整正文。只读。',
+      description:
+          '按 base_id + document_id（来自 kb_search 结果的 documentId）读取某个条目的完整正文。只读。',
       inputSchema: {
         'type': 'object',
         'properties': {
