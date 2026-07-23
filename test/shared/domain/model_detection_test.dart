@@ -17,9 +17,33 @@ void main() {
       expect(normalizeModelId('deepseek/DeepSeek-V3'), 'deepseek-v3');
       expect(normalizeModelId('siliconflow-qwen2.5-7b'), 'qwen2-5');
       expect(normalizeModelId('gpt-4o:free'), 'gpt-4o');
-      // `mm-` is also an aggregator prefix, so it is stripped before the
-      // minimax expansion can fire (faithful to upstream normalize order).
-      expect(normalizeModelId('mm-m2-1'), 'm2-1');
+      // `mm-` is MiniMax shorthand and expands instead of being stripped as an
+      // aggregator prefix (faithful to upstream normalize order).
+      expect(normalizeModelId('mm-m2-1'), 'minimax-m2-1');
+    });
+
+    test('strips date snapshots, quantization and bedrock ARN decorations', () {
+      expect(normalizeModelId('claude-sonnet-4-5-20250929'), normalizeModelId('claude-sonnet-4-5'));
+      expect(normalizeModelId('gpt-4o-2024-08-06'), 'gpt-4o');
+      expect(normalizeModelId('glm-4-5-fp8'), 'glm-4-5');
+      expect(normalizeModelId('us.anthropic.claude-sonnet-4-5-v1:0'), normalizeModelId('claude-sonnet-4-5'));
+      // sizes/versions are not eaten by the date pattern
+      expect(normalizeModelId('qwen3-235b'), 'qwen3');
+      expect(normalizeModelId('bce-embedding-base_v1'), 'bce-embedding-base-v1');
+    });
+
+    test('colon size/quant tags: realignment and size-preserving key', () {
+      expect(colonVariantTagToHyphen('gpt-oss:20b'), 'gpt-oss-20b');
+      expect(colonVariantTagToHyphen('mixtral:8x7b'), 'mixtral-8x7b');
+      expect(colonVariantTagToHyphen('gemma3:q8_0'), 'gemma3-q8_0');
+      expect(colonVariantTagToHyphen('some-model:free'), 'some-model:free');
+      // default (size-agnostic) key collapses sizes
+      expect(normalizeModelId('gpt-oss-20b'), 'gpt-oss');
+      expect(normalizeModelId('gpt-oss-120b'), 'gpt-oss');
+      // size-preserving key keeps distinct sizes distinct
+      expect(normalizeModelId('gpt-oss:20b', keepParameterSize: true), 'gpt-oss-20b');
+      expect(normalizeModelId('gpt-oss:120b', keepParameterSize: true), 'gpt-oss-120b');
+      expect(normalizeModelId('qwen2.5:7b', keepParameterSize: true), 'qwen2-5-7b');
     });
 
     test('lowerBaseModelName strips provider prefix + :free', () {
@@ -172,6 +196,19 @@ void main() {
       );
       expect(reg.capabilitiesFor('DeepSeek-V3')!.reasoning, isTrue);
       expect(reg.capabilitiesFor('deepseek/deepseek-v3')!.functionCalling, isTrue);
+    });
+
+    test('colon size tag resolves to its own-size row, not a sibling', () {
+      final reg = ModelRegistry.fromJsonString(
+        '{"models":['
+        '{"i":"gpt-oss-120b","c":["function-call"],"in":["text"]},'
+        '{"i":"gpt-oss-20b","c":["reasoning"],"in":["text"]}'
+        ']}',
+      );
+      expect(reg.capabilitiesFor('gpt-oss:20b')!.reasoning, isTrue);
+      expect(reg.capabilitiesFor('gpt-oss:120b')!.functionCalling, isTrue);
+      // no exact-size row → null rather than a wrong-size guess
+      expect(reg.capabilitiesFor('mixtral:8x7b'), isNull);
     });
   });
 
