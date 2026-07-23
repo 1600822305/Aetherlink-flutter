@@ -53,6 +53,8 @@ Future<McpToolResult> runBrowserTool(
         return await _open(sessions, args);
       case 'browser_read':
         return await _read(sessions, args);
+      case 'browser_snapshot_dom':
+        return await _snapshotDom(sessions, args);
       case 'browser_snapshot':
         return await _snapshot(
           sessions,
@@ -142,6 +144,21 @@ Future<McpToolResult> _read(
         ..write('如需继续阅读，请使用 start_index=$endIndex 再次调用。')
         ..writeln('</content_truncated>');
     }
+    return McpToolResult(buf.toString());
+  });
+}
+
+Future<McpToolResult> _snapshotDom(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final sessionId = args['session'] as String?;
+  return sessions.run(sessionId: sessionId, (session) async {
+    final snapshot = await session.snapshotDom();
+    final src = (await session.currentUrl()) ?? '当前页面';
+    final buf = StringBuffer(wrapUntrustedWebContent(src, snapshot))
+      ..writeln()
+      ..write('提示：@N 编号仅在本次快照后有效，页面导航或重新快照后需重新获取。');
     return McpToolResult(buf.toString());
   });
 }
