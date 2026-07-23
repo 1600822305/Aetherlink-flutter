@@ -70,6 +70,21 @@ abstract class BrowserSession {
 
   bool get disposed;
 
+  /// 渲染进程已崩溃/无响应（Android 低内存杀进程等）：会话管理器
+  /// 据此在下次调用前主动重建，而不是等调用以奇怪错误失败。
+  bool get crashed;
+
+  /// 最后一次已知页面 URL（回收前保存，供透明恢复）。
+  String? get lastUrl;
+
+  /// 预约透明恢复：下次需要页面的调用（非 open）自动先打开该
+  /// URL 续命，避免回收后直接报 sessionGone 让调用方自行处理。
+  void scheduleRestore(String url);
+
+  /// 廉价心跳探针：页内 JS 能否在短超时内求值（未打开页面时
+  /// 返回 true 不报错）。管理器对闲置较久的会话用它提前发现挂死。
+  Future<bool> isResponsive();
+
   /// 是否已被共驾页可见挂载（用户可能正在看）：会话管理器据此
   /// 跳过空闲释放与 LRU 回收，避免把用户眼前的页面销毁。
   bool get visibleAttached;
@@ -94,6 +109,10 @@ class HeadlessBrowserSession implements BrowserSession {
   Completer<void>? _loadStop;
   BrowserException? _blockedNavigation;
   bool _disposed = false;
+  bool _crashed = false;
+  String? _lastUrl;
+  String? _pendingRestoreUrl;
+  int _ctxTagCounter = 0;
 
   // ---- 共驾可见挂载（M4d）----
   // 共驾页用 InAppWebView(headlessWebView:) 把同一个原生 WebView 转为
@@ -119,13 +138,15 @@ class HeadlessBrowserSession implements BrowserSession {
   }
 
   /// 可见挂载使用：与 headless 回调同一套导航门控。
-  void notifyLoadStart() {
+  void notifyLoadStart([String? url]) {
+    if (url != null) _lastUrl = url;
     final loadStart = _loadStart;
     if (loadStart != null && !loadStart.isCompleted) loadStart.complete();
   }
 
   /// 可见挂载使用：只认本次导航（onLoadStart 之后）的完成信号。
-  void notifyLoadStop() {
+  void notifyLoadStop([String? url]) {
+    if (url != null) _lastUrl = url;
     if (_loadStart?.isCompleted != true) return;
     final loadStop = _loadStop;
     if (loadStop != null && !loadStop.isCompleted) loadStop.complete();
@@ -157,8 +178,35 @@ class HeadlessBrowserSession implements BrowserSession {
   bool get disposed => _disposed;
 
   @override
+  bool get crashed => _crashed;
+
+  @override
+  String? get lastUrl => _lastUrl;
+
+  @override
+  void scheduleRestore(String url) {
+    _pendingRestoreUrl = url;
+  }
+
+  @override
+  Future<bool> isResponsive() async {
+    if (_crashed) return false;
+    final controller = _controller;
+    if (controller == null) return true; // 尚未建 WebView，无可挂死。
+    try {
+      await controller
+          .evaluateJavascript(source: '1')
+          .timeout(const Duration(seconds: 3));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
   Future<PageLoadResult> open(String url, {Duration? timeout}) async {
     _ensureAlive();
+    _pendingRestoreUrl = null; // 显式 open 优先于透明恢复。
     final uri = await _urlPolicy.validate(url);
     final controller = await _ensureWebView();
     // 新建两个门控再 loadUrl：导航真正开始（onLoadStart）前，旧页/
@@ -191,13 +239,14 @@ class HeadlessBrowserSession implements BrowserSession {
     }
     final title = await controller.getTitle() ?? '';
     final finalUrl = (await controller.getUrl())?.toString() ?? uri.toString();
+    _lastUrl = finalUrl;
     return PageLoadResult(title: title, finalUrl: finalUrl);
   }
 
   @override
   Future<String> readText({String? selector}) async {
     _ensureAlive();
-    _ensureNavigated();
+    await _requirePage();
     if (selector != null) {
       final text = await _evaluate(
         "document.querySelector(${_jsString(selector)})?.innerText ?? ''",
@@ -227,7 +276,7 @@ class HeadlessBrowserSession implements BrowserSession {
   @override
   Future<String> snapshotDom() async {
     _ensureAlive();
-    _ensureNavigated();
+    await _requirePage();
     final js = await _loadDomSnapshotJs();
     final result = await _evaluate(js);
     var text = (result as String?) ?? '';
@@ -281,8 +330,12 @@ class HeadlessBrowserSession implements BrowserSession {
     String Function(ElementTarget) buildJs,
   ) async {
     _ensureAlive();
-    final controller = _ensureNavigated();
+    final controller = await _requirePage();
     final preUrl = (await controller.getUrl())?.toString();
+    // 上下文代标记：整页导航会销毁 JS 上下文把它抹掉，pushState
+    // 类页内路由则保留——据此区分两种「URL 变了」，避免 @N 过度失效。
+    final ctxTag = ++_ctxTagCounter;
+    await _evaluate('window.__aetherCtxTag = $ctxTag;');
     // 新建导航门控再动作：动作可能触发导航（点链接/提交表单）。
     final loadStart = _loadStart = Completer<void>();
     final loadStop = _loadStop = Completer<void>();
@@ -312,6 +365,7 @@ class HeadlessBrowserSession implements BrowserSession {
       loadStop,
       preUrl,
       grace: evalLost ? _evalLostNavigationGrace : _navigationGrace,
+      ctxTag: ctxTag,
     );
     if (evalLost && !result.navigated) {
       throw BrowserException(
@@ -371,6 +425,7 @@ class HeadlessBrowserSession implements BrowserSession {
     Completer<void> loadStop,
     String? preUrl, {
     Duration grace = _navigationGrace,
+    int? ctxTag,
   }) async {
     var started = false;
     final graceDeadline = DateTime.now().add(grace);
@@ -391,6 +446,7 @@ class HeadlessBrowserSession implements BrowserSession {
       if (DateTime.now().isAfter(graceDeadline)) break;
       await Future<void>.delayed(const Duration(milliseconds: 150));
     }
+    var sameDocument = false;
     if (started) {
       final blocked = _blockedNavigation;
       if (blocked != null) throw blocked;
@@ -405,10 +461,22 @@ class HeadlessBrowserSession implements BrowserSession {
       if (!completed) await controller.stopLoading();
       final blockedLate = _blockedNavigation;
       if (blockedLate != null) throw blockedLate;
+      // 上下文代标记幸存 = pushState 类页内路由（JS 上下文未销毁，
+      // 旧 @N 仍有效）；整页导航会把标记抹掉。
+      if (ctxTag != null && !loadStart.isCompleted) {
+        try {
+          sameDocument = (await _evaluate('window.__aetherCtxTag')) == ctxTag;
+        } on BrowserException {
+          sameDocument = false;
+        }
+      }
     }
+    final url = (await controller.getUrl())?.toString() ?? '';
+    if (url.isNotEmpty) _lastUrl = url;
     return InteractResult(
       navigated: started,
-      url: (await controller.getUrl())?.toString() ?? '',
+      sameDocument: sameDocument,
+      url: url,
       title: await controller.getTitle() ?? '',
     );
   }
@@ -425,7 +493,7 @@ class HeadlessBrowserSession implements BrowserSession {
   @override
   Future<String> runScript(String script, {Duration? timeout}) async {
     _ensureAlive();
-    final controller = _ensureNavigated();
+    final controller = await _requirePage();
     await _evaluate(await _loadRunHelpersJs());
     // 协作式取消代数：helper 工厂捕获当前代数，超时/新脚本递增后
     // 残留脚本在下一个检查点自行终止。
@@ -502,7 +570,7 @@ $script
   @override
   Future<bool> waitFor(WaitForCondition condition, {Duration? timeout}) async {
     _ensureAlive();
-    _ensureNavigated();
+    await _requirePage();
     if (condition.isEmpty) {
       throw const BrowserException(
         BrowserErrorKind.elementNotFound,
@@ -555,7 +623,7 @@ $script
     SnapshotOptions options = const SnapshotOptions(),
   }) async {
     _ensureAlive();
-    final controller = _ensureNavigated();
+    final controller = await _requirePage();
     final headless = _headless;
     if (headless == null) {
       // 已转可见挂载：无法调整尺寸，按当前视口截图。
@@ -633,6 +701,9 @@ $script
       initialSize: const Size(1024, 1536),
       initialSettings: InAppWebViewSettings(
         javaScriptCanOpenWindowsAutomatically: false,
+        // headless 不支持真多窗口：开启后 target=_blank 等走
+        // onCreateWindow 降级为当前窗口导航，而不是点了没反应。
+        supportMultipleWindows: true,
         allowFileAccess: false,
         allowFileAccessFromFileURLs: false,
         allowUniversalAccessFromFileURLs: false,
@@ -640,11 +711,44 @@ $script
       onWebViewCreated: (controller) {
         if (!created.isCompleted) created.complete(controller);
       },
-      onLoadStart: (controller, url) => notifyLoadStart(),
-      onLoadStop: (controller, url) => notifyLoadStop(),
+      onLoadStart: (controller, url) => notifyLoadStart(url?.toString()),
+      onLoadStop: (controller, url) => notifyLoadStop(url?.toString()),
       // 重定向/页内导航逐跳复检（设计稿 §15.2 第 3 条）。
       shouldOverrideUrlLoading: (controller, action) =>
           policeNavigation(action),
+      // 新窗口降级：target=_blank / window.open 在当前窗口导航
+      //（同样过 SSRF 复检），不创建新 WebView。
+      onCreateWindow: (controller, action) async {
+        final target = action.request.url;
+        if (target != null &&
+            await policeNavigation(action) == NavigationActionPolicy.ALLOW) {
+          await controller.loadUrl(urlRequest: URLRequest(url: target));
+        }
+        return false;
+      },
+      // JS 对话框自动处理（对齐 Playwright 缺省 dismiss 语义）：
+      // headless 无人可点，不处理会阻塞页面 JS，后续求值全部超时。
+      onJsAlert: (controller, request) async => JsAlertResponse(
+        handledByClient: true,
+        action: JsAlertResponseAction.CONFIRM,
+      ),
+      onJsConfirm: (controller, request) async => JsConfirmResponse(
+        handledByClient: true,
+        action: JsConfirmResponseAction.CANCEL,
+      ),
+      onJsPrompt: (controller, request) async => JsPromptResponse(
+        handledByClient: true,
+        action: JsPromptResponseAction.CANCEL,
+      ),
+      // 渲染进程崩溃/无响应（Android 低内存常见）：标记后会话
+      // 管理器在下次调用前主动重建并透明恢复，不等调用诡异失败。
+      onRenderProcessGone: (controller, detail) {
+        _crashed = true;
+      },
+      onRenderProcessUnresponsive: (controller, url) async {
+        _crashed = true;
+        return WebViewRenderProcessAction.TERMINATE;
+      },
     );
     _headless = headless;
     await headless.run();
@@ -682,6 +786,24 @@ $script
         '浏览器会话已释放，请重新 browser_open',
       );
     }
+    if (_crashed) {
+      throw const BrowserException(
+        BrowserErrorKind.sessionGone,
+        '浏览器渲染进程已崩溃（可能被系统回收），请重新 browser_open',
+        transient: true,
+      );
+    }
+  }
+
+  /// 需要页面的调用入口：若有预约的透明恢复且尚无页面，先重开
+  /// 上次 URL 续命（cookie 全局共享，登录态不丢）再继续。
+  Future<InAppWebViewController> _requirePage() async {
+    final pending = _pendingRestoreUrl;
+    if (_controller == null && pending != null) {
+      _pendingRestoreUrl = null;
+      await open(pending);
+    }
+    return _ensureNavigated();
   }
 
   InAppWebViewController _ensureNavigated() {

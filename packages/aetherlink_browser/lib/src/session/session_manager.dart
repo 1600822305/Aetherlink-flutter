@@ -56,6 +56,7 @@ class BrowserSessionManager extends ChangeNotifier {
     this.idleTimeout = const Duration(minutes: 5),
     this.maxConsecutiveFailures = 2,
     this.maxSessions = 3,
+    this.heartbeatAfter = const Duration(seconds: 60),
   }) : _factory = factory;
 
   final SessionFactory _factory;
@@ -70,6 +71,10 @@ class BrowserSessionManager extends ChangeNotifier {
   /// 同时存活的 WebView 上限（移动端内存敏感）。
   final int maxSessions;
 
+  /// 闲置超过该时长的会话在下次使用前先心跳探活，挂死则重建
+  /// 并透明恢复，避免把死会话交给调用方以超时失败。
+  final Duration heartbeatAfter;
+
   /// 缺省会话 id（工具不带 session 参数时使用）。
   static const String defaultSessionId = 'default';
 
@@ -77,6 +82,12 @@ class BrowserSessionManager extends ChangeNotifier {
   final LinkedHashMap<String, _SessionEntry> _entries =
       LinkedHashMap<String, _SessionEntry>();
   bool _closed = false;
+
+  /// 已回收会话的最后 URL（条目被移除后仍保留，供透明恢复），
+  /// 容量封顶防无限增长。
+  final LinkedHashMap<String, String> _recentUrls =
+      LinkedHashMap<String, String>();
+  static const int _recentUrlsCap = 16;
 
   /// 互斥串行执行 [action]：同一会话的并发调用按提交顺序排队
   /// （子代理并行时也不会互相打断导航）；不同会话互不阻塞。
@@ -108,9 +119,27 @@ class BrowserSessionManager extends ChangeNotifier {
     Future<T> Function(BrowserSession session) action,
   ) async {
     entry.idleTimer?.cancel();
+    // 崩溃/挂死的会话在交给动作前主动重建（而非等调用以诡异
+    // 错误失败）：渲染进程被系统杀掉 / 心跳探针无响应都算。
+    final existing = entry.session;
+    if (existing != null) {
+      var dead = existing.crashed;
+      if (!dead &&
+          entry.lastUsed != null &&
+          DateTime.now().difference(entry.lastUsed!) >= heartbeatAfter) {
+        dead = !await existing.isResponsive();
+      }
+      if (dead) await _disposeEntry(entry);
+    }
     final created = entry.session == null;
     final session = entry.session ??= _factory();
-    if (created) notifyListeners();
+    if (created) {
+      notifyListeners();
+      // 透明恢复：重建的会话预约重开上次页面（惰性，显式 open
+      // 会跳过），cookie 全局共享登录态不丢；@N 需重新快照。
+      final restore = entry.lastUrl ?? _recentUrls[entry.id];
+      if (restore != null) session.scheduleRestore(restore);
+    }
     try {
       final value = await action(session);
       entry.consecutiveFailures = 0;
@@ -127,6 +156,11 @@ class BrowserSessionManager extends ChangeNotifier {
       rethrow;
     } finally {
       entry.pending--;
+      entry.lastUsed = DateTime.now();
+      final liveSession = entry.session;
+      if (liveSession != null) {
+        entry.lastUrl = liveSession.lastUrl ?? entry.lastUrl;
+      }
       if (!_closed &&
           entry.session != null &&
           entry.ownership == SessionOwnership.agent) {
@@ -247,6 +281,17 @@ class BrowserSessionManager extends ChangeNotifier {
     entry.idleTimer = null;
     final session = entry.session;
     entry.session = null;
+    // 回收前保存最后 URL，下次使用时透明恢复（条目被移除也能从
+    // [_recentUrls] 找回）。
+    final lastUrl = session?.lastUrl ?? entry.lastUrl;
+    if (lastUrl != null) {
+      entry.lastUrl = lastUrl;
+      _recentUrls.remove(entry.id);
+      _recentUrls[entry.id] = lastUrl;
+      while (_recentUrls.length > _recentUrlsCap) {
+        _recentUrls.remove(_recentUrls.keys.first);
+      }
+    }
     // 无特殊状态且无排队调用的条目直接移除，避免 _entries 只增不减
     //（共驾页会话列表无限累积）。
     if (!_closed &&
@@ -290,4 +335,10 @@ class _SessionEntry {
   SessionOwnership ownership = SessionOwnership.agent;
   String? handOffNote;
   String? handOffUrl;
+
+  /// 最后一次已知页面 URL（回收后透明恢复用）。
+  String? lastUrl;
+
+  /// 最后一次调用完成时间（心跳探活阈值用）。
+  DateTime? lastUsed;
 }

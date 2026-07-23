@@ -8,6 +8,10 @@ import 'package:aetherlink_browser/aetherlink_browser.dart';
 class _FakeSession implements BrowserSession {
   bool closed = false;
   bool visible = false;
+  bool crashedFlag = false;
+  bool responsive = true;
+  String? _lastUrl;
+  String? restoreScheduled;
 
   @override
   bool get disposed => closed;
@@ -16,8 +20,22 @@ class _FakeSession implements BrowserSession {
   bool get visibleAttached => visible;
 
   @override
-  Future<PageLoadResult> open(String url, {Duration? timeout}) async =>
-      PageLoadResult(title: 't', finalUrl: url);
+  bool get crashed => crashedFlag;
+
+  @override
+  String? get lastUrl => _lastUrl;
+
+  @override
+  void scheduleRestore(String url) => restoreScheduled = url;
+
+  @override
+  Future<bool> isResponsive() async => responsive;
+
+  @override
+  Future<PageLoadResult> open(String url, {Duration? timeout}) async {
+    _lastUrl = url;
+    return PageLoadResult(title: 't', finalUrl: url);
+  }
 
   @override
   Future<String> readText({String? selector}) async => 'text';
@@ -322,6 +340,84 @@ void main() {
           .catchError((_) {});
     }
     expect(created, 1);
+    await manager.closeAll();
+  });
+
+  test('空闲回收后重建的会话预约透明恢复上次 URL', () async {
+    final all = <_FakeSession>[];
+    final manager = BrowserSessionManager(
+      factory: () {
+        final s = _FakeSession();
+        all.add(s);
+        return s;
+      },
+      idleTimeout: const Duration(milliseconds: 50),
+    );
+    await manager.run((s) => s.open('https://example.com/a'));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(all.single.closed, isTrue);
+    await manager.run((s) async {});
+    expect(all, hasLength(2));
+    expect(all[1].restoreScheduled, 'https://example.com/a');
+    await manager.closeAll();
+  });
+
+  test('崩溃的会话在下次调用前主动重建并透明恢复', () async {
+    final all = <_FakeSession>[];
+    final manager = BrowserSessionManager(
+      factory: () {
+        final s = _FakeSession();
+        all.add(s);
+        return s;
+      },
+    );
+    await manager.run((s) => s.open('https://example.com/x'));
+    all.single.crashedFlag = true;
+    _FakeSession? used;
+    await manager.run((s) async => used = s as _FakeSession);
+    expect(all, hasLength(2));
+    expect(all.first.closed, isTrue);
+    expect(identical(used, all[1]), isTrue);
+    expect(all[1].restoreScheduled, 'https://example.com/x');
+    await manager.closeAll();
+  });
+
+  test('闲置超过心跳阈值且探活失败的会话重建', () async {
+    final all = <_FakeSession>[];
+    final manager = BrowserSessionManager(
+      factory: () {
+        final s = _FakeSession();
+        all.add(s);
+        return s;
+      },
+      idleTimeout: const Duration(seconds: 30),
+      heartbeatAfter: const Duration(milliseconds: 20),
+    );
+    await manager.run((s) => s.open('https://example.com/y'));
+    all.single.responsive = false;
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    await manager.run((s) async {});
+    expect(all, hasLength(2));
+    expect(all.first.closed, isTrue);
+    expect(all[1].restoreScheduled, 'https://example.com/y');
+    await manager.closeAll();
+  });
+
+  test('心跳阈值内的会话不做探活', () async {
+    final all = <_FakeSession>[];
+    final manager = BrowserSessionManager(
+      factory: () {
+        final s = _FakeSession();
+        all.add(s);
+        return s;
+      },
+      heartbeatAfter: const Duration(seconds: 30),
+    );
+    await manager.run((s) => s.open('https://example.com/z'));
+    all.single.responsive = false; // 阈值内不该被探测到。
+    await manager.run((s) async {});
+    expect(all, hasLength(1));
+    expect(all.single.closed, isFalse);
     await manager.closeAll();
   });
 

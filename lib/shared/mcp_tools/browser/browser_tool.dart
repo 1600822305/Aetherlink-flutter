@@ -253,13 +253,24 @@ Future<McpToolResult> _snapshotDom(
 String _interactResultText(String action, InteractResult result) {
   final buf = StringBuffer()
     ..writeln('$action。')
-    ..writeln(result.navigated ? '页面已导航。' : '页面未导航（页内动作）。')
+    ..writeln(
+      result.sameDocument
+          ? '页内路由变化（URL 变化但页面未重载）。'
+          : result.navigated
+          ? '页面已导航。'
+          : '页面未导航（页内动作）。',
+    )
     ..writeln('当前标题: ${result.title}')
     ..write('当前 URL: ${result.url}');
   if (result.navigated) {
     buf
       ..writeln()
-      ..write('提示：页面已导航，旧 @N 编号已失效，需重新 browser_snapshot_dom。');
+      ..write(
+        result.sameDocument
+            ? '提示：页内路由（pushState 类），旧 @N 编号仍有效；'
+                  '内容若已更新可重新 browser_snapshot_dom。'
+            : '提示：页面已导航，旧 @N 编号已失效，需重新 browser_snapshot_dom。',
+      );
   }
   return buf.toString();
 }
