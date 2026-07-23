@@ -1,6 +1,6 @@
 # 内置浏览器模块 `aetherlink_browser` 设计
 
-> 状态：定稿（初稿 + 网络研究补充）
+> 状态：定稿（初稿 + 网络研究补充）；M0~M3 已落地（见 §8 里程碑状态与 §8.1 实现差异）
 > 对标：Claude Code `WebBrowserTool`
 > 定位：`packages/aetherlink_browser` 本地包 + 主工程 `lib/shared/mcp_tools/` 薄接入层
 > 技术选型：**flutter_inappwebview `HeadlessInAppWebView`**（见 §10 研究结论）
@@ -164,12 +164,26 @@ content（复用现有工具图片返回通道，若无则新增）。
 
 ## 8. 里程碑
 
-- **M0 截图注入**（比原估轻，见 §14）：不改 gateway/adapter；截图存进事件（base64）+ `_replayMessages` 在工具结果后追加一条 user 图片消息，复用现有图片管线。
-- **M1 包骨架**：`aetherlink_browser` 建包 + 会话/管理器 + open/read/snapshot；example 手测。
-- **M2 主工程接入**：browser_tools.dart schema + 路由（归 webSearch 组）+ 审批 + 事件；截图多模态回传。
-- **M3 打磨**：会话回收、超时、正文提取质量、截图压缩、后台策略。
+- **M0 截图注入 已完成（PR #723）**：不改 gateway/adapter；截图**落盘存路径**（事件加 `imagePath`/`imageMimeType`，非初稿设想的 base64 进事件，见 §20.2）+ `_replayMessages` 在工具结果后追加一条 user 图片消息，复用现有图片管线；重放只保留最近 2 张，旧图文本占位。
+- **M1 包骨架 已完成（PR #724、#725）**：`aetherlink_browser` 建包 + UrlPolicy SSRF + 会话/管理器 + open/read/snapshot；未建 example（仓库惯例：saf/terminal 也无），真机手测待后续。
+- **M2 主工程接入 已完成（PR #726、#727）**：`browser_tool.dart` schema + 路由（归 webSearch 组，Ask/Plan 只读保留）+ 与 fetch/搜索同级免审 + 事件；截图经 `McpToolResult.imagePath` 接 M0 通道；open/read 进 microcompact 白名单；删任务/回滚级联清理截图文件。
+- **M3 打磨 已完成（PR #728）**：正文空白归一化、被拦重定向回填 blockedUrl 真实错误、read 边界 src 用真实 URL（包新增 `currentUrl()`）、后台策略（内存吃紧/App 退出释放共享 WebView）。
 - **M4 交互 + 人机共驾（后期，另起）**：click/input/close + 等待导航策略
   + approval gate + 工作台可见浏览 tab + 用户接管（见 §12）。
+
+### 8.1 实现与设计稿的差异（M0~M3 实际落地）
+
+- **目录/命名**：接入层为 `lib/shared/mcp_tools/browser/browser_tool.dart`
+  单文件（非 §3 设想的 browser_tools.dart + 独立 catalog 文件；目录条目并入
+  `builtin_tool_catalog.dart` / `builtin_mcp_servers.dart`）；包内为
+  `src/session/` + `src/security/` + `src/models/` + `src/snapshot/`（见 §18）。
+- **首版包 API**：只有 open/readText/currentUrl/snapshot/close；
+  readDomOutline/click/input/waitForLoad 留 M4，未实现。
+- **与 fetch 的统一（§13 方案 2）未实施**：`@aether/fetch` 保持原样，
+  未改名 `browser_fetch`、未建别名路由；浏览器为独立 `@aether/browser`
+  服务器，两者分工在工具描述里说明。统一家族留待后续再评估。
+- **并发**：浏览器三件套未进并发安全白名单（共享单 WebView，保持串行）。
+- **token 核算（§20.3.4）**：上下文拆解按 ~800 token/张估算图片已落地。
 
 ## 9. 开放问题（研究后结论）
 
