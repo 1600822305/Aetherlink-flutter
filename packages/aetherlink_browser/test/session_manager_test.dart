@@ -13,7 +13,7 @@ class _FakeSession implements BrowserSession {
 
   @override
   Future<PageLoadResult> open(String url, {Duration? timeout}) async =>
-      PageLoadResult(title: 't', finalUrl: url, completed: true);
+      PageLoadResult(title: 't', finalUrl: url);
 
   @override
   Future<String> readText({String? selector}) async => 'text';

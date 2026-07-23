@@ -14,8 +14,9 @@ import 'page_load.dart';
 /// 单页浏览器会话（设计稿 §3/§16）：导航 / 正文提取 / 截图。
 /// 首版只读三件套；click/input 留后期（M4）。
 abstract class BrowserSession {
-  /// 打开 URL 并等待渲染（导航级超时默认 30s，超时不抛异常——
-  /// 页面可能部分可读，completed=false）。
+  /// 打开 URL 并等待渲染。导航级超时默认 30s，超时截停并抛
+  /// [BrowserErrorKind.navigationTimeout]；会话保留，页面可能部分
+  /// 可读，可继续 readText/snapshot 或换 URL。
   Future<PageLoadResult> open(String url, {Duration? timeout});
 
   /// 提取当前页正文：优先 Readability，取不到回退 body.innerText。
@@ -45,6 +46,7 @@ class HeadlessBrowserSession implements BrowserSession {
 
   HeadlessInAppWebView? _headless;
   InAppWebViewController? _controller;
+  Completer<void>? _loadStart;
   Completer<void>? _loadStop;
   bool _disposed = false;
 
@@ -61,6 +63,9 @@ class HeadlessBrowserSession implements BrowserSession {
     _ensureAlive();
     final uri = await _urlPolicy.validate(url);
     final controller = await _ensureWebView();
+    // 新建两个门控再 loadUrl：导航真正开始（onLoadStart）前，旧页/
+    // about:blank 的 readyState='complete' 和抢跑的 onLoadStop 都不作数。
+    final loadStart = _loadStart = Completer<void>();
     final loadStop = _loadStop = Completer<void>();
     await controller.loadUrl(urlRequest: URLRequest(url: WebUri.uri(uri)));
     final poller = timeout == null
@@ -69,20 +74,22 @@ class HeadlessBrowserSession implements BrowserSession {
     final completed = await poller.wait(
       loadStop: loadStop.future,
       probe: () async {
+        if (!loadStart.isCompleted) return false;
         final state = await _evaluate("document.readyState");
         return state == 'complete';
       },
     );
     if (!completed) {
       await controller.stopLoading();
+      throw const BrowserException(
+        BrowserErrorKind.navigationTimeout,
+        '页面加载超时，已截停；会话保留，页面可能部分可读，'
+        '可继续 browser_read/browser_snapshot 或换 URL',
+      );
     }
     final title = await controller.getTitle() ?? '';
     final finalUrl = (await controller.getUrl())?.toString() ?? uri.toString();
-    return PageLoadResult(
-      title: title,
-      finalUrl: finalUrl,
-      completed: completed,
-    );
+    return PageLoadResult(title: title, finalUrl: finalUrl);
   }
 
   @override
@@ -121,19 +128,42 @@ class HeadlessBrowserSession implements BrowserSession {
   }) async {
     _ensureAlive();
     final controller = _ensureNavigated();
-    final bytes = await controller.takeScreenshot(
-      screenshotConfiguration: ScreenshotConfiguration(
-        compressFormat: CompressFormat.JPEG,
-        quality: options.jpegQuality,
-      ),
-    );
-    if (bytes == null) {
-      throw const BrowserException(
-        BrowserErrorKind.internal,
-        '截图失败：WebView 未返回图像数据',
-      );
+    final headless = _headless!;
+    final original = await headless.getSize() ?? const Size(1024, 1536);
+    final width = options.maxWidth.toDouble().clamp(320.0, original.width);
+    var height = original.height * (width / original.width);
+    if (options.fullPage) {
+      final contentHeight = await controller.getContentHeight() ?? 0;
+      if (contentHeight > 0) {
+        // 整页截图高度封顶 6 倍宽，防超长页面生成巨图。
+        height = contentHeight.toDouble().clamp(height, width * 6);
+      }
     }
-    return bytes;
+    final resized = width != original.width || height != original.height;
+    try {
+      if (resized) {
+        await headless.setSize(Size(width, height));
+        // 给页面一点重排时间再截。
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      }
+      final bytes = await controller.takeScreenshot(
+        screenshotConfiguration: ScreenshotConfiguration(
+          compressFormat: CompressFormat.JPEG,
+          quality: options.jpegQuality,
+        ),
+      );
+      if (bytes == null) {
+        throw const BrowserException(
+          BrowserErrorKind.internal,
+          '截图失败：WebView 未返回图像数据',
+        );
+      }
+      return bytes;
+    } finally {
+      if (resized && !_disposed) {
+        await headless.setSize(original);
+      }
+    }
   }
 
   @override
@@ -161,7 +191,15 @@ class HeadlessBrowserSession implements BrowserSession {
       onWebViewCreated: (controller) {
         if (!created.isCompleted) created.complete(controller);
       },
+      onLoadStart: (controller, url) {
+        final loadStart = _loadStart;
+        if (loadStart != null && !loadStart.isCompleted) {
+          loadStart.complete();
+        }
+      },
       onLoadStop: (controller, url) {
+        // 只认本次导航（onLoadStart 之后）的完成信号。
+        if (_loadStart?.isCompleted != true) return;
         final loadStop = _loadStop;
         if (loadStop != null && !loadStop.isCompleted) {
           loadStop.complete();

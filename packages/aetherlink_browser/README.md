@@ -26,9 +26,11 @@ await manager.closeAll(); // App 退出时释放 WebView
   校验实际 IP 不落内网/环回/链路本地/元数据段；重定向逐跳复检挂在
   `shouldOverrideUrlLoading`。间接提示注入的"不可信内容包裹"由主工程
   接入层负责（§15.3）。
-- **超时（§19.2）**：导航 30s（超时截停、页面部分可读）、JS 10s；
-  连续 2 次超时类失败自动 dispose 重建 WebView。
-- **截图（§17.2）**：JPEG 压缩 + 尺寸受 `SnapshotOptions` 控制。
+- **超时（§19.2）**：导航 30s，超时截停并抛 `navigationTimeout`（会话
+  保留，页面部分可读）；JS 10s；连续 2 次超时类失败自动 dispose 重建
+  WebView。
+- **截图（§17.2）**：JPEG 压缩；`maxWidth` 临时缩视口后截图，
+  `fullPage` 按内容高截整页（封顶 6 倍宽）。
 
 ## 依赖方向
 
@@ -45,4 +47,5 @@ await manager.closeAll(); // App 退出时释放 WebView
 flutter test packages/aetherlink_browser
 ```
 
-WebView 真实行为（渲染/截图）需真机验证，将随 M2 主工程接入联调。
+WebView 真实行为（渲染/截图）需真机验证，将随 M2 主工程接入联调
+（对齐 aetherlink_saf/terminal 惯例，包内不建 example 工程）。
