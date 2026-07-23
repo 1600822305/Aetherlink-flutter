@@ -42,7 +42,8 @@ Future<String?> buildWorkspaceContextSection(
     ..writeln('[工作区上下文]')
     ..writeln(
       '当前工作区：「${current.name}」（后端 ${current.backendType.name}，'
-      '根路径 ${current.root}）。文件工具未指定 workspace 参数时即作用于它。',
+      '根路径 ${current.root}）。文件工具未指定 workspace 参数时即作用于它；'
+      '相对路径以该根为起点（勿再重复根目录名），~/ 按后端用户 home 展开。',
     );
 
   try {

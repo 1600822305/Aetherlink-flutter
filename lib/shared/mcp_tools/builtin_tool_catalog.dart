@@ -908,8 +908,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'path': {
             'type': 'string',
-            'description': '目标文件路径（存在则覆盖，不存在则自动创建，含缺失父目录；'
-                '相对路径按工作区根目录解析）',
+            'description': '目标文件路径（存在则覆盖，不存在则自动创建，含缺失父目录）。'
+                '相对路径以工作区根目录为起点（勿再重复根目录名）；'
+                '支持 ~/ 前缀（按后端用户 home 展开，适用于工作区外如 ~/.bashrc）和绝对路径',
           },
           'parent_path': {
             'type': 'string',

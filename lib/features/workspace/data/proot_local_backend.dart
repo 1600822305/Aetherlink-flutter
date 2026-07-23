@@ -94,6 +94,10 @@ class ProotLocalBackend extends WorkspaceBackend {
   @override
   Future<String> echo(String value) async => value;
 
+  /// Guest-side home: the PRoot shell runs as root with HOME=/root.
+  @override
+  Future<String?> homePath() async => '/root';
+
   @override
   Future<bool> verifyAccess(String path) async {
     if (!await _engine.isInstalled()) return false;

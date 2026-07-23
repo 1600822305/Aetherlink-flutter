@@ -207,6 +207,20 @@ class RemoteSshBackend extends WorkspaceBackend {
     return value;
   }
 
+  String? _homePath;
+
+  @override
+  Future<String?> homePath() async {
+    if (_homePath != null) return _homePath;
+    try {
+      final sftp = await _sftpClient();
+      // SFTP sessions start in the user's home; canonicalise '.' to get it.
+      return _homePath = await sftp.absolute('.');
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Future<bool> verifyAccess(String path) async {
     try {

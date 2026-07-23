@@ -284,6 +284,11 @@ abstract class WorkspaceBackend {
   /// hides the destructive actions and backends throw when one is attempted.
   bool isProtectedPath(String path) => false;
 
+  /// The backend user's home directory (posix path), used to expand `~` in
+  /// tool-supplied paths. Null when the backend has no home concept (SAF) or
+  /// it can't be determined.
+  Future<String?> homePath() async => null;
+
   /// Lists the entries in [path]. Throws if [path] is a file or doesn't
   /// exist.
   Future<List<WorkspaceEntry>> listDir(String path);

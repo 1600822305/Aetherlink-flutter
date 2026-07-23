@@ -147,6 +147,10 @@ Future<WriteTarget> resolveWriteTarget(
   Map<String, Object?> args,
   String path,
 ) async {
+  if (isTildePath(path)) {
+    final expanded = await resolveTildePath(ref, args, path);
+    return locatePosixWriteTarget(expanded.backend, expanded.path);
+  }
   if (isAbsoluteOrOpaque(path)) {
     final backend = await backendForPath(ref, path);
     if (path.contains('://')) {

@@ -146,6 +146,48 @@ Future<WorkspaceBackend> resolveWorkspaceById(Ref ref, String id) async {
 bool isAbsoluteOrOpaque(String path) =>
     path.startsWith('/') || path.contains('://');
 
+/// 是否是 `~` / `~/...` 形式的 home 相对路径。
+bool isTildePath(String path) => path == '~' || path.startsWith('~/');
+
+/// 把 `~` / `~/...` 按 [home] 展开为绝对 posix 路径。
+String expandTildeWithHome(String home, String path) =>
+    path == '~' ? home : joinPosixPath(home, path.substring(2));
+
+/// 解析 `~` 路径：取 `workspace` 参数指定（缺省最近打开）工作区后端的
+/// home 目录展开。后端无 home 概念（SAF）时报可行动错误。
+Future<({WorkspaceBackend backend, String path})> resolveTildePath(
+  Ref ref,
+  Map<String, Object?> args,
+  String path,
+) async {
+  final resolved = await _workspaceForArgs(ref, args);
+  final home = await resolved.backend.homePath();
+  if (home == null) {
+    throw const FileEditorError(
+      '当前工作区后端无法解析 ~（home 目录）。'
+      '请改用相对路径（按工作区根解析）或绝对路径。',
+    );
+  }
+  return (backend: resolved.backend, path: expandTildeWithHome(home, path));
+}
+
+/// `workspace` 参数指定的工作区，缺省取最近打开的一个。
+Future<ResolvedWorkspace> _workspaceForArgs(
+  Ref ref,
+  Map<String, Object?> args,
+) async {
+  if (optionalString(args, 'workspace') != null) {
+    return resolveWorkspace(ref, args);
+  }
+  final workspaces = await loadWorkspaces(ref);
+  if (workspaces.isEmpty) {
+    throw const FileEditorError(
+      '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
+    );
+  }
+  return _resolve(ref, workspaces.first);
+}
+
 /// 把相对 [subPath] 逐段规整（去 `.`、消 `..`）后拼到 POSIX [root] 下。
 /// `..` 超出 root 时保留越界语义（返回 root 之外的祖先路径），
 /// 是否放行交给审批层决定，这里不做拒绝。
@@ -168,6 +210,7 @@ String joinPosixPath(String root, String subPath) {
 }
 
 /// 统一路径解析入口（所有 file-editor 工具共用）：
+/// - `~` / `~/...`：按工作区后端的 home 目录展开；
 /// - 绝对路径 / 不透明 URI：原样使用，按最长前缀匹配选后端；
 /// - 相对路径：锚定到 `workspace` 参数指定的工作区（智能体绑定任务会
 ///   自动注入；缺省时取最近打开的工作区）的 root —— POSIX root 直接
@@ -178,21 +221,11 @@ Future<({WorkspaceBackend backend, String path})> resolvePathArg(
   Map<String, Object?> args,
   String path,
 ) async {
+  if (isTildePath(path)) return resolveTildePath(ref, args, path);
   if (isAbsoluteOrOpaque(path)) {
     return (backend: await backendForPath(ref, path), path: path);
   }
-  final ResolvedWorkspace resolved;
-  if (optionalString(args, 'workspace') != null) {
-    resolved = await resolveWorkspace(ref, args);
-  } else {
-    final workspaces = await loadWorkspaces(ref);
-    if (workspaces.isEmpty) {
-      throw const FileEditorError(
-        '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
-      );
-    }
-    resolved = _resolve(ref, workspaces.first);
-  }
+  final resolved = await _workspaceForArgs(ref, args);
   final root = resolved.workspace.root;
   if (!root.contains('://')) {
     return (backend: resolved.backend, path: joinPosixPath(root, path));
@@ -221,6 +254,8 @@ bool fileEditorPathsWithinRoot(
     final value = args[key];
     if (value is! String || value.trim().isEmpty) continue;
     sawPath = true;
+    // `~` 路径展开后通常在工作区外，保守按越界处理。
+    if (isTildePath(value)) return false;
     if (!isAbsoluteOrOpaque(value)) {
       // 相对路径锚定工作区 root 解析；不含 `..` 时必然落在 root 内。
       if (value.split('/').any((s) => s.trim() == '..')) return false;
