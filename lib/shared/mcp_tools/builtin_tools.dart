@@ -1,4 +1,5 @@
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/calculator_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/fetch_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/grok_search_tool.dart';
@@ -31,6 +32,8 @@ Future<McpToolResult?> runBuiltinTool(
       return runSearxngTool(toolName, args, env: env);
     case '@aether/fetch':
       return runFetchTool(toolName, args);
+    case '@aether/browser':
+      return runBrowserTool(toolName, args);
     case '@aether/metaso-search':
       return runMetasoTool(toolName, args, env: env);
     case '@aether/grok-search':

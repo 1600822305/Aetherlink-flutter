@@ -56,6 +56,7 @@ import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
@@ -244,6 +245,8 @@ const Set<String> _kReadOnlyToolNames = {
   'get_diagnostics',
   // 知识库：只读子集（kb_manage 有写操作，排除）
   'kb_list', 'kb_search', 'kb_read',
+  // 内置浏览器：首版只读三件套（浏览器设计稿 §6）
+  'browser_open', 'browser_read', 'browser_snapshot',
 };
 
 /// 档案工具分组 → 模型可见工具定义 + 名称到 [ToolRoute] 的分发表。
@@ -291,6 +294,11 @@ const Set<String> _kReadOnlyToolNames = {
   if (groups.contains(AgentToolGroup.webSearch)) {
     definitions.add(kBuiltinWebSearchToolDefinition);
     routes[kBuiltinWebSearchToolName] = const WebSearchToolRoute();
+    // 内置浏览器只读三件套随网络搜索组暴露（浏览器设计稿 §6 已定）。
+    addServer(
+      kBrowserServerName,
+      (name) => BuiltinToolRoute(kBrowserServerName, name),
+    );
   }
   // 子代理可用时 read_skill 必须同时可用（详细用法在内置技能
   // 「子代理派发」里，系统提示只留一句能力声明，模型按需读取）。
@@ -1140,6 +1148,8 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
         summary: _resultSummary(result),
         detail: spilled.detail,
         overflowPath: spilled.path,
+        imagePath: result.imagePath,
+        imageMimeType: result.imageMimeType,
       );
     } on Object catch (e) {
       return AgentToolResult(ok: false, summary: '执行异常 ✗', detail: '$e');

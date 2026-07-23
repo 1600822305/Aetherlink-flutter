@@ -346,6 +346,93 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
   ],
+  '@aether/browser': [
+    McpToolDefinition(
+      name: 'browser_open',
+      description:
+          '用内置浏览器打开 URL 并等待 JavaScript 渲染完成，返回标题、最终 URL '
+          '和首屏正文预览。适用于 fetch 抓不到的 JS 渲染页面（SPA、动态加载）；'
+          '静态页面优先用更轻量的 fetch。会话在多次调用间保留（cookies/登录态'
+          '不丢失）。连续失败 2-3 次请停下换思路或询问用户，不要反复重试同一 URL。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'url': {
+            'type': 'string',
+            'format': 'uri',
+            'description': '要打开的 URL（仅支持 http/https，内网地址会被拒绝）',
+          },
+          'timeout_seconds': {
+            'type': 'integer',
+            'description': '导航超时秒数（默认 30，范围 5-120）',
+            'default': 30,
+          },
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+          },
+        },
+        'required': ['url'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'browser_read',
+      description:
+          '提取内置浏览器当前页面的正文文本（Readability 提取，取不到回退全文）。'
+          '需先用 browser_open 打开页面。支持分块读取：通过 start_index '
+          '指定起始位置，实现大页面分段获取。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'selector': {
+            'type': 'string',
+            'description': '可选 CSS 选择器，只提取该元素的文本',
+          },
+          'max_length': {
+            'type': 'integer',
+            'description': '返回内容的最大字符数（默认 5000）',
+            'default': 5000,
+          },
+          'start_index': {
+            'type': 'integer',
+            'description': '从第几个字符开始提取（默认 0），用于分块读取大页面',
+            'default': 0,
+          },
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
+      name: 'browser_snapshot',
+      description:
+          '截取内置浏览器当前页面的截图（JPEG），以图片消息注入上下文供多模态'
+          '模型查看。需先用 browser_open 打开页面。截图消耗较多 token，'
+          '优先用 browser_read 读文本，仅在需要视觉理解（布局/图表/验证页面'
+          '状态）时使用。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'full_page': {
+            'type': 'boolean',
+            'description': '是否截取整页（默认 false 只截视口；整页高度有上限）',
+            'default': false,
+          },
+          'max_width': {
+            'type': 'integer',
+            'description': '截图最大宽度像素（默认 1024，范围 320-2048）',
+            'default': 1024,
+          },
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+          },
+        },
+      },
+    ),
+  ],
   '@aether/metaso-search': [
     McpToolDefinition(
       name: 'metaso_search',
@@ -1153,6 +1240,7 @@ const Set<String> kLocallyRunnableBuiltins = {
   '@aether/time',
   '@aether/searxng',
   '@aether/fetch',
+  '@aether/browser',
   '@aether/metaso-search',
   '@aether/grok-search',
 };

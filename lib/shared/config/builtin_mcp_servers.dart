@@ -25,6 +25,17 @@ const List<McpServer> kBuiltinMcpServers = [
     tags: ['网页', '抓取', 'HTTP', 'Markdown', '工具'],
   ),
   McpServer(
+    id: 'builtin-browser',
+    name: '@aether/browser',
+    type: McpServerType.inMemory,
+    category: McpServerCategory.builtin,
+    description:
+        '内置无头浏览器（WebView），补 fetch 抓不到的 JS 渲染页面：打开并等待渲染、'
+        '提取正文、截图供多模态模型查看。会话保留 cookies/登录态；内网地址一律拒绝',
+    provider: 'AetherAI',
+    tags: ['浏览器', '网页', 'JS渲染', '截图', '工具'],
+  ),
+  McpServer(
     id: 'builtin-calculator',
     name: '@aether/calculator',
     type: McpServerType.inMemory,

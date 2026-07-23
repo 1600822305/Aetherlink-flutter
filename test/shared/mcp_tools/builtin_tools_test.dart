@@ -331,6 +331,7 @@ void main() {
         '@aether/time',
         '@aether/searxng',
         '@aether/fetch',
+        '@aether/browser',
         '@aether/metaso-search',
         '@aether/grok-search',
       });
