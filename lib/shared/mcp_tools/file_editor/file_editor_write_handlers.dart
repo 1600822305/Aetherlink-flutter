@@ -18,9 +18,184 @@ import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_read_state.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
-/// `write` — overwrite an existing file (`path`) or create a new one
-/// (`parent_path` + `name`). On SAF a brand-new file can't be addressed by an
-/// arbitrary path, so creation always goes through an opaque parent dir.
+/// Where a `write` by `path` will land: an existing file to overwrite
+/// ([existing] non-null), or a creation target — the deepest existing
+/// directory [parentPath], the [missingDirs] to create under it (in order),
+/// and the [fileName].
+class WriteTarget {
+  const WriteTarget({
+    required this.backend,
+    this.existing,
+    this.parentPath,
+    this.missingDirs = const [],
+    this.fileName,
+  });
+
+  final WorkspaceBackend backend;
+  final WorkspaceEntry? existing;
+  final String? parentPath;
+  final List<String> missingDirs;
+  final String? fileName;
+}
+
+/// Locates the write target for posix [absPath]: the existing file, or the
+/// creation spec with any missing ancestor directories collected (mkdir -p
+/// semantics). An intermediate segment that exists as a *file* is an error.
+Future<WriteTarget> locatePosixWriteTarget(
+  WorkspaceBackend backend,
+  String absPath,
+) async {
+  WorkspaceEntry? info;
+  try {
+    info = await backend.getFileInfo(absPath);
+  } catch (_) {
+    info = null;
+  }
+  if (info != null) {
+    if (info.isDirectory) {
+      throw const FileEditorError('目标是目录，无法作为文件写入。');
+    }
+    return WriteTarget(backend: backend, existing: info);
+  }
+  final name = posixBasename(absPath);
+  if (name.isEmpty || name == '..' || name == '.') {
+    throw FileEditorError('无效的文件路径: $absPath');
+  }
+  var dir = posixDirname(absPath);
+  final missing = <String>[];
+  while (dir.isNotEmpty && dir != '/') {
+    WorkspaceEntry? e;
+    try {
+      e = await backend.getFileInfo(dir);
+    } catch (_) {
+      e = null;
+    }
+    if (e != null) {
+      if (!e.isDirectory) {
+        throw FileEditorError('路径中的「${e.name}」是文件，无法在其下创建文件。');
+      }
+      break;
+    }
+    missing.insert(0, posixBasename(dir));
+    dir = posixDirname(dir);
+  }
+  return WriteTarget(
+    backend: backend,
+    parentPath: dir.isEmpty ? '/' : dir,
+    missingDirs: missing,
+    fileName: name,
+  );
+}
+
+/// [locatePosixWriteTarget] 的不透明根（SAF `content://`）变体：从 [rootPath]
+/// 逐级 listDir 导航 [subPath]，缺失的中间目录收集进 missingDirs 而不报错。
+Future<WriteTarget> locateOpaqueWriteTarget(
+  WorkspaceBackend backend,
+  String rootPath,
+  String subPath,
+) async {
+  final segments = subPath
+      .split('/')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty && s != '.')
+      .toList();
+  if (segments.isEmpty || segments.contains('..')) {
+    throw FileEditorError('无效的文件路径: $subPath');
+  }
+  var current = rootPath;
+  for (var i = 0; i < segments.length; i++) {
+    final match = await findChildByName(backend, current, segments[i]);
+    final isLast = i == segments.length - 1;
+    if (match == null) {
+      return WriteTarget(
+        backend: backend,
+        parentPath: current,
+        missingDirs: segments.sublist(i, segments.length - 1),
+        fileName: segments.last,
+      );
+    }
+    if (isLast) {
+      if (match.isDirectory) {
+        throw const FileEditorError('目标是目录，无法作为文件写入。');
+      }
+      return WriteTarget(backend: backend, existing: match);
+    }
+    if (!match.isDirectory) {
+      throw FileEditorError('路径中的「${segments[i]}」是文件，无法在其下创建文件。');
+    }
+    current = match.path;
+  }
+  throw StateError('unreachable');
+}
+
+/// Creates [target]'s missing directories then the file itself with
+/// [content], returning the new file's (opaque) path.
+Future<String> materializeWriteTarget(WriteTarget target, String content) async {
+  var parent = target.parentPath!;
+  for (final dir in target.missingDirs) {
+    parent = await target.backend.createDirectory(parent, dir);
+  }
+  return target.backend.createFile(parent, target.fileName!, content: content);
+}
+
+/// Resolves a `write` [path] argument to a [WriteTarget] — the counterpart of
+/// [resolvePathArg] that tolerates a not-yet-existing target (create-or-
+/// overwrite semantics). Opaque `content://` handles must already exist (a
+/// brand-new SAF file can't be addressed by an arbitrary URI).
+Future<WriteTarget> resolveWriteTarget(
+  Ref ref,
+  Map<String, Object?> args,
+  String path,
+) async {
+  if (isAbsoluteOrOpaque(path)) {
+    final backend = await backendForPath(ref, path);
+    if (path.contains('://')) {
+      WorkspaceEntry? info;
+      try {
+        info = await backend.getFileInfo(path);
+      } catch (_) {
+        info = null;
+      }
+      if (info == null) {
+        throw const FileEditorError(
+          '目标不存在：不透明句柄路径无法用于新建文件。'
+          '请改用相对路径，或传 parent_path + name。',
+        );
+      }
+      if (info.isDirectory) {
+        throw const FileEditorError('目标是目录，无法作为文件写入。');
+      }
+      return WriteTarget(backend: backend, existing: info);
+    }
+    return locatePosixWriteTarget(backend, path);
+  }
+  final ResolvedWorkspace resolved;
+  if (optionalString(args, 'workspace') != null) {
+    resolved = await resolveWorkspace(ref, args);
+  } else {
+    final workspaces = await loadWorkspaces(ref);
+    if (workspaces.isEmpty) {
+      throw const FileEditorError(
+        '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
+      );
+    }
+    resolved = ResolvedWorkspace(
+      workspaces.first,
+      await resolveWorkspaceById(ref, workspaces.first.id),
+    );
+  }
+  final root = resolved.workspace.root;
+  if (!root.contains('://')) {
+    return locatePosixWriteTarget(
+      resolved.backend,
+      joinPosixPath(root, path),
+    );
+  }
+  return locateOpaqueWriteTarget(resolved.backend, root, path);
+}
+
+/// `write` — create-or-overwrite by `path`（不存在则自动创建，含缺失父目录）,
+/// or create by `parent_path` + `name`（兼容旧用法；SAF 不透明句柄只能走这条）.
 Future<McpToolResult> writeFile(
   Ref ref,
   Map<String, Object?> args, {
@@ -55,31 +230,33 @@ Future<McpToolResult> writeFile(
     );
   }
 
-  final resolved = await resolvePathArg(ref, args, rawPath);
-  final backend = resolved.backend;
-  final path = resolved.path;
+  final target = await resolveWriteTarget(ref, args, rawPath);
+  final backend = target.backend;
 
-  WorkspaceEntry info;
-  try {
-    info = await backend.getFileInfo(path);
-  } catch (_) {
-    throw const FileEditorError(
-      '目标文件不存在或无法访问。新建文件请改传 parent_path + name。',
-    );
+  if (target.existing == null) {
+    final created = await materializeWriteTarget(target, processed);
+    await _refreshReadState(ref, backend, sessionKey, created,
+        writtenContent: processed);
+    return fileEditorOk({
+      'message': '文件创建成功',
+      'path': created,
+      'totalLines': countLines(processed),
+      if (target.missingDirs.isNotEmpty)
+        'createdDirs': target.missingDirs.join('/'),
+    });
   }
-  if (info.isDirectory) {
-    throw const FileEditorError('目标是目录，无法作为文件写入。');
-  }
+
+  final path = target.existing!.path;
   await _ensureReadAndFresh(
     ref,
     backend,
     sessionKey,
     path,
-    currentMtime: info.mtime,
+    currentMtime: target.existing!.mtime,
     requireFullRead: true,
   );
 
-  await _snapshotBeforeOverwrite(ref, backend, path);
+  final old = await _snapshotBeforeOverwrite(ref, backend, path);
   await backend.writeFile(path, processed);
   await _refreshReadState(ref, backend, sessionKey, path,
       writtenContent: processed);
@@ -87,6 +264,7 @@ Future<McpToolResult> writeFile(
     'message': '文件更新成功',
     'path': path,
     'totalLines': countLines(processed),
+    if (old != null) ...?diffSummaryJson(old, processed),
   });
 }
 
@@ -425,6 +603,7 @@ Future<McpToolResult> editFile(
     'path': resolvedPath,
     'replacements': total,
     if (edits.length > 1) 'edits': edits.length,
+    ...?diffSummaryJson(original, content),
   });
 }
 
@@ -523,8 +702,9 @@ Future<void> _refreshReadState(
 }
 
 /// Saves [path]'s current content to the workspace file history before an
-/// overwrite. Best-effort: unreadable (binary/oversized) files are skipped.
-Future<void> _snapshotBeforeOverwrite(
+/// overwrite, returning that content (for the result diff). Best-effort:
+/// unreadable (binary/oversized) files are skipped and yield null.
+Future<String?> _snapshotBeforeOverwrite(
   Ref ref,
   WorkspaceBackend backend,
   String path,
@@ -533,7 +713,7 @@ Future<void> _snapshotBeforeOverwrite(
   try {
     old = await backend.readFile(path);
   } catch (_) {
-    return;
+    return null;
   }
   await recordFileHistory(
     ref.read(workspaceFileHistoryProvider.future),
@@ -541,6 +721,7 @@ Future<void> _snapshotBeforeOverwrite(
     old,
     source: '智能体写入',
   );
+  return old;
 }
 
 /// `create_directory` — create a directory under an opaque [parent_path]

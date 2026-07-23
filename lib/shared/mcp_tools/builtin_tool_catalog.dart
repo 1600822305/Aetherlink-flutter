@@ -895,8 +895,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'write',
       description:
-          '写文件：传 path 覆盖写入已有文件全部内容；传 parent_path + name 新建文件。会触发用户确认。'
-          '覆盖已有文件前必须先用 read_file 读过它的全文（未读过或只读过行范围会被拒绝）。'
+          '写文件（create-or-overwrite）：传 path，文件存在则覆盖全部内容，'
+          '不存在则自动创建（缺失的父目录也会自动创建）。会触发用户确认。'
+          '覆盖已有文件前必须先用 read_file 读过它的全文（未读过或只读过行范围会被拒绝），'
+          '覆盖成功后返回本次修改的 diff。'
           '务必传入完整内容，不要用 "// rest unchanged" 之类的省略标记（会被拒绝）。'
           '覆盖写入时建议传 line_count 以校验内容是否被截断；已有文件的增量修改请优先用 edit。'
           '若整段内容被代码围栏(```)包裹会自动去除；整体 HTML 转义的内容会自动还原。'
@@ -906,13 +908,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'path': {
             'type': 'string',
-            'description': '覆盖写入：已有文件路径（与 parent_path+name 二选一；相对路径按工作区根目录解析）',
+            'description': '目标文件路径（存在则覆盖，不存在则自动创建，含缺失父目录；'
+                '相对路径按工作区根目录解析）',
           },
           'parent_path': {
             'type': 'string',
-            'description': '新建文件：父目录路径（相对路径按工作区根目录解析，也可传 list_files 返回的句柄）',
+            'description': '新建文件（旧用法，与 path 二选一）：父目录路径（相对路径按工作区根目录解析，'
+                '也可传 list_files 返回的句柄）',
           },
-          'name': {'type': 'string', 'description': '新建文件：文件名（含扩展名）'},
+          'name': {'type': 'string', 'description': '新建文件（旧用法）：文件名（含扩展名）'},
           'content': {'type': 'string', 'description': '要写入的完整文件内容'},
           'line_count': {
             'type': 'number',
