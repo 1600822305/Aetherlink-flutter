@@ -11,7 +11,7 @@ const Skill kBrowserSkill = Skill(
   emoji: '🌏',
   tags: ['浏览器', '网页', '自动化'],
   source: SkillSource.builtin,
-  version: '1.2.0',
+  version: '1.3.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -123,5 +123,10 @@ browser_run(script: `
 - Android WebView 可能拒绝明文 `http://`（ERR_CLEARTEXT_NOT_PERMITTED），
   优先用 `https://`。
 - run 内动作触发导航会丢失脚本返回值（工具会提示无返回值）；
-  提交后要拿结果的，拆成“提交”和“读结果”两次调用。''',
+  提交后要拿结果的，拆成“提交”和“读结果”两次调用。
+- 若交互报“结果丢失/无返回值”：动作可能已生效（多为导航销毁了
+  JS 上下文），立即 `browser_snapshot_dom` 或核对当前 URL 确认，
+  不要假设未导航就盲目重试同一动作。
+- 会话空闲约 5 分钟会被回收（报 sessionGone）；间隔较久后的关键
+  路径，用前先 `browser_open` 确认页面在。''',
 );

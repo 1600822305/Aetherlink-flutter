@@ -168,8 +168,7 @@ class HeadlessBrowserSession implements BrowserSession {
       loadStop: loadStop.future,
       probe: () async {
         if (!loadStart.isCompleted) return false;
-        final state = await _evaluate("document.readyState");
-        return state == 'complete';
+        return await _probeReadyState();
       },
     );
     if (!completed) {
@@ -277,9 +276,15 @@ class HeadlessBrowserSession implements BrowserSession {
     _blockedNavigation = null;
     final js = buildJs(target);
     final deadline = DateTime.now().add(_actionWait);
-    String status;
+    // 求值结果为 null 通常是动作已触发导航、JS 上下文被销毁——
+    // 不能当失败丢回包，交给导航解析兑底判定。
+    var evalLost = false;
     while (true) {
-      status = ((await _evaluate(js)) as String?) ?? 'error: 无返回值';
+      final status = (await _evaluate(js)) as String?;
+      if (status == null) {
+        evalLost = true;
+        break;
+      }
       if (status == 'ok') break;
       final retryable =
           status == 'invisible' || status == 'disabled' || status == 'notfound';
@@ -288,7 +293,21 @@ class HeadlessBrowserSession implements BrowserSession {
       }
       await Future<void>.delayed(_actionPollInterval);
     }
-    return _resolveNavigation(controller, loadStart, loadStop, preUrl);
+    final result = await _resolveNavigation(
+      controller,
+      loadStart,
+      loadStop,
+      preUrl,
+    );
+    if (evalLost && !result.navigated) {
+      throw BrowserException(
+        BrowserErrorKind.internal,
+        '交互动作结果丢失（页面 JS 上下文可能被导航销毁）且未检测到导航；'
+        '当前 URL: ${result.url}；请 browser_snapshot_dom 确认页面状态后再继续',
+        transient: true,
+      );
+    }
+    return result;
   }
 
   BrowserException _interactError(ElementTarget target, String status) {
@@ -343,10 +362,7 @@ class HeadlessBrowserSession implements BrowserSession {
       );
       final completed = await poller.wait(
         loadStop: loadStop.future,
-        probe: () async {
-          final state = await _evaluate("document.readyState");
-          return state == 'complete';
-        },
+        probe: _probeReadyState,
       );
       if (!completed) await controller.stopLoading();
       final blockedLate = _blockedNavigation;
@@ -562,6 +578,16 @@ $script
     return _controller = await created.future;
   }
 
+  /// 探页面是否加载完成；导航中 JS 上下文可能不可用（求值超时/抛错），
+  /// 按未完成处理而非向外抛——否则一次探活失败会把整次等待打死。
+  Future<bool> _probeReadyState() async {
+    try {
+      return (await _evaluate("document.readyState")) == 'complete';
+    } on BrowserException {
+      return false;
+    }
+  }
+
   Future<dynamic> _evaluate(String source) async {
     final controller = _ensureNavigated();
     try {
@@ -590,7 +616,7 @@ $script
     if (controller == null) {
       throw const BrowserException(
         BrowserErrorKind.sessionGone,
-        '尚未打开任何页面，请先 browser_open',
+        '尚未打开任何页面（或会话空闲已被回收），请先 browser_open',
       );
     }
     return controller;
