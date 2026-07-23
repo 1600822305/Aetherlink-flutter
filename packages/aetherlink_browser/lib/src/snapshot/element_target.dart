@@ -93,9 +93,13 @@ class ElementTarget {
     return r.width > 0 && r.height > 0;
   });
   if (name === null) return visible[0] ?? null;
-  const nameOf = (el) => (el.getAttribute('aria-label') || el.textContent ||
-      el.getAttribute('placeholder') || el.getAttribute('title') ||
-      el.getAttribute('alt') || el.value || '').replace(/\\s+/g, ' ').trim();
+  // 与快照 nameOf 一致：label 关联优先于 placeholder/title，
+  // 保证 snapshot 展示的 role+name 可直接用于 role:角色:名称。
+  const nameOf = (el) => (el.getAttribute('aria-label') ||
+      (el.labels && el.labels.length ? el.labels[0].textContent : '') ||
+      el.textContent || el.getAttribute('placeholder') ||
+      el.getAttribute('title') || el.getAttribute('alt') || el.value ||
+      '').replace(/\\s+/g, ' ').trim();
   return visible.find((el) => nameOf(el) === name) ||
       visible.find((el) => nameOf(el).includes(name)) || null;
 })()''';
