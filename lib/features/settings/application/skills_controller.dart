@@ -38,13 +38,23 @@ class Skills extends _$Skills {
     final raw = await ref
         .read(appSettingsStoreProvider)
         .getSetting(kSkillsSettingKey);
-    final stored = _decode(raw);
+    final decoded = _decode(raw);
+
+    // Drop retired built-ins that older builds seeded into storage
+    // (user-created skills are untouched).
+    final stored = decoded
+        .where(
+          (s) =>
+              s.source != SkillSource.builtin ||
+              !kRetiredBuiltinSkillIds.contains(s.id),
+        )
+        .toList();
 
     // Seed / merge built-ins: any catalog entry whose id isn't stored yet is
     // added (port of `SkillManager.initializeBuiltinSkills`).
     final ids = stored.map((s) => s.id).toSet();
     final missing = kBuiltinSkills.where((b) => !ids.contains(b.id)).toList();
-    if (missing.isEmpty) return stored;
+    if (missing.isEmpty && stored.length == decoded.length) return stored;
 
     final merged = <Skill>[...stored, ...missing];
     await ref
