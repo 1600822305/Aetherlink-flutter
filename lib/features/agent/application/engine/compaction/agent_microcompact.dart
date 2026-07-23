@@ -31,6 +31,10 @@ const Set<String> kMicroCompactableTools = {
   'metaso_reader',
   'kb_search',
   'kb_read',
+  // 内置浏览器（浏览器设计稿 §20.3）：网页内容可重取，同 fetch。
+  // browser_snapshot 的文本结果很短且截图淘汰独立处理，不进白名单。
+  'browser_open',
+  'browser_read',
 };
 
 /// microcompact 触发阈值（字符，与 compaction 同款粗代理）：低于
