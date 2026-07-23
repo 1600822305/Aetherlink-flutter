@@ -283,10 +283,86 @@ Future<McpToolResult> _createFile(
   final content = processIncomingContent(optionalString(args, 'content') ?? '');
   final overwrite = optionalBool(args, 'overwrite');
 
-  final resolved = await resolvePathArg(ref, args, rawParent);
-  final backend = resolved.backend;
-  final parentPath = resolved.path;
-  final existing = await findChildByName(backend, parentPath, name);
+  // 不透明句柄（SAF `content://` 父目录）：句柄无法拼接子路径，保留
+  // 「父目录必须已存在」的直接创建路径。
+  if (rawParent.contains('://')) {
+    final resolved = await resolvePathArg(ref, args, rawParent);
+    return _createInParent(
+      ref,
+      resolved.backend,
+      resolved.path,
+      name,
+      content,
+      overwrite: overwrite,
+      sessionKey: sessionKey,
+    );
+  }
+
+  // 其余（相对 / 绝对 / `~` 路径）统一走 `path` 的 create-or-overwrite
+  // 解析管线：支持 home 展开与自动补齐缺失父目录。
+  final combined = rawParent.isEmpty || rawParent == '.'
+      ? name
+      : (rawParent.endsWith('/') ? '$rawParent$name' : '$rawParent/$name');
+  final target = await resolveWriteTarget(ref, args, combined);
+  final backend = target.backend;
+  final existing = target.existing;
+  if (existing != null) {
+    if (!overwrite) {
+      throw FileEditorError('「$name」已存在；如需覆盖请传 overwrite=true。');
+    }
+    await _ensureReadAndFresh(
+      ref,
+      backend,
+      sessionKey,
+      existing.path,
+      currentMtime: existing.mtime,
+      requireFullRead: true,
+    );
+    final old = await _snapshotBeforeOverwrite(ref, backend, existing.path);
+    await backend.writeFile(existing.path, content);
+    await _refreshReadState(ref, backend, sessionKey, existing.path,
+        writtenContent: content);
+    return fileEditorOk({
+      'message': '文件已覆盖',
+      'path': existing.path,
+      'overwritten': true,
+      'totalLines': countLines(content),
+      if (old != null) ...?diffSummaryJson(old, content),
+    });
+  }
+
+  final created = await materializeWriteTarget(target, content);
+  await _refreshReadState(ref, backend, sessionKey, created,
+      writtenContent: content);
+  return fileEditorOk({
+    'message': '文件创建成功',
+    'path': created,
+    'overwritten': false,
+    'totalLines': countLines(content),
+    if (target.missingDirs.isNotEmpty)
+      'createdDirs': target.missingDirs.join('/'),
+  });
+}
+
+/// Legacy opaque-handle creation: [parentPath] must already exist.
+Future<McpToolResult> _createInParent(
+  Ref ref,
+  WorkspaceBackend backend,
+  String parentPath,
+  String name,
+  String content, {
+  required bool overwrite,
+  required String sessionKey,
+}) async {
+  final WorkspaceEntry? existing;
+  try {
+    existing = await findChildByName(backend, parentPath, name);
+  } catch (e) {
+    throw FileEditorError(
+      '父目录不存在或无法访问：$parentPath。'
+      '建议改用 path 参数传目标文件完整路径（缺失父目录会自动创建）。',
+    );
+  }
   if (existing != null) {
     if (!overwrite) {
       throw FileEditorError('「$name」已存在；如需覆盖请传 overwrite=true。');
@@ -302,7 +378,7 @@ Future<McpToolResult> _createFile(
       currentMtime: existing.mtime,
       requireFullRead: true,
     );
-    await _snapshotBeforeOverwrite(ref, backend, existing.path);
+    final old = await _snapshotBeforeOverwrite(ref, backend, existing.path);
     await backend.writeFile(existing.path, content);
     await _refreshReadState(ref, backend, sessionKey, existing.path,
         writtenContent: content);
@@ -311,6 +387,7 @@ Future<McpToolResult> _createFile(
       'path': existing.path,
       'overwritten': true,
       'totalLines': countLines(content),
+      if (old != null) ...?diffSummaryJson(old, content),
     });
   }
 
