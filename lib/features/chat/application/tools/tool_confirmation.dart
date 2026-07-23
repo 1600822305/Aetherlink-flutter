@@ -100,6 +100,8 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
     case 'browser_input':
       return '向内置浏览器元素「${args['target'] ?? ''}」输入文本'
           '${args['submit'] == true ? '并提交' : ''}';
+    case 'browser_run':
+      return '在内置浏览器页面执行批量脚本（多步交互）';
     // 只有 action=write 会走到确认（见 terminalToolNeedsConfirmation）。
     case 'terminal_session':
       return '向终端会话 ${args['session_id'] ?? ''} 的进程输入：${args['input'] ?? ''}';

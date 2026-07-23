@@ -21,3 +21,4 @@ flutter:
   assets:
     - assets/js/readability.js
     - assets/js/dom_snapshot.js
+    - assets/js/run_helpers.js

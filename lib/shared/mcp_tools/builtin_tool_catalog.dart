@@ -510,6 +510,40 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'browser_run',
+      description:
+          '在内置浏览器当前页面执行一段异步 JavaScript 批量脚本，一次调用完成'
+          '多步"读→判→点→等→验"，比逐个调用单步工具更快更省 token。脚本内'
+          '注入 aether 助手：await aether.click(target) / '
+          'aether.fill(target, text) / aether.press(key) / '
+          'aether.selectOption(target, value) / aether.read(target?) / '
+          'await aether.waitFor({selector?, urlContains?, predicate?, '
+          'timeoutMs?})（超时返回 false）/ aether.query(target) / '
+          'await aether.sleep(ms)。target 支持 @N / role:角色:名称 / CSS。'
+          '脚本 return 的值（可为对象，自动 JSON 序列化）作为结果返回。'
+          '注意：动作触发页面导航会中断脚本执行，跨页任务应拆成多次调用；'
+          '先把可预测的观察/动作/验证编码进一段脚本再调用。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'script': {
+            'type': 'string',
+            'description': '要执行的异步 JS 脚本体（可用 await 和 return）',
+          },
+          'timeout_seconds': {
+            'type': 'integer',
+            'description': '脚本超时秒数（默认 60，范围 5-120）',
+            'default': 60,
+          },
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+          },
+        },
+        'required': ['script'],
+      },
+    ),
+    McpToolDefinition(
       name: 'browser_snapshot',
       description:
           '截取内置浏览器当前页面的截图（JPEG），以图片消息注入上下文供多模态'

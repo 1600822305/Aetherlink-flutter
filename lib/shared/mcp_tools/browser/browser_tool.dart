@@ -9,12 +9,17 @@ import 'package:path_provider/path_provider.dart';
 /// `@aether/browser` 工具执行 —— 主工程薄接入层（浏览器设计稿 §3/§18.2）：
 /// schema 校验 + 调 `aetherlink_browser` 包 API + 结果适配。只读：
 /// browser_open / browser_read / browser_snapshot_dom / browser_snapshot /
-/// browser_wait；交互（升级设计 §2.2 M4b，需审批）：browser_click /
-/// browser_input。SSRF 校验在包内（UrlPolicy），错误以分类消息回填。
+/// browser_wait；交互（升级设计 §2.2/§2.3，需审批）：browser_click /
+/// browser_input / browser_run。SSRF 校验在包内（UrlPolicy），
+/// 错误以分类消息回填。
 
 /// 交互类浏览器工具（会改变页面/站点状态）：进审批门，不进
 /// Ask/Plan 只读集。
-const Set<String> kBrowserInteractiveTools = {'browser_click', 'browser_input'};
+const Set<String> kBrowserInteractiveTools = {
+  'browser_click',
+  'browser_input',
+  'browser_run',
+};
 
 /// 交互类浏览器工具是否需要用户审批（审批门复用）。
 bool browserToolNeedsConfirmation(String toolName) =>
@@ -70,6 +75,8 @@ Future<McpToolResult> runBrowserTool(
         return await _input(sessions, args);
       case 'browser_wait':
         return await _wait(sessions, args);
+      case 'browser_run':
+        return await _run(sessions, args);
       case 'browser_snapshot':
         return await _snapshot(
           sessions,
@@ -260,6 +267,44 @@ Future<McpToolResult> _wait(
           ? '条件已成立。'
           : '等待超时（${timeoutSeconds}s），条件未成立；可重新快照确认页面状态后换策略。',
     );
+  });
+}
+
+/// 脚本返回值进上下文前的长度上限（防止脚本一次 return 巨量文本）。
+const int _kRunResultMaxChars = 20000;
+
+Future<McpToolResult> _run(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final script = (args['script'] as String?)?.trim() ?? '';
+  if (script.isEmpty) {
+    return const McpToolResult('script 不能为空', isError: true);
+  }
+  final timeoutSeconds = asIntOr(args['timeout_seconds'], 60).clamp(5, 120);
+  final sessionId = args['session'] as String?;
+  return sessions.run(sessionId: sessionId, (session) async {
+    var value = await session.runScript(
+      script,
+      timeout: Duration(seconds: timeoutSeconds),
+    );
+    if (value.length > _kRunResultMaxChars) {
+      value = '${value.substring(0, _kRunResultMaxChars)}\n'
+          '…（返回值已截断，共 ${value.length} 字符；请在脚本内精简 return 内容）';
+    }
+    final src = (await session.currentUrl()) ?? '当前页面';
+    final buf = StringBuffer('脚本已执行。当前 URL: $src');
+    if (value.trim().isEmpty) {
+      buf
+        ..writeln()
+        ..write('脚本无返回值（若预期有返回，可能因页面导航被中断；'
+            '可重新快照确认页面状态）。');
+    } else {
+      buf
+        ..writeln()
+        ..write(wrapUntrustedWebContent(src, value));
+    }
+    return McpToolResult(buf.toString());
   });
 }
 

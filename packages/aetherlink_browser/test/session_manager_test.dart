@@ -42,6 +42,9 @@ class _FakeSession implements BrowserSession {
       true;
 
   @override
+  Future<String> runScript(String script, {Duration? timeout}) async => '';
+
+  @override
   Future<Uint8List> snapshot({
     SnapshotOptions options = const SnapshotOptions(),
   }) async =>

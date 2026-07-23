@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert' show jsonEncode;
 import 'dart:typed_data';
 import 'dart:ui' show Size;
 
@@ -51,6 +52,11 @@ abstract class BrowserSession {
   /// 让上层能分支处理）。
   Future<bool> waitFor(WaitForCondition condition, {Duration? timeout});
 
+  /// 批量脚本（升级设计 §2.3 M4c）：在页面上下文执行一段异步 JS，
+  /// 注入 `aether` helper facade（click/fill/press/selectOption/read/
+  /// waitFor/query/sleep），脚本 `return` 值序列化后作为结果返回。
+  Future<String> runScript(String script, {Duration? timeout});
+
   /// 截图（JPEG 字节，体积受 [options] 控制）。
   Future<Uint8List> snapshot({SnapshotOptions options = const SnapshotOptions()});
 
@@ -84,6 +90,7 @@ class HeadlessBrowserSession implements BrowserSession {
 
   static String? _readabilityJs;
   static String? _domSnapshotJs;
+  static String? _runHelpersJs;
 
   @override
   bool get disposed => _disposed;
@@ -290,6 +297,54 @@ class HeadlessBrowserSession implements BrowserSession {
       url: (await controller.getUrl())?.toString() ?? '',
       title: await controller.getTitle() ?? '',
     );
+  }
+
+  /// 脚本级超时（默认 60s）：脚本内含多步 auto-wait/waitFor，
+  /// 比单次 JS 求值宽。
+  static const _runScriptTimeout = Duration(seconds: 60);
+
+  static Future<String> _loadRunHelpersJs() async => _runHelpersJs ??=
+      await rootBundle.loadString(
+        'packages/aetherlink_browser/assets/js/run_helpers.js',
+      );
+
+  @override
+  Future<String> runScript(String script, {Duration? timeout}) async {
+    _ensureAlive();
+    final controller = _ensureNavigated();
+    await _evaluate(await _loadRunHelpersJs());
+    final body = '''
+const aether = window.__aetherMakeHelpers();
+return await (async () => {
+$script
+})();''';
+    final CallAsyncJavaScriptResult? result;
+    try {
+      result = await controller
+          .callAsyncJavaScript(functionBody: body)
+          .timeout(timeout ?? _runScriptTimeout);
+    } on TimeoutException {
+      throw BrowserException(
+        BrowserErrorKind.scriptTimeout,
+        '脚本执行超时（${(timeout ?? _runScriptTimeout).inSeconds}s）；'
+        '可拆分脚本或改用单步工具',
+        transient: true,
+      );
+    }
+    if (result == null) {
+      // 页面导航/销毁会让执行上下文丢失，拿不到返回值。
+      return '';
+    }
+    final error = result.error;
+    if (error != null) {
+      throw BrowserException(
+        BrowserErrorKind.internal,
+        '脚本执行出错：$error',
+      );
+    }
+    final value = result.value;
+    if (value == null) return '';
+    return value is String ? value : jsonEncode(value);
   }
 
   @override
