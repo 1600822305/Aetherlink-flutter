@@ -12,7 +12,7 @@ const Skill kBrowserSkill = Skill(
   emoji: '🌏',
   tags: ['浏览器', '网页', '自动化'],
   source: SkillSource.builtin,
-  version: '1.4.0',
+  version: '1.5.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -75,6 +75,9 @@ browser_run(script: `
   （返回快照文本，旧编号一律作废）。
 - `aether.queryElement(target)` 返回真实 DOM 节点，仅供脚本内继续
   操作；不要把 DOM 节点直接作为 return 值。
+- `aether.press` 支持 Enter、单字符键（如 'a'）与 Backspace：
+  后两者对 input/textarea 按光标位置修改 value 并派发 input 事件；
+  整段文本用 `aether.fill`（覆盖式）更稳，不要逐字符 press。
 - `aether.selectOption(target, value)`：目标须是 `<select>`，先按
   option 的 value 匹配，其次按文本。
 - `aether.sleep(ms)` 参数是毫秒，只做短暂缓冲；动态条件优先
@@ -117,6 +120,8 @@ browser_run(script: `
 
 - 结果只要结论：browser_read 用 selector/分块，browser_run 用 return
   精简数据；避免重复快照同一未变化的页面。
+- @N 报错语义：`elementNotFound`=编号不在当前快照中（多半是编号
+  写错）；`refStale`=曾在快照中但已失效（导航/重建），重新快照。
 - 失败换思路顺序：①重新 snapshot_dom（@N 可能已失效）→
   ②换定位方式（CSS 失败立即改 @N）→ ③核对 URL 是否已变
   （静默导航）→ ④run 内用 `document.querySelector` 探活 →
@@ -137,6 +142,7 @@ browser_run(script: `
 - 若交互报“结果丢失/无返回值”：动作可能已生效（多为导航销毁了
   JS 上下文），立即 `browser_snapshot_dom` 或核对当前 URL 确认，
   不要假设未导航就盲目重试同一动作。
-- 会话空闲约 5 分钟会被回收（报 sessionGone）；间隔较久后的关键
-  路径，用前先 `browser_open` 确认页面在。''',
+- 会话空闲约 5 分钟会被回收；同时存活会话有上限（超出后最久
+  未用的被回收）。遇到 sessionGone 不要反复 snapshot，直接重新
+  `browser_open(url)` 恢复；并行任务控制命名会话数量。''',
 );

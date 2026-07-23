@@ -14,6 +14,12 @@ void main() {
       expect(js, contains("return 'ok'"));
     });
 
+    test('@N 编号不在快照中返回 notfound，失效才是 stale', () {
+      final js = buildClickJs(ElementTarget.parse('@999'));
+      expect(js, contains("if (!(999 in refs)) return 'notfound'"));
+      expect(js, contains("return 'stale'"));
+    });
+
     test('CSS 目标缺元素返回 notfound', () {
       final js = buildClickJs(ElementTarget.parse('#submit'));
       expect(js, contains('document.querySelector'));

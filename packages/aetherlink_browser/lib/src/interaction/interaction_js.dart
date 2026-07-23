@@ -12,12 +12,14 @@ import '../snapshot/element_target.dart';
 ///   （permanent：下拉框改用 browser_select，其余换定位）；
 /// - 其他        —— 动作抛出的异常消息。
 
-/// ref 目标专用：区分 `notfound`（从未有映射）与 `stale`（映射被重建）。
+/// ref 目标专用：区分 `notfound`（编号不在当前快照中）与 `stale`
+/// （曾在快照中但已失效：页面导航/快照重建/元素移除）。
 String _resolveWithStatusJs(ElementTarget target) {
   if (target.kind == ElementTargetKind.ref) {
     return '''
       const refs = window.__aetherRefs;
       if (!refs) return 'stale';
+      if (!(${target.ref} in refs)) return 'notfound';
       const el = refs[${target.ref}];
       if (!el || !el.isConnected) return 'stale';
     ''';
