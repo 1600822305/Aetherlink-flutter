@@ -574,3 +574,33 @@ test/shared/mcp_tools/browser_tool_test.dart
 
 包不 import 主工程任何代码（不知道 McpToolResult/审批/事件流的存在），
 对外只暴露纯 Dart API 与自己的 models。
+
+## 19. 超时 / 取消 / 预算（已核实现有机制，接入即可）
+
+### 19.1 现有机制（引擎已具备，browser 自动继承）
+- **工具级超时**：引擎对每次工具执行统一包
+  `execute(call, cancel).timeout(budget.toolTimeout)`（默认 5 分钟，
+  `agent_engine.dart`），超时回填"超时 ✗"结果并
+  `requestToolInterrupt()` 中止底层工具，防模型重发时双重执行。
+- **协作式取消**（`agent_cancellation.dart`）：暂停/终止/「打断当前工具」
+  三种信号，工具侧 `consumeToolInterrupt()` 轮询响应。
+- **预算熔断**（`agent_budget.dart`）：轮数上限、**连续 5 次工具失败自动
+  paused**、token 预算上限——browser 调用天然计入，页面卡死反复超时会被
+  连续失败护栏兜住。
+
+### 19.2 browser 需要补的三层（包内实现）
+1. **导航级超时（< 工具超时）**：`open` 默认 30s 内未到
+   onLoadStop/readyState 就 `stopLoading()`，返回明确的超时错误
+   （browser_exception 分类），**会话保留**——页面可能部分可读，模型可
+   接着 read/snapshot 或换 URL。
+2. **JS 执行级超时**：每次 `evaluateJavascript`（提取/readability）包
+   `Future.timeout`（如 10s），防页面脚本挂死提取。
+3. **取消响应**：工具执行循环里响应引擎的 interrupt 信号 →
+   `stopLoading()` + 中止等待；连续 2 次同会话卡死/超时则 dispose 重建
+   WebView 实例（防 WebView 本身进入坏状态）。
+
+### 19.3 体积上限
+- 提取正文：截断 + 分块（对齐 fetch 的 `max_length`/`start_index`）；
+- 截图：§17 的降采样 + JPEG 上限；
+- 首版不做资源级拦截（拦图片/视频会破坏截图）；仅当发现流量/内存问题
+  再考虑按 Content-Type 拦大资源。
