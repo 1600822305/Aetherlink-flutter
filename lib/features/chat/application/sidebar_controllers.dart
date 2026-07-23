@@ -893,8 +893,12 @@ class Topics extends _$Topics {
         target.copyWith(topicIds: <String>[topicId, ...target.topicIds]),
       );
     }
+    // 话题分组按助手作用域，移动后从原助手的分组里清掉，避免残留成员。
+    await ref.read(groupsProvider.notifier).purgeItem(topicId, GroupType.topic);
     if (ref.read(currentTopicIdProvider) == topicId) {
-      ref.read(currentTopicIdProvider.notifier).set(null);
+      // 打开中的会话跟随话题到目标助手（composer/模型按新助手解析），
+      // 而不是清空选中。
+      ref.read(currentAssistantIdProvider.notifier).set(targetAssistantId);
     }
     await _reload();
   }
