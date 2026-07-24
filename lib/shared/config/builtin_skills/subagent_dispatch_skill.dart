@@ -9,10 +9,13 @@ const Skill kSubagentDispatchSkill = Skill(
   emoji: '🤖',
   tags: ['智能体', '子代理'],
   source: SkillSource.builtin,
-  version: '1.0.0',
+  version: '1.1.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
+> spawn_subagent 工具已随本次读取装载，下一轮起可直接调用；
+> 重复读取无副作用。
+
 ## 何时派子代理
 
 会产生大量中间输出的专项活（大范围搜索/调研、跑一串命令看结果）派子代理干，

@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 /// （仅声明语义，工具定义本体在 [DynamicToolCatalog.deferred]）。
 const Map<String, String> kSkillToolBindings = {
   'builtin-browser': '@aether/browser',
+  'builtin-subagent-dispatch': 'spawn_subagent',
 };
 
 /// 常驻 + 延迟两段式工具目录。routes 永远全量（不发给模型，只用于
@@ -38,6 +39,11 @@ class DynamicToolCatalog {
     ...resident,
     for (final id in activatedSkillIds) ...?deferred[id],
   ];
+
+  /// 工具是否在目录内（常驻或任意延迟组），与激活状态无关。
+  bool hasTool(String name) =>
+      resident.any((d) => d.name == name) ||
+      deferred.values.any((defs) => defs.any((d) => d.name == name));
 }
 
 /// 从**原始 append-only 事件流**扫描已激活的绑定技能。

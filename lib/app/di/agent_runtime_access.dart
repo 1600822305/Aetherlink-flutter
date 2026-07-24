@@ -331,9 +331,10 @@ DynamicToolCatalog _catalogFor(
     routes[kReadSkillToolName] = const SkillReadToolRoute();
   }
   // 子代理派生入口（引擎内部处理，不进 executor）；子代理自身
-  // 不再暴露，避免无限嵌套。
+  // 不再暴露，避免无限嵌套。定义走渐进披露：read_skill 读取
+  // 「子代理派发」技能后下一轮注入。
   if (enableSubagents) {
-    definitions.add(kSpawnSubagentToolDefinition);
+    deferred['builtin-subagent-dispatch'] = [kSpawnSubagentToolDefinition];
   }
   return DynamicToolCatalog(
     resident: definitions,
@@ -733,7 +734,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// 自定义子代理档案清单（工作区 .aetherlink/agents / .cursor/agents 的
   /// markdown 定义）：spawn_subagent 的 type 可填档案名按需委派。
   Future<List<String>> _customSubagentsSection(Ref ref) async {
-    if (!_catalog.resident.any((d) => d.name == kToolSpawnSubagent)) {
+    if (!_catalog.hasTool(kToolSpawnSubagent)) {
       return const [];
     }
     List<AgentSubagentProfile> profiles;
