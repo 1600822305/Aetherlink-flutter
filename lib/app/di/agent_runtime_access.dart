@@ -258,8 +258,7 @@ Future<String?> workspaceHooksFile(Ref ref, String workspaceId) async {
 /// 拒绝。终端命令无法静态判定副作用，整个组不暴露。
 const Set<String> _kReadOnlyToolNames = {
   // 文件编辑器：只读子集
-  'list_files', 'read_file', 'get_file_info', 'search_files',
-  'get_diagnostics',
+  'list_files', 'read_file', 'search_files',
   // 知识库：只读子集（kb_manage 有写操作，排除）
   'kb_list', 'kb_search', 'kb_read',
   // 内置浏览器：只读子集（click/input 有副作用，排除）

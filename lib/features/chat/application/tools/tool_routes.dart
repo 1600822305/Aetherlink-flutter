@@ -129,12 +129,10 @@ class StdioToolRoute extends ToolRoute {
 
 // ── 只读（并发安全）工具分类 ────────────────────────────────────────────────
 
-/// `@aether/file-editor` 中的只读工具。get_diagnostics 虽语义只读，
-/// 但会在工作区跑分析进程，不视为并发安全。
+/// `@aether/file-editor` 中的只读工具。
 const Set<String> _kReadOnlyFileEditorTools = {
   'list_files',
   'read_file',
-  'get_file_info',
   'search_files',
 };
 

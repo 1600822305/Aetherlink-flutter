@@ -61,13 +61,6 @@ const List<ToolAuthMeta> kToolAuthCatalog = [
   ),
   ToolAuthMeta(
     server: kFileEditorServerName,
-    name: 'copy_file',
-    label: '复制',
-    description: '把文件或目录复制到其他位置',
-    risk: ToolAuthRisk.medium,
-  ),
-  ToolAuthMeta(
-    server: kFileEditorServerName,
     name: 'edit',
     label: '查找替换',
     description: '在文件中按查找串精确替换内容',

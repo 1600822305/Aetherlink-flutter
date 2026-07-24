@@ -31,7 +31,6 @@ FileEditorRisk? fileEditorRiskLevel(String toolName) {
       return FileEditorRisk.high;
     case 'create_directory':
     case 'move':
-    case 'copy_file':
     case 'edit':
       return FileEditorRisk.medium;
   }
@@ -59,20 +58,14 @@ Future<McpToolResult> runFileEditorTool(
         return await listFiles(ref, args);
       case 'read_file':
         return await readFile(ref, args, sessionKey: sessionKey);
-      case 'get_file_info':
-        return await getFileInfo(ref, args);
       case 'search_files':
         return await searchFiles(ref, args);
-      case 'get_diagnostics':
-        return await getDiagnostics(ref, args);
       case 'write':
         return await writeFile(ref, args, sessionKey: sessionKey);
       case 'create_directory':
         return await createDirectory(ref, args);
       case 'move':
         return await moveEntry(ref, args);
-      case 'copy_file':
-        return await copyFile(ref, args);
       case 'delete_file':
         return await deleteFile(ref, args);
       case 'edit':

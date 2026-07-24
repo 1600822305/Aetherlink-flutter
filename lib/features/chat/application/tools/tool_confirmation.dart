@@ -93,8 +93,6 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
       return args['destination_path'] != null
           ? '移动「${_pathTail(args['path'] ?? args['source_path'])}」到「${_pathTail(args['destination_path'])}」'
           : '将「${_pathTail(args['path'])}」重命名为「${args['new_name'] ?? ''}」';
-    case 'copy_file':
-      return '复制「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
     case 'delete_file':
       return '删除「${_pathTail(args['path'])}」';
     case 'edit':

@@ -1,8 +1,7 @@
 // Write/edit handlers for the `@aether/file-editor` built-in MCP server.
 //
 // Each handler maps a write tool call to the workspace `WorkspaceBackend`
-// (SAF on Android): write / edit / move / copy_file / delete_file /
-// create_directory.
+// (SAF on Android): write / edit / move / delete_file / create_directory.
 //
 // SAF caveat: a workspace entry's `path` is an **opaque** `content://` URI —
 // never split or build it by string. New files are addressed by an opaque
@@ -482,25 +481,6 @@ Future<McpToolResult> moveEntry(Ref ref, Map<String, Object?> args) async {
     'path': newPath,
     'renamedTo': newName,
   });
-}
-
-/// `copy_file` — copy a file/dir into the opaque [destination_path] directory.
-Future<McpToolResult> copyFile(Ref ref, Map<String, Object?> args) async {
-  final rawSource = requireString(args, 'source_path');
-  final rawDestParent = requireString(args, 'destination_path');
-  final newName = optionalString(args, 'new_name');
-  final overwrite = optionalBool(args, 'overwrite');
-  final resolvedSource = await resolvePathArg(ref, args, rawSource);
-  final backend = resolvedSource.backend;
-  final sourcePath = resolvedSource.path;
-  final destParent = (await resolvePathArg(ref, args, rawDestParent)).path;
-  final newPath = await backend.copy(
-    sourcePath,
-    destParent,
-    newName: newName,
-    overwrite: overwrite,
-  );
-  return fileEditorOk({'message': '复制成功', 'path': newPath});
 }
 
 /// `delete_file` — delete a file or directory.

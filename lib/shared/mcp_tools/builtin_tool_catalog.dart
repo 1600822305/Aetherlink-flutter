@@ -1021,17 +1021,6 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'get_file_info',
-      description: '获取文件信息，包括大小、修改时间、类型、行数等。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'path': {'type': 'string', 'description': '文件路径（相对路径按工作区根目录解析）'},
-        },
-        'required': ['path'],
-      },
-    ),
-    McpToolDefinition(
       name: 'search_files',
       description:
           '在目录中搜索文件。支持按文件名或内容搜索，可选正则、glob 路径过滤、大小写开关。'
@@ -1104,28 +1093,6 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
         },
         'required': ['directory', 'query'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'get_diagnostics',
-      description:
-          '运行项目静态分析并回读诊断（错误/告警清单）。按项目根目录自动选择只读分析命令：'
-          'pubspec.yaml→dart analyze、tsconfig.json→npx tsc --noEmit、'
-          'go.mod→go vet ./...、Cargo.toml→cargo check。'
-          '改完代码后调用以自检，避免把编译错误留给用户。'
-          '仅支持可执行命令的工作区后端（本地容器 / SSH）。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'workspace': {
-            'type': 'string',
-            'description': '工作区编号（如 "1"）或工作区 ID 或工作区名称（可选，默认当前工作区）',
-          },
-          'sub_path': {
-            'type': 'string',
-            'description': '项目所在子目录相对路径（可选，默认工作区根目录）。monorepo 时指定具体项目目录',
-          },
-        },
       },
     ),
     McpToolDefinition(
@@ -1211,29 +1178,6 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
         },
         'required': ['path'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'copy_file',
-      description: '将文件或目录复制到目标父目录下。会触发用户确认。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'source_path': {
-            'type': 'string',
-            'description': '要复制的文件/目录路径（相对路径按工作区根目录解析）',
-          },
-          'destination_path': {
-            'type': 'string',
-            'description': '目标父目录路径（相对路径按工作区根目录解析）',
-          },
-          'new_name': {'type': 'string', 'description': '复制后的新名称（可选，默认沿用原名）'},
-          'overwrite': {
-            'type': 'boolean',
-            'description': '目标已存在同名时是否覆盖，默认 false',
-          },
-        },
-        'required': ['source_path', 'destination_path'],
       },
     ),
     McpToolDefinition(
