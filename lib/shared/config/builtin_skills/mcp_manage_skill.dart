@@ -12,21 +12,31 @@ const Skill kMcpManageSkill = Skill(
   emoji: '🧩',
   tags: ['MCP', '工具', '配置'],
   source: SkillSource.builtin,
-  version: '1.0.0',
+  version: '1.1.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
 ## 能力概览
 
 `mcp_manage` 管理全局 MCP 服务器配置（与设置页同一份，所有对话/任务共用，
-持久保存）。四个 action：
+持久保存）。五个 action：
 
 - `list`：列出已配置的服务器（id、名称、类型、启用状态）。
 - `add`：添加服务器（name + config），默认添加后立即启用。
 - `remove`：删除服务器（按 name 或 id）。
 - `toggle`：启用/停用（name/id + enabled）。
+- `workspaces`：列出 stdio 可用的运行环境（有终端的工作区：
+  proot / Termux / SSH），并标出缺省自动选中的那个（default: true）。
 
-list 免审批；add/remove/toggle 会弹审批卡请用户确认。
+list / workspaces 免审批；add/remove/toggle 会弹审批卡请用户确认。
+
+## stdio 运行环境（自动选择，无需手动配）
+
+stdio 进程跑在某个工作区的终端里。add 时不传 `workspace` 参数则
+自动选：优先默认主终端同后端的工作区，其次最近打开的可执行
+工作区；返回里会告知选了哪个（runEnvironment）。需要指定时先用
+`workspaces` 查可用列表，再用 `workspace`（id 或名称）指定。
+没有可执行工作区时 add 会报错，请用户先到工作区页打开一个。
 
 ## config 格式（Claude Desktop mcpServers 条目同款）
 
@@ -63,7 +73,7 @@ type 可省略：有 `command` 推断为 stdio，有 `url` 推断为 sse。
 
 ## 标准安装流程（stdio）
 
-1. 先确认运行环境有依赖：stdio 进程跑在内置终端（proot 容器）里，
+1. 先确认运行环境有依赖：stdio 进程跑在运行环境工作区的终端里，
    `npx`/`uvx` 类命令需要对应运行时。先用终端验证：
    `node --version` / `python3 --version`；缺就先装
    （如 `apk add nodejs npm` / `pkg install nodejs`，视容器发行版而定）。
