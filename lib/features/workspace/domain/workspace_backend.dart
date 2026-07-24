@@ -11,6 +11,32 @@
 // When we swap or rewrite the SAF plugin, the blast radius stays at one Dart
 // file.
 
+/// Dependency / build / cache directories that recursive listings and
+/// client-side search walks skip: huge generated trees that are almost never
+/// what the caller wants. Shared by the file-editor's recursive listing and
+/// the backends' fallback search walks so they behave consistently.
+const Set<String> kWorkspaceSkippedDirs = {
+  'node_modules',
+  '.git',
+  '.svn',
+  '.hg',
+  'dist',
+  'build',
+  'out',
+  'target',
+  '.dart_tool',
+  '.gradle',
+  '.idea',
+  '.vscode',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.next',
+  '.nuxt',
+  'coverage',
+  'Pods',
+};
+
 /// What a backend can do at runtime. UI / agent gates show or hide terminal
 /// widgets, watcher subscriptions etc. based on this declaration.
 class WorkspaceCapabilities {

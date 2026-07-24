@@ -388,27 +388,7 @@ const int kMaxRecursiveEntries = 2000;
 /// trees that are huge and almost never what the model wants. The entry
 /// itself is still listed (so the model knows it exists) but its contents
 /// are not walked; list it explicitly by path to inspect inside.
-const Set<String> kListIgnoredDirs = {
-  'node_modules',
-  '.git',
-  '.svn',
-  '.hg',
-  'dist',
-  'build',
-  'out',
-  'target',
-  '.dart_tool',
-  '.gradle',
-  '.idea',
-  '.vscode',
-  '__pycache__',
-  '.venv',
-  'venv',
-  '.next',
-  '.nuxt',
-  'coverage',
-  'Pods',
-};
+const Set<String> kListIgnoredDirs = kWorkspaceSkippedDirs;
 
 /// Result of [listRecursive]: the flattened entries plus whether the
 /// [kMaxRecursiveEntries] cap cut the walk short.

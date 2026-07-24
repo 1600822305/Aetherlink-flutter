@@ -829,7 +829,9 @@ class RemoteSshBackend extends WorkspaceBackend {
           matched = await _contentMatch(sftp, path, nameMatcher);
         }
         if (matched) results.add(_toEntry(path, n.filename, n.attr));
-        if (isDir && recursive) await walk(path);
+        if (isDir && recursive && !kWorkspaceSkippedDirs.contains(n.filename)) {
+          await walk(path);
+        }
       }
     }
 
@@ -905,8 +907,11 @@ class RemoteSshBackend extends WorkspaceBackend {
             for (final t in fileTypes) '--include=${_shellQuote('*$t')}',
           ].join(' ');
           final mode = useRegex ? '-E' : '-F';
-          cmd = 'grep -rIli $mode $includes -e ${_shellQuote(query)} '
-              '-- ${_shellQuote(directory)}';
+          final excludes = kWorkspaceSkippedDirs
+              .map((d) => '--exclude-dir=${_shellQuote(d)}')
+              .join(' ');
+          cmd = 'grep -rIli $mode $includes $excludes '
+              '-e ${_shellQuote(query)} -- ${_shellQuote(directory)}';
         }
         final r = await exec(cmd, timeout: timeout);
         // rg/grep: 0 = hits, 1 = no hits, >1 = error (kept if partial output).
