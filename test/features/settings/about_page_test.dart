@@ -7,7 +7,7 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page/chat_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/theming/application/default_theme_spec.dart';
 
