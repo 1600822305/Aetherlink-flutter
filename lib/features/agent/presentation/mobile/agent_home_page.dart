@@ -9,7 +9,7 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_hooks_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/hooks/agent_hooks_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_mcp_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_permission_rules_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
