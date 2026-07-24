@@ -161,6 +161,7 @@ class PooledWorkspaceSession {
     var windowTail = '';
     var settled = false;
     var canceled = false;
+    var releaseInFinally = true;
     if (cancelSignal != null) {
       unawaited(cancelSignal.then((_) {
         if (settled) return;
@@ -192,6 +193,16 @@ class PooledWorkspaceSession {
         exitCode: match.exitCode,
       );
     } on TimeoutException {
+      // 命令还在前台跑：保持 busy，后台等哨兵回来才释放。否则池会把
+      // 前台被占用的会话当空闲复用，新命令被旧进程当 stdin 吃掉。
+      releaseInFinally = false;
+      unawaited(
+        done.future.then<void>((_) {}, onError: (_) {}).whenComplete(() {
+          _busy = false;
+          lastUsedAt = DateTime.now();
+          sub.cancel();
+        }),
+      );
       return WorkspaceSessionExecResult(
         output: stripSessionEcho(collected.toString(), command, nonce),
         exitCode: null,
@@ -206,9 +217,11 @@ class PooledWorkspaceSession {
       );
     } finally {
       settled = true;
-      _busy = false;
-      lastUsedAt = DateTime.now();
-      await sub.cancel();
+      if (releaseInFinally) {
+        _busy = false;
+        lastUsedAt = DateTime.now();
+        await sub.cancel();
+      }
     }
   }
 

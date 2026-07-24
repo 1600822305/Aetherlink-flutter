@@ -29,6 +29,22 @@ const String kTerminalServerName = '@aether/terminal';
 /// Default one-shot command timeout（设计文档 §2.3：默认 120s，可配）。
 const int _kDefaultTimeoutMs = 120000;
 
+/// 单次 exec 返回给模型的输出上限（字符）：超出时保留头尾、中间省略，
+/// 防止 cat 大文件 / 长构建日志一次性灌爆模型上下文。
+const int _kExecOutputLimit = 30000;
+
+/// 超长输出裁剪：保留开头 1/4 和结尾 3/4（错误通常在尾部）。
+String _clipExecOutput(String output) {
+  if (output.length <= _kExecOutputLimit) return output;
+  final head = _kExecOutputLimit ~/ 4;
+  final tail = _kExecOutputLimit - head;
+  final omitted = output.length - head - tail;
+  return '${output.substring(0, head)}\n'
+      '…（输出过长，中间省略 $omitted 字符，可用 terminal_session '
+      'action=output 回看尾部）…\n'
+      '${output.substring(output.length - tail)}';
+}
+
 /// Whether [toolName] runs commands and therefore requires HITL confirmation
 /// before executing（默认白名单审批模式，设计文档 §3.2）。
 ///
@@ -325,30 +341,30 @@ Future<McpToolResult> _execute(
     'timedOut': result.timedOut,
     'canceled': result.canceled,
     if (result.timedOut)
-      'hint': '命令超时未结束，仍在会话里继续跑；可稍后用 terminal_session action=output 回看输出。'
+      'hint': '命令超时未结束，仍在会话里继续跑（该会话在其结束前保持占用）；'
+          '可用 terminal_session action=output 回看进度，若它在等交互输入可用 '
+          'action=write 写 stdin；需要并行执行其他命令请传新的 session 名字。'
     else if (result.canceled)
       'hint': '命令被用户中断（已向会话发 Ctrl-C），会话仍可继续使用。',
-    'stdout': result.output,
+    'stdout': _clipExecOutput(result.output),
     'stderr': '',
   });
 }
 
-/// 按 ID 或名称查会话（名称重名时取最近使用的一个）。传
-/// [workspaceId] 时只在该工作区的会话里找（双作用域设计稿 §3.1，
-/// 避免指定 workspace 时命中其它工作区的同名会话）。
+/// 按 ID 或名称查会话（名称重名时取最近使用的一个）。ID 全局唯一，
+/// 指到哪算哪；名称查找始终限定在 [workspaceId] 对应的会话池内
+/// （未传 workspace 参数时为内置终端的 null 池），避免同名会话
+/// 跨工作区误命中（双作用域设计稿 §3.1）。
 PooledWorkspaceSession? _findSession(
   WorkspaceSessionPoolManager manager,
   String ref, {
-  String? workspaceId,
+  required String? workspaceId,
 }) {
   final byId = manager.find(ref);
-  if (byId != null) {
-    if (workspaceId != null && byId.workspaceId != workspaceId) return null;
-    return byId;
-  }
+  if (byId != null) return byId;
   PooledWorkspaceSession? match;
   for (final s in manager.allSessions()) {
-    if (workspaceId != null && s.workspaceId != workspaceId) continue;
+    if (s.workspaceId != workspaceId) continue;
     if (s.name == ref &&
         (match == null || s.lastUsedAt.isAfter(match.lastUsedAt))) {
       match = s;
