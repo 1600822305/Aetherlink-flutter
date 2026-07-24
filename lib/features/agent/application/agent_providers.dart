@@ -206,6 +206,26 @@ class AgentTasks extends _$AgentTasks {
     }
   }
 
+  /// 切换话题绑定的工作区（编辑话题入口），写穿到库。任务活跃期间
+  /// 由 UI 侧拦截，不在此处重复判断。
+  Future<void> updateWorkspace(
+    String taskId,
+    String workspaceId,
+    String workspaceName,
+  ) async {
+    state = [
+      for (final t in state)
+        if (t.id == taskId)
+          t.copyWith(workspaceId: workspaceId, workspaceName: workspaceName)
+        else
+          t,
+    ];
+    final updated = state.where((t) => t.id == taskId).firstOrNull;
+    if (updated != null) {
+      await ref.read(agentDaoProvider).upsertTask(updated);
+    }
+  }
+
   /// 固定/取消固定（对齐聊天 TopicsController.togglePin），写穿到库。
   Future<void> togglePin(String taskId) async {
     state = [
