@@ -10,7 +10,9 @@ import 'package:aetherlink_flutter/features/agent/application/engine/approval_ga
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_context_overflow.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_manual_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/compaction_coordinator.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/control_tool_flow.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/control_tool_parsing.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish_guards.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/interrupted_backfill.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/plan_approval_flow.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/streaming_event_writer.dart';
@@ -33,30 +35,6 @@ const String kToolFinishTask = 'finish_task';
 /// 模式切换需重建工具目录，由 [AgentEngine.onModeSwitchRestart] 回调续跑。
 const String kToolEnterPlanMode = 'enter_plan_mode';
 const String kToolExitPlanMode = 'exit_plan_mode';
-
-/// enter_plan_mode 成功后回填给模型的行为指令（对标 CC 工具结果）。
-const String kEnterPlanModeResult =
-    '已进入计划模式。接下来你应该：\n'
-    '1. 用只读工具充分探索代码，理解既有模式与相似实现\n'
-    '2. 权衡多种实现路径的取舍\n'
-    '3. 需要澄清需求时用 ask_user 提问\n'
-    '4. 用 update_plan 维护方案要点（全量覆盖式提交）\n'
-    '5. 方案完整后调用 exit_plan_mode 提交全文请求批准\n'
-    '记住：现在不要修改任何文件，这是只读的探索与设计阶段。';
-
-/// 验证类计划条目的识别模式（对标 CC verification nudge 的 /verif/i）。
-final RegExp _kVerifyItemPattern = RegExp(
-  'verif|test|check|验证|测试|校验|检查|自测',
-  caseSensitive: false,
-);
-
-/// 一次收尾 3+ 项且无验证类条目时附加在 update_plan 结果里的提醒
-/// （对标 CC TodoWriteTool verification nudge）。
-const String kPlanVerificationNudge =
-    '\n\n注意：本次收尾了 3 个以上条目，'
-    '但计划中没有任何验证类步骤。写最终总结前，先运行相应的验证'
-    '（测试 / 静态分析 / 构建等）确认成果；不要用总结里的保留意见'
-    '代替实际验证。';
 
 /// exit_plan_mode 被用户拒绝时的回填前缀（对标 CC PLAN_REJECTION_PREFIX）。
 const String kPlanRejectionPrefix =
@@ -146,40 +124,13 @@ class AgentEngine {
   /// 由用户手动续跑。
   final void Function(AgentTask task)? onModeSwitchRestart;
 
-  bool _stopGuardFired = false;
-
-  /// finish_task 无正文拦截只触发一次（防弱模型反复空收尾死循环）。
-  bool _finishGuardFired = false;
+  /// 收尾防线（正文缺失拦截 + stop hook），状态随引擎实例生灭。
+  late final FinishGuards _guards = FinishGuards(stopGuard: stopGuard);
 
   /// 输出被 token 上限截断时的自动续跑次数（对齐聊天侧
   /// _kMaxAutoContinues）：有界，防每轮都截断的死循环。
   static const int _kMaxLengthContinues = 3;
   int _lengthContinues = 0;
-
-  /// 最后一条用户消息之后是否存在非空助手正文：分析/调研类任务的
-  /// 交付物就是正文，没有正文的 finish_task 视为零产出收尾。
-  static bool _hasFinalReply(List<AgentEvent> events) {
-    for (final event in events.reversed) {
-      if (event is UserMessageEvent) return false;
-      if (event is AssistantTextEvent && event.text.trim().isNotEmpty) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  Future<String?> _checkStopGuard() async {
-    final guard = stopGuard;
-    if (guard == null || _stopGuardFired) return null;
-    String? reason;
-    try {
-      reason = await guard();
-    } catch (_) {
-      return null; // hook 自身异常不阻断收尾
-    }
-    if (reason != null) _stopGuardFired = true;
-    return reason;
-  }
 
   /// 反应式压缩（升级计划 ⑧，对标 CC hasAttemptedReactiveCompact）：
   /// 每次运行只兜底一次，压缩后重试仍超限则直接报错（防死循环）。
@@ -204,6 +155,15 @@ class AgentEngine {
       budget: budget,
       tx: tx,
       onNotification: onNotification,
+      onModeSwitchRestart: onModeSwitchRestart,
+    );
+    final controlFlow = ControlToolFlow(
+      store: store,
+      budget: budget,
+      tx: tx,
+      guards: _guards,
+      onNotification: onNotification,
+      onTaskEnd: onTaskEnd,
       onModeSwitchRestart: onModeSwitchRestart,
     );
     var current = task;
@@ -435,9 +395,9 @@ class AgentEngine {
             );
             continue;
           }
-          if (!_finishGuardFired &&
-              !_hasFinalReply(await store.getEvents(current.id))) {
-            _finishGuardFired = true;
+          if (!_guards.finishGuardFired &&
+              !FinishGuards.hasFinalReply(await store.getEvents(current.id))) {
+            _guards.finishGuardFired = true;
             await store.appendUserMessage(
               current.id,
               '[系统] 你还没有输出面向用户的正文回复。请先把最终结论/报告'
@@ -445,7 +405,7 @@ class AgentEngine {
             );
             continue;
           }
-          final blocked = await _checkStopGuard();
+          final blocked = await _guards.checkStopGuard();
           if (blocked != null) {
             await store.appendUserMessage(
               current.id,
@@ -533,213 +493,22 @@ class AgentEngine {
             if (cancel.stopRequested) break;
             continue;
           }
-          // 控制工具在引擎内处理。
-          if (call.name == kToolAskUser) {
-            final (question, suggestions) = parseUserQuestion(call);
-            await store.appendUserQuestion(
-              current.id,
-              question,
-              suggestions: suggestions,
-              toolCallId: call.id,
-              argsJson: call.argsJson,
-            );
-            await failPendingToolEvents();
-            current = await transition(
-              AgentTaskStatus.waitingInput,
-              '等待回答：$question',
-            );
-            onNotification?.call('等待回答：$question', 'question');
-            return;
-          }
-          // 控制工具的结果落库（append + update 两步，与普通工具同款事件）。
-          Future<ToolCallEvent> logControlResult(
-            AgentToolCallRequest call, {
-            required bool ok,
-            required String summary,
-            required String detail,
-            String argSummary = '',
-          }) async {
-            final event = await store.appendToolCall(
-              current.id,
-              AgentToolCallRequest(
-                id: call.id,
-                name: call.name,
-                argsJson: call.argsJson,
-                argSummary: argSummary,
-              ),
-              AgentToolCallState.running,
-            );
-            return store.updateToolCall(
-              current.id,
-              event,
-              state: ok
-                  ? AgentToolCallState.success
-                  : AgentToolCallState.failure,
-              resultSummary: summary,
-              resultDetail: detail,
-            );
-          }
-
-          if (call.name == kToolUpdatePlan) {
-            switch (parsePlanUpdate(call)) {
-              case PlanUpdateInvalid(:final reason):
-                await logControlResult(
-                  call,
-                  ok: false,
-                  summary: '计划参数无效',
-                  detail:
-                      'update_plan 参数无效，本次提交已忽略（已有计划保持'
-                      '不变）：$reason\n请修正后全量重新提交。',
-                  argSummary: '计划更新',
-                );
-                budget.recordToolResult(ok: false);
-              case PlanUpdateOk(:final items):
-                final done = items
-                    .where((i) => i.status == AgentPlanItemStatus.completed)
-                    .length;
-                final allDone = done == items.length;
-                // 全部完成即收尾：清空计划（对标 CC TodoWrite allDone）。
-                await store.appendPlanUpdate(
-                  current.id,
-                  allDone ? const [] : items,
-                );
-                // 验证提醒（对标 CC verification nudge）：一次收尾 3+ 项
-                // 且计划里没有任何验证类条目时，在结果里附加提醒，
-                // 防"标完成不验证"。
-                final needsVerifyNudge =
-                    allDone &&
-                    items.length >= 3 &&
-                    !items.any((i) => _kVerifyItemPattern.hasMatch(i.content));
-                await logControlResult(
-                  call,
-                  ok: true,
-                  summary: allDone ? '计划全部完成' : '计划已更新 $done/${items.length}',
-                  detail: allDone
-                      ? '所有条目已完成，计划已清空。'
-                            '${needsVerifyNudge ? kPlanVerificationNudge : ''}'
-                      : '计划已更新（$done/${items.length} 完成）。继续按计划'
-                            '推进；完成或开始某项时全量重新提交以更新状态。',
-                  argSummary: '${items.length} 项计划',
-                );
-                budget.recordToolResult(ok: true);
+          // 控制工具在引擎内处理（详见 [ControlToolFlow]）。
+          final controlOutcome = await controlFlow.handle(
+            call,
+            failPendingToolEvents: failPendingToolEvents,
+            resolvePlanApproval: resolvePlanApproval,
+          );
+          if (controlOutcome != null) {
+            current = tx.current;
+            switch (controlOutcome) {
+              case ControlToolOutcome.nextCall:
+                continue;
+              case ControlToolOutcome.nextTurn:
+                continue outer;
+              case ControlToolOutcome.stopRun:
+                return;
             }
-            continue;
-          }
-          if (call.name == kToolEnterPlanMode) {
-            if (current.mode == AgentSessionMode.plan ||
-                current.mode == AgentSessionMode.ask) {
-              await logControlResult(
-                call,
-                ok: false,
-                summary: '已在只读模式',
-                detail: '当前已是只读模式，无需进入计划模式，直接继续分析与规划。',
-              );
-              budget.recordToolResult(ok: false);
-              continue;
-            }
-            final previous = current.mode;
-            await logControlResult(
-              call,
-              ok: true,
-              summary: '已进入计划模式',
-              detail: kEnterPlanModeResult,
-            );
-            await store.appendStatusChange(
-              current.id,
-              '模式切换：${previous.name} → plan（模型请求先规划）',
-            );
-            current = await save(
-              current.copyWith(
-                mode: AgentSessionMode.plan,
-                prePlanMode: previous,
-                updatedAt: DateTime.now(),
-                lastEventSummary: '已进入计划模式',
-              ),
-            );
-            await failPendingToolEvents();
-            onModeSwitchRestart?.call(current);
-            return;
-          }
-          if (call.name == kToolExitPlanMode) {
-            if (current.mode != AgentSessionMode.plan) {
-              await logControlResult(
-                call,
-                ok: false,
-                summary: '不在计划模式',
-                detail: '当前不在计划模式。若方案已获批准，直接继续实现即可。',
-              );
-              budget.recordToolResult(ok: false);
-              continue;
-            }
-            final plan = stringArgOf(call, 'plan')?.trim() ?? '';
-            if (plan.isEmpty) {
-              await logControlResult(
-                call,
-                ok: false,
-                summary: '缺少方案内容',
-                detail: 'plan 参数为空：需提交完整的实现方案全文供用户审批。',
-              );
-              budget.recordToolResult(ok: false);
-              continue;
-            }
-            final event = await store.appendToolCall(
-              current.id,
-              AgentToolCallRequest(
-                id: call.id,
-                name: call.name,
-                argsJson: call.argsJson,
-                argSummary: '请求批准方案',
-              ),
-              AgentToolCallState.waitingApproval,
-            );
-            if (await resolvePlanApproval(event, call, plan)) {
-              await failPendingToolEvents();
-              return;
-            }
-            continue;
-          }
-          if (call.name == kToolFinishTask) {
-            if (!_finishGuardFired &&
-                !_hasFinalReply(await store.getEvents(current.id))) {
-              _finishGuardFired = true;
-              await logControlResult(
-                call,
-                ok: false,
-                summary: '收尾被拒：缺少正文回复',
-                detail:
-                    '你还没有输出面向用户的正文回复。分析、调研、解答类'
-                    '任务的正文就是交付物：请先把最终结论/报告作为正文完整'
-                    '输出，再调用 finish_task；summary 只是一句话标题，'
-                    '不能替代正文。',
-              );
-              budget.recordToolResult(ok: false);
-              continue;
-            }
-            final blocked = await _checkStopGuard();
-            if (blocked != null) {
-              await store.appendUserMessage(
-                current.id,
-                '[stop hook 阻止收尾] $blocked',
-              );
-              continue outer;
-            }
-            // summary 只进任务列表（lastEventSummary）；事件流里正文
-            // 就是结束语，状态行只留元信息，不再重复展示 summary。
-            final summary = stringArgOf(call, 'summary') ?? '任务完成';
-            await failPendingToolEvents();
-            await store.appendStatusChange(
-              current.id,
-              '任务完成 · ${current.rounds} 轮',
-            );
-            current = await save(
-              current.copyWith(
-                status: AgentTaskStatus.done,
-                updatedAt: DateTime.now(),
-                lastEventSummary: summary,
-              ),
-            );
-            onTaskEnd?.call();
-            return;
           }
 
           // 只读并发段：连续≥ 2 个并发安全且审批直通（allow）的调用
