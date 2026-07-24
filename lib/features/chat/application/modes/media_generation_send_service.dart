@@ -1,42 +1,28 @@
-// 图像/视频生成模式的发送链路，从 chat_controller.dart 主体拆出的 part 文件：
+// 图像/视频生成模式的发送链路，从 ChatController 的 part/mixin 服务化：
 // 输入框的「图像生成 / 视频生成」互斥模式（InputMode.image / .video）激活时，
 // send() 不再走 LLM 对话，而是走 MediaGenerationGateway 的供应商路由（web 版
 // handleMessageSend → handleImageGeneration / handleVideoPrompt 的移植）。
-// 与 _ensureTopic / _emitTurn / _persistMessageBlocks 等私有成员强耦合，因此
-// 以 part + mixin 的形式与 ChatController 同库拆分。
+// 依赖经 [ChatModeContext] 显式注入，不再靠 mixin 的 this 共享私有成员。
 
-part of 'chat_controller.dart';
+import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_context.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 
-mixin _ChatMediaGeneration on _$ChatController {
-  // --- 由 ChatController 本体提供的成员 ---
+/// 图像/视频生成模式的发送链路（[ChatController] 的协作对象）。
+class MediaGenerationSendService {
+  const MediaGenerationSendService(this._ctx);
 
-  String get _assistantId;
-  ChatRepository get _repo;
-
-  Future<String> _ensureTopic();
-  void _emitTurn(
-    String turnTopicId,
-    List<ChatMessageView> views, {
-    required bool streaming,
-  });
-  void _replace(List<ChatMessageView> views, ChatMessageView view);
-  Future<ChatMessageView> _reloadView(
-    String messageId,
-    ChatMessageView fallback,
-  );
-  Future<void> _persistMessageBlocks({
-    required String messageId,
-    required MessageStatus status,
-    required List<MessageBlock> blocks,
-  });
-  String _errorMessage(Object error);
-  MessageBlock _attachmentBlock({
-    required String messageId,
-    required DateTime createdAt,
-    required ComposerAttachment attachment,
-  });
-
-  // --- 搬出的方法 ---
+  final ChatModeContext _ctx;
 
   /// Runs an image / video generation turn for [mode] (a one-shot: the mode is
   /// cleared before the request, like the web's `clearMode()` after dispatch).
@@ -44,19 +30,19 @@ mixin _ChatMediaGeneration on _$ChatController {
   /// 用户消息照常持久化；助手消息以一个 processing 的 IMAGE/VIDEO 块占位，生成
   /// 成功后就地填入 URL，失败则替换为 error 块 —— 与 web 版行为一致（web 的
   /// 视频链路在生成前也会校验模型是否支持视频生成）。
-  Future<void> _sendMediaGeneration(
+  Future<void> sendMediaGeneration(
     InputMode mode,
     String trimmed, {
     required List<ComposerAttachment> attachments,
     required ChatState snapshot,
   }) async {
-    ref.read(inputModeControllerProvider.notifier).clear();
+    _ctx.ref.read(inputModeControllerProvider.notifier).clear();
 
-    final current = await ref.read(appCurrentModelProvider.future);
+    final current = await _ctx.ref.read(appCurrentModelProvider.future);
     if (current == null) return;
     final effective = effectiveModelFor(current);
 
-    final topicId = await _ensureTopic();
+    final topicId = await _ctx.ensureTopic();
     final now = DateTime.now();
 
     // 1. User message (text + attachment blocks), persisted like a normal send.
@@ -71,7 +57,7 @@ mixin _ChatMediaGeneration on _$ChatController {
           content: trimmed,
         ),
       for (final attachment in attachments)
-        _attachmentBlock(
+        _ctx.attachmentBlock(
           messageId: userMessageId,
           createdAt: now,
           attachment: attachment,
@@ -80,15 +66,15 @@ mixin _ChatMediaGeneration on _$ChatController {
     final userMessage = Message(
       id: userMessageId,
       role: MessageRole.user,
-      assistantId: _assistantId,
+      assistantId: _ctx.assistantId,
       topicId: topicId,
       createdAt: now,
       status: MessageStatus.success,
       blocks: <String>[for (final block in userBlocks) block.id],
     );
-    await _repo.saveMessage(userMessage);
+    await _ctx.repo.saveMessage(userMessage);
     for (final block in userBlocks) {
-      await _repo.saveMessageBlock(block);
+      await _ctx.repo.saveMessageBlock(block);
     }
 
     // 2. Assistant placeholder: a processing main_text block carrying the
@@ -110,7 +96,7 @@ mixin _ChatMediaGeneration on _$ChatController {
     final assistantMessage = Message(
       id: assistantMessageId,
       role: MessageRole.assistant,
-      assistantId: _assistantId,
+      assistantId: _ctx.assistantId,
       topicId: topicId,
       createdAt: assistantTime,
       status: MessageStatus.streaming,
@@ -118,8 +104,8 @@ mixin _ChatMediaGeneration on _$ChatController {
       askId: userMessageId,
       blocks: <String>[mediaBlockId],
     );
-    await _repo.saveMessage(assistantMessage);
-    await _repo.saveMessageBlock(placeholderBlock);
+    await _ctx.repo.saveMessage(assistantMessage);
+    await _ctx.repo.saveMessageBlock(placeholderBlock);
 
     final userView = ChatMessageView(
       id: userMessageId,
@@ -140,10 +126,10 @@ mixin _ChatMediaGeneration on _$ChatController {
       askId: userMessageId,
     );
     final views = [...snapshot.messages, userView, assistantView];
-    _emitTurn(topicId, views, streaming: true);
+    _ctx.emitTurn(topicId, views, streaming: true);
 
     // 3. Generate via the provider route, then finalize blocks in place.
-    final api = ref.read(mediaGenerationApiProvider);
+    final api = _ctx.ref.read(mediaGenerationApiProvider);
     try {
       final List<MessageBlock> finalBlocks;
       if (mode == InputMode.video && !api.isVideoGenerationModel(effective)) {
@@ -185,18 +171,18 @@ mixin _ChatMediaGeneration on _$ChatController {
           ),
         ];
       }
-      await _persistMessageBlocks(
+      await _ctx.persistMessageBlocks(
         messageId: assistantMessageId,
         status: MessageStatus.success,
         blocks: finalBlocks,
       );
-      assistantView = await _reloadView(assistantMessageId, assistantView);
-      _replace(views, assistantView);
+      assistantView = await _ctx.reloadView(assistantMessageId, assistantView);
+      _ctx.replace(views, assistantView);
     } catch (error) {
       final messageText = error is StateError
           ? error.message
-          : _errorMessage(error);
-      await _persistMessageBlocks(
+          : _ctx.errorMessage(error);
+      await _ctx.persistMessageBlocks(
         messageId: assistantMessageId,
         status: MessageStatus.error,
         blocks: <MessageBlock>[
@@ -215,8 +201,8 @@ mixin _ChatMediaGeneration on _$ChatController {
         status: MessageStatus.error,
         errorText: messageText,
       );
-      _replace(views, assistantView);
+      _ctx.replace(views, assistantView);
     }
-    _emitTurn(topicId, views, streaming: false);
+    _ctx.emitTurn(topicId, views, streaming: false);
   }
 }

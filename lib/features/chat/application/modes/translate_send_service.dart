@@ -1,23 +1,27 @@
-// 消息翻译相关的会话操作，从 chat_controller.dart 主体拆出的 part 文件：
+// 消息翻译相关的会话操作，从 ChatController 的 part/mixin 服务化：
 // 消息翻译（流式 TranslationBlock）、翻译块增量更新、翻译块持久化。
-// 以 part + mixin 的形式与 ChatController 同库拆分（mixin 里声明所依赖的
-// 私有成员抽象签名，由 ChatController 本体提供实现）。
+// 依赖经 [ChatModeContext] 显式注入，不再靠 mixin 的 this 共享私有成员。
 
-part of 'chat_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
+import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_context.dart';
+import 'package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart';
+import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 
-mixin _ChatTranslate on _$ChatController {
-  // --- 由 ChatController 本体提供的成员 ---
+/// 消息翻译的发送链路（[ChatController] 的协作对象）。
+class TranslateSendService {
+  const TranslateSendService(this._ctx);
 
-  ChatRepository get _repo;
-  Future<void> _reloadIntoState(String messageId);
-  List<MessageBlock> _orderBlocks(
-    List<String> order,
-    List<MessageBlock> blocks,
-  );
-  void _emit(List<ChatMessageView> views, {required bool isStreaming});
-  String _errorMessage(Object error);
-
-  // --- 搬出的方法 ---
+  final ChatModeContext _ctx;
 
   /// Translates [messageId]'s text into [language], attaching a streaming
   /// `TranslationBlock` to the message and streaming the result into it.
@@ -32,21 +36,23 @@ mixin _ChatTranslate on _$ChatController {
     String messageId,
     TranslateLanguage language,
   ) async {
-    final snapshot = state.value;
+    final snapshot = _ctx.snapshot;
     if (snapshot == null || snapshot.isStreaming) return;
-    final message = await _repo.getMessage(messageId);
+    final message = await _ctx.repo.getMessage(messageId);
     if (message == null) return;
-    final fetched = await _repo.getMessageBlocksByMessageId(messageId);
-    final content = mainTextOf(_orderBlocks(message.blocks, fetched)).trim();
+    final fetched = await _ctx.repo.getMessageBlocksByMessageId(messageId);
+    final content = mainTextOf(
+      _ctx.orderBlocks(message.blocks, fetched),
+    ).trim();
     if (content.isEmpty) return;
 
-    final current = await ref.read(translateModelProvider.future);
+    final current = await _ctx.ref.read(translateModelProvider.future);
     if (current == null) return;
     final effective = effectiveModelFor(current);
 
     final now = DateTime.now();
     final translationBlockId = generateId('block');
-    await _repo.saveMessageBlock(
+    await _ctx.repo.saveMessageBlock(
       MessageBlock.translation(
         id: translationBlockId,
         messageId: messageId,
@@ -58,13 +64,13 @@ mixin _ChatTranslate on _$ChatController {
         targetLanguage: language.label,
       ),
     );
-    await _repo.saveMessage(
+    await _ctx.repo.saveMessage(
       message.copyWith(
         blocks: [...message.blocks, translationBlockId],
         updatedAt: now,
       ),
     );
-    await _reloadIntoState(messageId);
+    await _ctx.reloadIntoState(messageId);
 
     final request = LlmChatRequest(
       model: effective,
@@ -79,7 +85,9 @@ mixin _ChatTranslate on _$ChatController {
       extraBody: effective.providerExtraBody,
     );
 
-    final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
+    final gateway = _ctx.ref
+        .read(llmGatewayFactoryProvider)
+        .forModel(effective);
     final buffer = StringBuffer();
     try {
       await for (final chunk in gateway.streamChat(request)) {
@@ -107,8 +115,8 @@ mixin _ChatTranslate on _$ChatController {
         result,
         MessageBlockStatus.success,
       );
-      await _reloadIntoState(messageId);
-      await ref
+      await _ctx.reloadIntoState(messageId);
+      await _ctx.ref
           .read(translateHistoryStoreProvider.notifier)
           .add(
             sourceText: content,
@@ -119,10 +127,10 @@ mixin _ChatTranslate on _$ChatController {
     } on Object catch (error) {
       await _persistTranslationBlock(
         translationBlockId,
-        '翻译失败：${_errorMessage(error)}',
+        '翻译失败：${_ctx.errorMessage(error)}',
         MessageBlockStatus.error,
       );
-      await _reloadIntoState(messageId);
+      await _ctx.reloadIntoState(messageId);
     }
   }
 
@@ -134,7 +142,7 @@ mixin _ChatTranslate on _$ChatController {
     String content,
     MessageBlockStatus status,
   ) {
-    final snapshot = state.value;
+    final snapshot = _ctx.snapshot;
     if (snapshot == null) return;
     final views = List<ChatMessageView>.of(snapshot.messages);
     final index = views.indexWhere((v) => v.id == messageId);
@@ -148,7 +156,7 @@ mixin _ChatTranslate on _$ChatController {
           block,
     ];
     views[index] = view.copyWith(blocks: updatedBlocks);
-    _emit(views, isStreaming: snapshot.isStreaming);
+    _ctx.emit(views, isStreaming: snapshot.isStreaming);
   }
 
   Future<void> _persistTranslationBlock(
@@ -156,9 +164,9 @@ mixin _ChatTranslate on _$ChatController {
     String content,
     MessageBlockStatus status,
   ) async {
-    final existing = await _repo.getMessageBlock(blockId);
+    final existing = await _ctx.repo.getMessageBlock(blockId);
     if (existing is TranslationBlock) {
-      await _repo.saveMessageBlock(
+      await _ctx.repo.saveMessageBlock(
         existing.copyWith(
           content: content,
           status: status,
