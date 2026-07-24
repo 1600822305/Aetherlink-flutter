@@ -563,8 +563,10 @@ class ProotLocalBackend extends WorkspaceBackend {
     );
   }
 
-  // ===== search（宿主目录树的客户端遍历，与 SSH 同策略） =====
+  // ===== search =====
 
+  // 与 SSH 后端同策略：先走 exec 快路径（rootfs 内的 rg / grep / find 一次
+  // 完成递归匹配），不可用时退回宿主目录树的客户端遍历。
   @override
   Future<List<WorkspaceEntry>> searchFiles(
     String directory,
@@ -575,6 +577,17 @@ class ProotLocalBackend extends WorkspaceBackend {
     bool recursive = true,
     bool useRegex = false,
   }) async {
+    if (recursive && query.isNotEmpty) {
+      final fast = await _searchViaExec(
+        directory,
+        query,
+        searchType: searchType,
+        fileTypes: fileTypes,
+        maxResults: maxResults,
+        useRegex: useRegex,
+      );
+      if (fast != null) return fast;
+    }
     final results = <WorkspaceEntry>[];
     final nameMatcher = useRegex
         ? RegExp(query, caseSensitive: false)
@@ -617,13 +630,126 @@ class ProotLocalBackend extends WorkspaceBackend {
         if (matched) {
           results.add(await _toEntry(guestPath, entity.path, name));
         }
-        if (isDir && recursive) await walk(guestPath);
+        if (isDir && recursive && !kWorkspaceSkippedDirs.contains(name)) {
+          await walk(guestPath);
+        }
       }
     }
 
     await walk(directory);
     return results;
   }
+
+  /// 容器内命令搜索：文件名走 `find -iname`，内容优先 `rg -il`（并行遍历、
+  /// 跳过二进制与 .gitignore），没有 rg 时用 `find -prune | xargs grep -li`
+  /// （busybox grep 没有 -r 的 --exclude-dir/-I，靠 find 跳过重型目录）。
+  /// 返回 null 时由调用方退回客户端遍历：
+  /// · 正则文件名匹配（`find -iname` 只支持 glob）；
+  /// · 带扩展名过滤的文件名搜索（遍历路径处理）；
+  /// · rootfs 未安装、命令超时或无输出失败。
+  Future<List<WorkspaceEntry>?> _searchViaExec(
+    String directory,
+    String query, {
+    required WorkspaceSearchType searchType,
+    required List<String> fileTypes,
+    required int maxResults,
+    required bool useRegex,
+  }) async {
+    final wantsName = searchType == WorkspaceSearchType.name ||
+        searchType == WorkspaceSearchType.both;
+    final wantsContent = searchType == WorkspaceSearchType.content ||
+        searchType == WorkspaceSearchType.both;
+    if (wantsName && (useRegex || fileTypes.isNotEmpty)) return null;
+    const timeout = Duration(seconds: 60);
+    final guestDir = _normalizeGuest(directory);
+    try {
+      final paths = <String>[];
+      if (wantsName) {
+        final pattern = '*${_globEscape(query)}*';
+        final r = await exec(
+          'find ${_shellQuote(guestDir)} -iname ${_shellQuote(pattern)}',
+          timeout: timeout,
+        );
+        if (r.timedOut || (r.exitCode != 0 && r.stdout.trim().isEmpty)) {
+          return null;
+        }
+        paths.addAll(const LineSplitter().convert(r.stdout));
+      }
+      if (wantsContent) {
+        final String cmd;
+        if (await _hasRg()) {
+          final globs = [
+            for (final t in fileTypes) '--glob ${_shellQuote('*$t')}',
+          ].join(' ');
+          final mode = useRegex ? '' : '-F ';
+          cmd = 'rg -il --no-messages $mode$globs-e ${_shellQuote(query)} '
+              '-- ${_shellQuote(guestDir)}';
+        } else {
+          final prunes = kWorkspaceSkippedDirs
+              .map((d) => '-name ${_shellQuote(d)}')
+              .join(' -o ');
+          final nameFilter = fileTypes.isEmpty
+              ? ''
+              : '\\( ${fileTypes.map((t) => '-iname ${_shellQuote('*$t')}').join(' -o ')} \\) ';
+          final mode = useRegex ? '-E' : '-F';
+          // 无命中时 grep 退出码经 xargs 变成 123，与真错误难分；输出为空
+          // 就当无结果，靠 `|| true` 吃掉退出码。
+          cmd = 'find ${_shellQuote(guestDir)} '
+              '-type d \\( $prunes \\) -prune -o '
+              '-type f $nameFilter-print0 '
+              '| xargs -0 -r grep -li $mode -e ${_shellQuote(query)} || true';
+        }
+        final r = await exec(cmd, timeout: timeout);
+        if (r.timedOut || (r.exitCode > 1 && r.stdout.trim().isEmpty)) {
+          return null;
+        }
+        paths.addAll(const LineSplitter().convert(r.stdout));
+      }
+      final seen = <String>{};
+      final out = <WorkspaceEntry>[];
+      for (final raw in paths) {
+        if (out.length >= maxResults) break;
+        final path = raw.trim();
+        if (path.isEmpty || path == guestDir || !seen.add(path)) continue;
+        try {
+          final guestPath = _normalizeGuest(path);
+          out.add(await _toEntry(
+            guestPath,
+            await _hostPath(guestPath),
+            _basename(guestPath),
+          ));
+        } catch (_) {
+          // 命令输出与 stat 之间文件消失 / 路径异常 — 跳过。
+        }
+      }
+      return out;
+    } on TerminalEngineMissingException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _globEscape(String s) =>
+      s.replaceAllMapped(RegExp(r'[\\*?\[\]]'), (m) => '\\${m[0]}');
+
+  /// rootfs 里是否装了 ripgrep（`apk add ripgrep`）。每个后端实例只探测
+  /// 一次；探测失败视为不可用，退回 grep。
+  Future<bool> _hasRg() {
+    return _hasRgFuture ??= () async {
+      try {
+        final r = await exec(
+          'command -v rg',
+          timeout: const Duration(seconds: 10),
+        );
+        return !r.timedOut && r.exitCode == 0 && r.stdout.trim().isNotEmpty;
+      } catch (_) {
+        return false;
+      }
+    }();
+  }
+
+  Future<bool>? _hasRgFuture;
 
   Future<bool> _contentMatch(File file, RegExp matcher) async {
     try {
@@ -706,7 +832,7 @@ class ProotLocalBackend extends WorkspaceBackend {
     // 侧 proot 进程的），值单引号包裹防止注入。
     final envPrefix = env.isEmpty
         ? ''
-        : 'env ${env.entries.map((e) => '${e.key}=${_shellQuoteEnv(e.value)}').join(' ')} ';
+        : 'env ${env.entries.map((e) => '${e.key}=${_shellQuote(e.value)}').join(' ')} ';
     try {
       final session = await _runner.startProcess(
         builder.build(
@@ -722,7 +848,7 @@ class ProotLocalBackend extends WorkspaceBackend {
     }
   }
 
-  static String _shellQuoteEnv(String value) =>
+  static String _shellQuote(String value) =>
       "'${value.replaceAll("'", "'\\''")}'";
 
   @override

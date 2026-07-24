@@ -15,7 +15,7 @@ void main() {
         expect(fileEditorNeedsConfirmation(name), isTrue,
             reason: '$name 应是需审批的写工具');
       }
-      expect(fileEditorNames.length, 6);
+      expect(fileEditorNames.length, 5);
 
       final terminalNames = kToolAuthCatalog
           .where((m) => m.server == kTerminalServerName)
