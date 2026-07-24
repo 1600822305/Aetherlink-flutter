@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_checkpoint_service.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_settings.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_manual_compact_service.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_subagent_runner.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
@@ -16,7 +17,6 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_budge
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_manual_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
@@ -70,9 +70,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     },
   );
 
-  /// 手动压缩挂起（升级计划 ⑤/⑦）：运行中任务的手动压缩请求，
-  /// taskId → 用户关注点（可为 null），引擎在下一个安全点消费。
-  final Map<String, String?> _pendingManualCompact = {};
+  late final AgentManualCompactService _manualCompact =
+      AgentManualCompactService(
+        ref: ref,
+        store: _store,
+        isRunning: (taskId) => state.contains(taskId),
+      );
 
   /// 用户在运行中手动切模式的任务（taskId → 目标模式）：引擎在下个
   /// 安全点暂停后，whenComplete 里落新模式并以新工具目录自动续跑
@@ -370,88 +373,15 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     );
   }
 
-  /// 手动压缩（升级计划 ⑤，对标 CC /compact）：运行中任务挂到下一个
-  /// 安全点由引擎强制压缩（忽略触发阈值，仍走 keep 规则）；空闲任务
-  /// （暂停/完成/失败）直接调共享的 [runManualCompaction] 落
-  /// CompactionEvent。返回给 UI 的提示文案；摘要失败时抛错由调用方提示。
-  Future<String> compactNow(
-    AgentTask task, {
-    String? customInstructions,
-  }) async {
-    final progress = ref.read(agentCompactionProgressProvider.notifier);
-    if (state.contains(task.id)) {
-      _pendingManualCompact[task.id] = customInstructions;
-      progress.start(
-        task.id,
-        phase: AgentCompactionPhase.queued,
-        cancellable: true,
-      );
-      return '任务运行中：将在下一个安全点压缩';
-    }
-    final profile =
-        ref
-            .read(agentProfilesProvider)
-            .where((p) => p.id == task.profileId)
-            .firstOrNull ??
-        AgentProfile(
-          id: task.profileId,
-          name: '',
-          emoji: '🤖',
-          systemPrompt: '',
-          tools: AgentToolGroup.values.toSet(),
-        );
-    final runtime = await ref
-        .read(agentRuntimeProvider)
-        .forProfile(
-          profile,
-          mode: task.mode,
-          boundWorkspaceId: task.workspaceId,
-        );
-    final compaction = ref.read(agentCompactionSettingsProvider);
-    progress.start(
-      task.id,
-      phase: AgentCompactionPhase.summarizing,
-      cancellable: true,
-    );
-    try {
-      final outcome = await runManualCompaction(
-        task: task,
-        events: await _store().getEvents(task.id),
-        llm: runtime.llm,
-        store: _store(),
-        keepChars: compaction.keepChars,
-        microCompactEnabled: compaction.microCompactEnabled,
-        microCompactTriggerChars: compaction.microCompactTriggerChars,
-        isCancelled: () => progress.isCancelRequested(task.id),
-        customInstructions: customInstructions,
-      );
-      return switch (outcome) {
-        ManualCompactionDone(:final coveredCount) =>
-          '已把 $coveredCount 条较早内容压缩为摘要',
-        ManualCompactionNothingToCover() => '内容太少，无需压缩',
-        ManualCompactionCancelled() => '已取消压缩，未写入摘要',
-      };
-    } finally {
-      progress.finish(task.id);
-    }
-  }
+  /// 手动压缩入口（详见 [AgentManualCompactService]）。
+  Future<String> compactNow(AgentTask task, {String? customInstructions}) =>
+      _manualCompact.compactNow(task, customInstructions: customInstructions);
 
-  /// 取消进行中的手动压缩：排队未到安全点的直接撤单；摘要生成中的
-  /// 置取消标记，结果丢弃不落库。
-  void cancelCompactNow(String taskId) {
-    final progress = ref.read(agentCompactionProgressProvider.notifier);
-    if (_pendingManualCompact.containsKey(taskId)) {
-      _pendingManualCompact.remove(taskId);
-      progress.finish(taskId);
-      return;
-    }
-    progress.requestCancel(taskId);
-  }
+  void cancelCompactNow(String taskId) =>
+      _manualCompact.cancelCompactNow(taskId);
 
-  /// 撤销一次压缩：原位标记 revoked，上下文视图恢复原样（事件流原文
-  /// 本就未删）；引擎与重放侧下一轮同步生效。
   Future<void> revokeCompaction(String taskId, CompactionEvent event) =>
-      _store().updateCompaction(taskId, event, revoked: true);
+      _manualCompact.revokeCompaction(taskId, event);
 
   void forceStop(String taskId) => _tokens[taskId]?.requestCancel();
 
@@ -598,12 +528,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       },
       onCompactionFailed: () =>
           ref.read(agentCompactionProgressProvider.notifier).finish(task.id),
-      manualCompactSignal: () {
-        if (!_pendingManualCompact.containsKey(task.id)) return null;
-        return ManualCompactRequest(
-          customInstructions: _pendingManualCompact.remove(task.id),
-        );
-      },
+      manualCompactSignal: () => _manualCompact.consumeSignal(task.id),
       onModeSwitchRestart: (updated) => modeSwitchRestart = updated,
     );
     // fileChanged hooks 的工作区文件 watcher：与本次运行同生命周期
@@ -613,7 +538,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       unawaited(runtime.fileWatcher.stop());
       // 兜底清掉压缩实况行（压缩失败时引擎不回调 onPostCompact）。
       ref.read(agentCompactionProgressProvider.notifier).finish(task.id);
-      _pendingManualCompact.remove(task.id);
+      _manualCompact.clearPending(task.id);
       _tokens.remove(task.id);
       _clearGraceIfFinished(task.id);
       state = {
