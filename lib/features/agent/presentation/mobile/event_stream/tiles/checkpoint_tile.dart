@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 检查点标记行（初稿 §5.5 P2）：🏳 节点 + 弱化文字 + 「回滚」按钮。
 /// 点回滚先弹预览面板：列出会被还原/删除/恢复的文件（可点开看 diff），
@@ -52,7 +53,10 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
             )
           else if (widget.event.commits.isEmpty)
             // 占位检查点：git 快照在后台补写，完成前不可回滚。
-            Text('快照中…', style: theme.textTheme.labelSmall?.copyWith(color: muted))
+            Text(
+              '快照中…',
+              style: theme.textTheme.labelSmall?.copyWith(color: muted),
+            )
           else
             TextButton(
               onPressed: running ? null : _startRollback,
@@ -85,7 +89,7 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
-        _snack('回滚预览失败：$e');
+        _toast('回滚预览失败：$e', isError: true);
       }
       return;
     }
@@ -119,7 +123,8 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
       if (mounted) setState(() => _busy = false);
     }
     if (!mounted) return;
-    _snack(
+    _toast(
+      isError: error != null,
       error != null
           ? '回滚失败：$error'
           : switch (mode) {
@@ -132,8 +137,12 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
     );
   }
 
-  void _snack(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void _toast(String text, {bool isError = false}) {
+    if (isError) {
+      AppToast.error(context, text);
+    } else {
+      AppToast.success(context, text);
+    }
   }
 }
 
@@ -205,11 +214,7 @@ class _RollbackPreviewSheetState extends State<_RollbackPreviewSheet> {
                       file: files[i],
                       loadDiff: loadDiff,
                       // 多仓库预览时带仓库名前缀，看清归属。
-                      showRepo: files
-                              .map((f) => f.repoRoot)
-                              .toSet()
-                              .length >
-                          1,
+                      showRepo: files.map((f) => f.repoRoot).toSet().length > 1,
                     ),
                   ),
                 ),

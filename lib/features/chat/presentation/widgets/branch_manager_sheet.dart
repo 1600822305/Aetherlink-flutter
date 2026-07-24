@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/flow/branch_flow_canvas.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/flow/branch_flow_graph.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/flow/branch_flow_layout.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Opens the 分支管理 sheet — the full node-graph form of Cherry Studio's
 /// TopicMessageFlow canvas: the whole message tree drawn as pan/zoom-able node
@@ -43,7 +44,10 @@ class _BranchManagerSheetState extends ConsumerState<_BranchManagerSheet> {
   Future<_BranchData> _load() async {
     final selected = await ref.read(currentTopicProvider.future);
     if (selected == null) {
-      return (layout: BranchFlowLayout.empty, previews: const <String, String>{});
+      return (
+        layout: BranchFlowLayout.empty,
+        previews: const <String, String>{},
+      );
     }
     final repo = ref.read(chatRepositoryProvider);
     // Read the topic fresh from the repo (not the possibly-cached
@@ -53,7 +57,10 @@ class _BranchManagerSheetState extends ConsumerState<_BranchManagerSheet> {
     final topic = await repo.getTopic(selected.id) ?? selected;
     final messages = await repo.getMessagesByTopicId(topic.id);
     if (messages.isEmpty) {
-      return (layout: BranchFlowLayout.empty, previews: const <String, String>{});
+      return (
+        layout: BranchFlowLayout.empty,
+        previews: const <String, String>{},
+      );
     }
     final rootId = await repo.getRootMessageId(topic.id);
 
@@ -124,9 +131,11 @@ class _BranchManagerSheetState extends ConsumerState<_BranchManagerSheet> {
             .read(topicsProvider.notifier)
             .createBranch(node.message.id);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(created == null ? '创建失败' : '已复制为新对话')),
-        );
+        if (created == null) {
+          AppToast.error(context, '创建失败');
+        } else {
+          AppToast.success(context, '已复制为新对话');
+        }
         Navigator.of(context).maybePop();
       case _NodeAction.switchBranch:
         await _onNodeTap(node);
@@ -144,7 +153,8 @@ class _BranchManagerSheetState extends ConsumerState<_BranchManagerSheet> {
           future: _future,
           builder: (context, snapshot) {
             final layout = snapshot.data?.layout ?? BranchFlowLayout.empty;
-            final previews = snapshot.data?.previews ?? const <String, String>{};
+            final previews =
+                snapshot.data?.previews ?? const <String, String>{};
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -154,20 +164,20 @@ class _BranchManagerSheetState extends ConsumerState<_BranchManagerSheet> {
                   child: !snapshot.hasData
                       ? const Center(child: CircularProgressIndicator())
                       : layout.placed.isEmpty
-                          ? Center(
-                              child: Text(
-                                '当前话题暂无消息',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            )
-                          : BranchFlowCanvas(
-                              layout: layout,
-                              previews: previews,
-                              onNodeTap: _onNodeTap,
-                              onNodeLongPress: _onNodeLongPress,
+                      ? Center(
+                          child: Text(
+                            '当前话题暂无消息',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
+                          ),
+                        )
+                      : BranchFlowCanvas(
+                          layout: layout,
+                          previews: previews,
+                          onNodeTap: _onNodeTap,
+                          onNodeLongPress: _onNodeLongPress,
+                        ),
                 ),
               ],
             );
@@ -182,7 +192,11 @@ class _BranchManagerSheetState extends ConsumerState<_BranchManagerSheet> {
       padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
       child: Row(
         children: [
-          Icon(LucideIcons.gitBranch, size: 18, color: theme.colorScheme.primary),
+          Icon(
+            LucideIcons.gitBranch,
+            size: 18,
+            color: theme.colorScheme.primary,
+          ),
           const SizedBox(width: 8),
           Text(
             '分支管理',

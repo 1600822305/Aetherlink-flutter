@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/settings/application/perf_monitor_controller.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The Performance [DevToolsPanel]: a full-page view over the existing
 /// `aetherlink_perf` monitor (devtools-design §5.3 — integrate, don't rewrite).
@@ -114,9 +115,7 @@ class _PerformanceViewState extends ConsumerState<_PerformanceView> {
   Future<void> _copyJson() async {
     await Clipboard.setData(ClipboardData(text: _monitor.exportJson()));
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已复制性能诊断 JSON')));
+      AppToast.success(context, '已复制性能诊断 JSON');
     }
   }
 
@@ -156,16 +155,36 @@ class _PerformanceViewState extends ConsumerState<_PerformanceView> {
       child: Column(
         children: [
           _metric(context, 'FPS', m.fps.toStringAsFixed(0), _fpsColor(m.fps)),
-          _metric(context, 'Build (UI)', '${m.buildMs.toStringAsFixed(1)}ms',
-              _frameColor(m.buildMs, budget)),
-          _metric(context, 'Raster (GPU)', '${m.rasterMs.toStringAsFixed(1)}ms',
-              _frameColor(m.rasterMs, budget)),
-          _metric(context, '慢帧率(稳态)',
-              '${(m.jankRate * 100).toStringAsFixed(1)}%', _jankColor(m.jankRate)),
-          _metric(context, '内存 RSS', '${m.rssMb.toStringAsFixed(0)}MB',
-              _memColor(m.rssMb)),
-          _metric(context, '图片缓存', '${m.imageCacheMb.toStringAsFixed(0)}MB',
-              _memColor(m.imageCacheMb * 2)),
+          _metric(
+            context,
+            'Build (UI)',
+            '${m.buildMs.toStringAsFixed(1)}ms',
+            _frameColor(m.buildMs, budget),
+          ),
+          _metric(
+            context,
+            'Raster (GPU)',
+            '${m.rasterMs.toStringAsFixed(1)}ms',
+            _frameColor(m.rasterMs, budget),
+          ),
+          _metric(
+            context,
+            '慢帧率(稳态)',
+            '${(m.jankRate * 100).toStringAsFixed(1)}%',
+            _jankColor(m.jankRate),
+          ),
+          _metric(
+            context,
+            '内存 RSS',
+            '${m.rssMb.toStringAsFixed(0)}MB',
+            _memColor(m.rssMb),
+          ),
+          _metric(
+            context,
+            '图片缓存',
+            '${m.imageCacheMb.toStringAsFixed(0)}MB',
+            _memColor(m.imageCacheMb * 2),
+          ),
           const SizedBox(height: 8),
           _verdictChip(context, m.verdict, m.jankRate),
         ],
@@ -221,19 +240,37 @@ class _PerformanceViewState extends ConsumerState<_PerformanceView> {
           _statRow(context, 'Raster', s.rasterMs),
           _statRow(context, 'Total', s.totalMs),
           const Divider(height: 16),
-          _kv(context, '帧数 / 预算',
-              '${s.frameCount} 帧 · ${s.budgetMs.toStringAsFixed(1)}ms'),
-          _kv(context, '慢帧 / 严重 / 冻结',
-              '${_pct(s.slowFramePct)} · ${_pct(s.severeFramePct)} · ${s.frozenFrames}'),
-          _kv(context, '内存 RSS',
-              '${mem.rssMbEnd.toStringAsFixed(0)}MB（峰值 ${mem.rssMbPeak.toStringAsFixed(0)}，增长 ${mem.rssGrowthMb >= 0 ? '+' : ''}${mem.rssGrowthMb.toStringAsFixed(0)}）'),
-          _kv(context, '图片缓存',
-              '${mem.imageCacheMb.toStringAsFixed(0)}/${mem.imageCacheMaxMb.toStringAsFixed(0)}MB · ${mem.liveImages} 张'),
-          _kv(context, '设备',
-              '${snap.device.os} · ${snap.device.refreshRateHz.toStringAsFixed(0)}Hz'),
+          _kv(
+            context,
+            '帧数 / 预算',
+            '${s.frameCount} 帧 · ${s.budgetMs.toStringAsFixed(1)}ms',
+          ),
+          _kv(
+            context,
+            '慢帧 / 严重 / 冻结',
+            '${_pct(s.slowFramePct)} · ${_pct(s.severeFramePct)} · ${s.frozenFrames}',
+          ),
+          _kv(
+            context,
+            '内存 RSS',
+            '${mem.rssMbEnd.toStringAsFixed(0)}MB（峰值 ${mem.rssMbPeak.toStringAsFixed(0)}，增长 ${mem.rssGrowthMb >= 0 ? '+' : ''}${mem.rssGrowthMb.toStringAsFixed(0)}）',
+          ),
+          _kv(
+            context,
+            '图片缓存',
+            '${mem.imageCacheMb.toStringAsFixed(0)}/${mem.imageCacheMaxMb.toStringAsFixed(0)}MB · ${mem.liveImages} 张',
+          ),
+          _kv(
+            context,
+            '设备',
+            '${snap.device.os} · ${snap.device.refreshRateHz.toStringAsFixed(0)}Hz',
+          ),
           if (snap.warmup.frameCount > 0)
-            _kv(context, '预热',
-                '${snap.warmup.frameCount} 帧 · ${snap.warmup.durationMs}ms · 最差 ${snap.warmup.worstTotalMs.toStringAsFixed(0)}ms'),
+            _kv(
+              context,
+              '预热',
+              '${snap.warmup.frameCount} 帧 · ${snap.warmup.durationMs}ms · 最差 ${snap.warmup.worstTotalMs.toStringAsFixed(0)}ms',
+            ),
           const SizedBox(height: 8),
           _diagnosisBox(context, snap.diagnosis),
         ],
@@ -249,17 +286,16 @@ class _PerformanceViewState extends ConsumerState<_PerformanceView> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest
-                  .withValues(alpha: 0.4),
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
               '采集由「显示性能监控」浮窗驱动，关闭浮窗后可在此独立控制。',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         if (_overlayEnabled) const SizedBox(height: 12),
@@ -290,15 +326,18 @@ class _PerformanceViewState extends ConsumerState<_PerformanceView> {
 
   // --- bits ------------------------------------------------------------------
 
-  Widget _metric(BuildContext context, String label, String value, Color color) {
+  Widget _metric(
+    BuildContext context,
+    String label,
+    String value,
+    Color color,
+  ) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Expanded(
-            child: Text(label, style: theme.textTheme.bodyMedium),
-          ),
+          Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
           Container(
             constraints: const BoxConstraints(minWidth: 60),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
@@ -362,9 +401,7 @@ class _PerformanceViewState extends ConsumerState<_PerformanceView> {
               ),
             ),
           ),
-          Expanded(
-            child: Text(v, style: theme.textTheme.bodySmall),
-          ),
+          Expanded(child: Text(v, style: theme.textTheme.bodySmall)),
         ],
       ),
     );
