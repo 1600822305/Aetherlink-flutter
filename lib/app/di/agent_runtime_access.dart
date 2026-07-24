@@ -63,6 +63,8 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_supp
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_context.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/load_mcp_tools_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_client.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart';
@@ -117,7 +119,13 @@ class AgentRuntime {
       mode: mode,
       enableSubagents: enableSubagents,
     );
-    await _addMcpServerTools(_refOf(), profile, mode, catalog);
+    await _addMcpServerTools(
+      _refOf(),
+      profile,
+      mode,
+      catalog,
+      defer: enableSubagents,
+    );
     final hooked = HookedAgentToolExecutor(
       _refOf,
       _McpAgentToolExecutor(
@@ -194,10 +202,11 @@ Future<AgentContextBreakdown> agentContextBreakdown(
   } catch (_) {
     // MCP 服务不可用时分解仍可用（少算 MCP 工具定义）。
   }
-  // 与真实请求同源：按原始事件流重建已激活技能集，否则延迟组
+  // 与真实请求同源：按原始事件流重建已激活延迟组，否则延迟组
   // 激活后分解显示的工具定义与实际发送不符。
-  final definitions =
-      catalog.definitionsFor(await _activatedSkillIds(ref, catalog, events));
+  final definitions = catalog.definitionsFor(
+    await _activatedDeferredKeys(ref, catalog, events),
+  );
   final client = _GatewayAgentLlmClient(() => ref, profile, catalog);
   final system = buildAgentSystemPrompt(
     task: task,
@@ -343,34 +352,57 @@ DynamicToolCatalog _catalogFor(
   );
 }
 
-/// 按原始事件流重建已激活的延迟技能集。技能库加载失败时
-/// fail-open（视为全部激活）：宁可多发几个定义，不能让已激活
-/// 的工具在续跑时消失。
-Future<Set<String>> _activatedSkillIds(
+/// 按原始事件流重建已激活的延迟组（技能绑定组 + 外部 MCP 组）。
+/// 技能库 / 服务器配置加载失败时对应侧 fail-open（视为全部激活）：
+/// 宁可多发几个定义，不能让已激活的工具在续跑时消失。
+Future<Set<String>> _activatedDeferredKeys(
   Ref ref,
   DynamicToolCatalog catalog,
   List<AgentEvent> events,
 ) async {
   if (catalog.deferred.isEmpty) return const {};
-  List<Skill> skills;
-  try {
-    skills = await ref.read(skillsProvider.future);
-  } catch (_) {
-    return catalog.deferred.keys.toSet();
+  final activated = <String>{};
+  final skillKeys = catalog.deferred.keys
+      .where((k) => !k.startsWith(kMcpDeferredKeyPrefix))
+      .toSet();
+  if (skillKeys.isNotEmpty) {
+    try {
+      final skills = await ref.read(skillsProvider.future);
+      activated.addAll(activatedSkillIdsFromEvents(events, skills));
+    } catch (_) {
+      activated.addAll(skillKeys);
+    }
   }
-  return activatedSkillIdsFromEvents(events, skills);
+  final mcpKeys = catalog.deferred.keys
+      .where((k) => k.startsWith(kMcpDeferredKeyPrefix))
+      .toSet();
+  if (mcpKeys.isNotEmpty) {
+    try {
+      final servers = await ref.read(mcpServersProvider.future);
+      activated.addAll(activatedMcpServerKeysFromEvents(events, servers));
+    } catch (_) {
+      activated.addAll(mcpKeys);
+    }
+  }
+  return activated;
 }
 
 /// 档案勾选的外部 MCP 服务器（远程 / stdio）：在线发现工具并并入目录。
 /// Ask/Plan 只读模式不注入（外部工具无法静态判定副作用，整组不暴露，
 /// 与终端组同策略）；server 连不上静默跳过不阻塞任务；工具名与
 /// 内置工具冲突时内置优先（first-wins）。
+///
+/// [defer] 时（顶层任务）定义进按服务器分组的延迟组（`mcp:<id>`），
+/// 常驻侧只加一个 load_mcp_tools 发现入口；装载成功后下一轮注入该
+/// 服务器全部定义。子代理上下文短、保持常驻（与浏览器组同策略）。
+/// routes 两种情况下都全量（执行 / 审批 / 重放不受激活状态影响）。
 Future<void> _addMcpServerTools(
   Ref ref,
   AgentProfile profile,
   AgentSessionMode mode,
-  DynamicToolCatalog catalog,
-) async {
+  DynamicToolCatalog catalog, {
+  bool defer = true,
+}) async {
   if (profile.mcpServerIds.isEmpty) return;
   if (mode == AgentSessionMode.ask || mode == AgentSessionMode.plan) return;
   List<McpServer> servers;
@@ -379,34 +411,50 @@ Future<void> _addMcpServerTools(
   } catch (_) {
     return;
   }
+  var hasDeferredGroup = false;
   for (final server in servers) {
     if (!server.isActive) continue;
     if (!profile.mcpServerIds.contains(server.id)) continue;
     try {
+      final List<RemoteMcpTool> discovered;
+      ToolRoute Function(String wireName) routeOf;
       if (RemoteMcpConnectionManager.isRemote(server)) {
-        final discovered = await ref
+        discovered = await ref
             .read(remoteMcpConnectionManagerProvider)
             .listTools(server);
-        for (final tool in discovered) {
-          final exposed = tool.definition.name;
-          if (catalog.routes.containsKey(exposed)) continue;
-          catalog.resident.add(tool.definition);
-          catalog.routes[exposed] = RemoteToolRoute(server, tool.toolName);
-        }
+        routeOf = (wireName) => RemoteToolRoute(server, wireName);
       } else if (StdioMcpConnectionManager.isStdio(server)) {
-        final discovered = await ref
+        discovered = await ref
             .read(stdioMcpConnectionManagerProvider)
             .listTools(server);
-        for (final tool in discovered) {
-          final exposed = tool.definition.name;
-          if (catalog.routes.containsKey(exposed)) continue;
-          catalog.resident.add(tool.definition);
-          catalog.routes[exposed] = StdioToolRoute(server, tool.toolName);
-        }
+        routeOf = (wireName) => StdioToolRoute(server, wireName);
+      } else {
+        continue;
+      }
+      final defs = <McpToolDefinition>[];
+      for (final tool in discovered) {
+        final exposed = tool.definition.name;
+        if (catalog.routes.containsKey(exposed)) continue;
+        defs.add(tool.definition);
+        catalog.routes[exposed] = routeOf(tool.toolName);
+      }
+      if (defs.isEmpty) continue;
+      if (defer) {
+        final key = mcpDeferredKey(server.id);
+        catalog.deferred[key] = defs;
+        catalog.deferredMcpLabels[key] = server.name;
+        hasDeferredGroup = true;
+      } else {
+        catalog.resident.addAll(defs);
       }
     } on Object {
       // 连不上 / 进程拉不起：本次运行跳过该 server。
     }
+  }
+  if (hasDeferredGroup &&
+      !catalog.resident.any((d) => d.name == kLoadMcpToolsToolName)) {
+    catalog.resident.add(kLoadMcpToolsToolDefinition);
+    catalog.routes[kLoadMcpToolsToolName] = const McpToolsLoadToolRoute();
   }
 }
 
@@ -486,11 +534,11 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     final model = await _resolveModel(ref);
     final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(model);
 
-    // 渐进披露：扫原始事件流里成功的 read_skill 调用确定已激活
-    // 技能，本轮 tools = 常驻 + 已激活组。无状态重算天然覆盖
-    // 续跑/重启恢复，与 agentContextBreakdown 同源。
+    // 渐进披露：扫原始事件流里成功的 read_skill / load_mcp_tools 调用
+    // 确定已激活延迟组，本轮 tools = 常驻 + 已激活组。无状态重算天然
+    // 覆盖续跑/重启恢复，与 agentContextBreakdown 同源。
     final definitions = _catalog.definitionsFor(
-      await _activatedSkillIds(ref, _catalog, context.events),
+      await _activatedDeferredKeys(ref, _catalog, context.events),
     );
 
     final system = buildAgentSystemPrompt(
@@ -704,9 +752,27 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
             'npm/pnpm 已通过环境变量默认禁用 bin 链接，无需再传 --no-bin-links；'
             '其它需要 symlink 的操作（如 ln -s）会失败，请改用复制等替代方案。',
       '可用工具：$toolNames',
+      ..._deferredMcpSection(),
       ...await _skillsSection(ref),
       ...await _customSubagentsSection(ref),
     ].join('\n');
+  }
+
+  /// 外部 MCP 延迟组清单：只列服务器名 + 工具名（对标 CC 的
+  /// available-deferred-tools），完整定义经 load_mcp_tools 装载后
+  /// 下一轮注入。
+  List<String> _deferredMcpSection() {
+    final entries = _catalog.deferred.entries
+        .where((e) => e.key.startsWith(kMcpDeferredKeyPrefix))
+        .toList();
+    if (entries.isEmpty) return const [];
+    return [
+      '外部 MCP 服务器（工具定义未装载：需要时先调 load_mcp_tools 装载，'
+          '下一轮起可直接调用；重复装载无副作用）：',
+      for (final e in entries)
+        '- ${_catalog.deferredMcpLabels[e.key] ?? e.key}：'
+            '${[for (final d in e.value) d.name].join('、')}',
+    ];
   }
 
   /// 已启用技能清单：read_skill 可读的技能名 + 一句话描述，

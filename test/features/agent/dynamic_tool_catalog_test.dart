@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aetherlink_flutter/app/di/dynamic_tool_catalog.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/load_mcp_tools_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 
 void main() {
@@ -217,6 +219,121 @@ void main() {
       expect(c.hasTool('read_file'), isTrue);
       expect(c.hasTool('spawn_subagent'), isTrue);
       expect(c.hasTool('nope'), isFalse);
+    });
+  });
+
+  group('外部 MCP 延迟组（load_mcp_tools 激活）', () {
+    const server = McpServer(
+      id: 'srv-1',
+      name: 'my-tools',
+      type: McpServerType.stdio,
+      isActive: true,
+    );
+    const servers = [server];
+
+    ToolCallEvent loadEvent({
+      required AgentToolCallState state,
+      String? argsDetail,
+      String? resultDetail,
+    }) => readSkillEvent(
+      state: state,
+      argsDetail: argsDetail,
+      resultDetail: resultDetail,
+      toolName: kLoadMcpToolsToolName,
+    );
+
+    test('成功装载（名称）激活 mcp:<serverId> 组', () {
+      final events = [
+        loadEvent(
+          state: AgentToolCallState.success,
+          argsDetail: '{"server":"my-tools"}',
+        ),
+      ];
+      expect(activatedMcpServerKeysFromEvents(events, servers), {
+        mcpDeferredKey('srv-1'),
+      });
+    });
+
+    test('按 id 装载同样激活', () {
+      final events = [
+        loadEvent(
+          state: AgentToolCallState.success,
+          argsDetail: '{"server":"srv-1"}',
+        ),
+      ];
+      expect(activatedMcpServerKeysFromEvents(events, servers), {
+        mcpDeferredKey('srv-1'),
+      });
+    });
+
+    test('失败调用不激活', () {
+      final events = [
+        loadEvent(
+          state: AgentToolCallState.failure,
+          argsDetail: '{"server":"my-tools"}',
+        ),
+      ];
+      expect(activatedMcpServerKeysFromEvents(events, servers), isEmpty);
+    });
+
+    test('argsDetail 缺失时回退解析结果「已装载服务器「名称」」', () {
+      final events = [
+        loadEvent(
+          state: AgentToolCallState.success,
+          resultDetail: '已装载服务器「my-tools」的 2 个工具，…',
+        ),
+      ];
+      expect(activatedMcpServerKeysFromEvents(events, servers), {
+        mcpDeferredKey('srv-1'),
+      });
+    });
+
+    test('未知服务器名安全忽略', () {
+      final events = [
+        loadEvent(
+          state: AgentToolCallState.success,
+          argsDetail: '{"server":"nope"}',
+        ),
+      ];
+      expect(activatedMcpServerKeysFromEvents(events, servers), isEmpty);
+    });
+
+    test('read_skill 事件不参与 MCP 激活', () {
+      final events = [
+        readSkillEvent(
+          state: AgentToolCallState.success,
+          argsDetail: '{"server":"my-tools"}',
+        ),
+      ];
+      expect(activatedMcpServerKeysFromEvents(events, servers), isEmpty);
+    });
+
+    test('definitionsFor 接受 mcp: key 激活组', () {
+      const extTool = McpToolDefinition(name: 'ext_tool', description: '');
+      final c = DynamicToolCatalog(
+        resident: [readFile],
+        deferred: {
+          mcpDeferredKey('srv-1'): [extTool],
+        },
+        routes: {},
+        deferredMcpLabels: {mcpDeferredKey('srv-1'): 'my-tools'},
+      );
+      expect(
+        c.definitionsFor(const {}).map((d) => d.name),
+        isNot(contains('ext_tool')),
+      );
+      expect(
+        c.definitionsFor({mcpDeferredKey('srv-1')}).map((d) => d.name),
+        contains('ext_tool'),
+      );
+    });
+
+    test('matchMcpServerByName：id → 名称精确 → 忽略大小写 → 子串', () {
+      expect(matchMcpServerByName(servers, 'srv-1')?.id, 'srv-1');
+      expect(matchMcpServerByName(servers, 'my-tools')?.id, 'srv-1');
+      expect(matchMcpServerByName(servers, 'MY-TOOLS')?.id, 'srv-1');
+      expect(matchMcpServerByName(servers, 'tools')?.id, 'srv-1');
+      expect(matchMcpServerByName(servers, 'nope'), isNull);
     });
   });
 

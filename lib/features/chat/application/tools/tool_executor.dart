@@ -18,9 +18,12 @@ import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/load_mcp_tools_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_client.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 
@@ -106,6 +109,8 @@ class ChatToolExecutor {
       case SkillReadToolRoute():
         final skills = await _ref.read(skillsProvider.future);
         return executeReadSkill(skills, args);
+      case McpToolsLoadToolRoute():
+        return _runLoadMcpTools(args);
       case BridgeToolRoute():
         return _runBridgeTool(args);
       case WebSearchToolRoute():
@@ -122,6 +127,61 @@ class ChatToolExecutor {
           cancelSignal: cancelSignal,
           onOutput: onOutput,
         );
+    }
+  }
+
+  /// Executes one `load_mcp_tools` call: locates the external MCP server and
+  /// lists its tools as confirmation. 成功事件即激活记录（agent 侧扫描
+  /// 事件流后下一轮注入该服务器的完整定义）；失败返回 error 结果不激活。
+  Future<McpToolResult> _runLoadMcpTools(Map<String, Object?> args) async {
+    final raw = (args['server'] as String?)?.trim() ?? '';
+    if (raw.isEmpty) {
+      return const McpToolResult(
+        'load_mcp_tools 需要 server 参数（服务器名称或 id）',
+        isError: true,
+      );
+    }
+    final servers = await _ref.read(mcpServersProvider.future);
+    final server = matchMcpServerByName(servers, raw);
+    if (server == null) {
+      return McpToolResult(
+        '未找到服务器 "$raw"（可装载清单见系统提示「外部 MCP 服务器」）',
+        isError: true,
+      );
+    }
+    if (!server.isActive) {
+      return McpToolResult('服务器「${server.name}」未启用', isError: true);
+    }
+    try {
+      final List<RemoteMcpTool> discovered;
+      if (RemoteMcpConnectionManager.isRemote(server)) {
+        discovered = await _ref
+            .read(remoteMcpConnectionManagerProvider)
+            .listTools(server);
+      } else if (StdioMcpConnectionManager.isStdio(server)) {
+        discovered = await _ref
+            .read(stdioMcpConnectionManagerProvider)
+            .listTools(server);
+      } else {
+        return McpToolResult(
+          '服务器「${server.name}」不是外部 MCP 服务器，无需装载',
+          isError: true,
+        );
+      }
+      final lines = [
+        for (final t in discovered)
+          '- ${t.definition.name}'
+              '${t.definition.description.isEmpty ? '' : '：${t.definition.description.split('\n').first}'}',
+      ];
+      return McpToolResult(
+        '已装载服务器「${server.name}」的 ${discovered.length} 个工具，'
+        '定义自下一轮起可直接调用（重复装载无副作用）：\n${lines.join('\n')}',
+      );
+    } on Object catch (error) {
+      return McpToolResult(
+        '装载服务器「${server.name}」失败: ${_errorMessage(error)}',
+        isError: true,
+      );
     }
   }
 
