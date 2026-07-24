@@ -1,40 +1,145 @@
-// 流式主循环相关的会话操作，从 chat_controller.dart 主体拆出的 part 文件：
-// _streamInto 的 gateway 订阅 + MCP 工具调用循环（多 key 负载均衡/故障转移、
-// 思考块、检查点持久化、自动续写、终态落库），以及仅被它使用的流式常量与
-// 块构造辅助方法。
-// 与 _emitTurn / _persistMessageBlocks / _reloadView 等私有成员强耦合，因此以
-// part + mixin 的形式与 ChatController 同库拆分（mixin 里声明所依赖的
-// 私有成员抽象签名，由 ChatController 本体提供实现）。
+import 'dart:async';
 
-part of 'chat_controller.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
-  // --- 由 ChatController 本体提供的成员 ---
+import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/llm_history_builder.dart';
+import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart'
+    show toolAuthPolicyProvider;
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart'
+    show terminalCommandIsHighRisk;
 
-  set _truncatedMessageId(String? value);
-  ChatToolExecutor get _toolExecutor;
-  StreamingRegistry get _registry;
+/// Raised when a provider has a multi-key pool but every key is disabled,
+/// errored or still cooling down and there is no single-key fallback — surfaced
+/// as the assistant message's error so the user knows to re-enable / add a key.
+class NoUsableApiKeyException implements Exception {
+  const NoUsableApiKeyException();
 
-  void _emitTurn(
+  @override
+  String toString() => '没有可用的 API Key：所有 Key 已禁用、失败或处于冷却中。';
+}
+
+/// Drives one assistant reply's stream: the gateway subscription + MCP
+/// tool-call loop (multi-key load balancing / failover, thinking blocks,
+/// checkpoint persistence, auto-continue, terminal persistence). Extracted from
+/// the `_ChatStreaming` part of [ChatController]; state mutations and post-turn
+/// side effects are injected as callbacks so the binder stays a stateless
+/// collaborator (aligned with the agent engine's `loop/turn_stream_binder`).
+/// The [Ref] is a getter callback because the controller's Ref is replaced on
+/// every provider rebuild while a turn routinely spans rebuilds.
+class TurnStreamBinder {
+  const TurnStreamBinder(
+    this._refOf, {
+    required ChatToolExecutor Function() toolExecutor,
+    required StreamingRegistry Function() registry,
+    required void Function(
+      String turnTopicId,
+      List<ChatMessageView> views, {
+      required bool streaming,
+    })
+    emitTurn,
+    required void Function(List<ChatMessageView> views, ChatMessageView view)
+    replace,
+    required Future<ChatMessageView> Function(
+      String messageId,
+      ChatMessageView fallback,
+    )
+    reloadView,
+    required Future<void> Function({
+      required String messageId,
+      required MessageStatus status,
+      required List<MessageBlock> blocks,
+      Usage? usage,
+      Metrics? metrics,
+    })
+    persistMessageBlocks,
+    required String Function(Object error) errorMessage,
+    required void Function(String messageId) markTruncated,
+    required Future<void> Function(String turnTopicId) refreshTopicPreview,
+    required Future<void> Function(String turnTopicId) generateTitle,
+    required Future<void> Function(
+      String turnTopicId,
+      List<ChatMessageView> views,
+    )
+    maybeGenerateSuggestions,
+    required Future<void> Function(String turnTopicId) maybeExtractMemory,
+  }) : _toolExecutorOf = toolExecutor,
+       _registryOf = registry,
+       _emitTurn = emitTurn,
+       _replace = replace,
+       _reloadView = reloadView,
+       _persistMessageBlocks = persistMessageBlocks,
+       _errorMessage = errorMessage,
+       _markTruncated = markTruncated,
+       _refreshTopicPreview = refreshTopicPreview,
+       _generateTitle = generateTitle,
+       _maybeGenerateSuggestions = maybeGenerateSuggestions,
+       _maybeExtractMemory = maybeExtractMemory;
+
+  final Ref Function() _refOf;
+  final ChatToolExecutor Function() _toolExecutorOf;
+  final StreamingRegistry Function() _registryOf;
+  final void Function(
     String turnTopicId,
     List<ChatMessageView> views, {
     required bool streaming,
-  });
-  void _replace(List<ChatMessageView> views, ChatMessageView view);
-  Future<ChatMessageView> _reloadView(
+  })
+  _emitTurn;
+  final void Function(List<ChatMessageView> views, ChatMessageView view)
+  _replace;
+  final Future<ChatMessageView> Function(
     String messageId,
     ChatMessageView fallback,
-  );
-  Future<void> _persistMessageBlocks({
+  )
+  _reloadView;
+  final Future<void> Function({
     required String messageId,
     required MessageStatus status,
     required List<MessageBlock> blocks,
     Usage? usage,
     Metrics? metrics,
-  });
-  String _errorMessage(Object error);
+  })
+  _persistMessageBlocks;
+  final String Function(Object error) _errorMessage;
+  final void Function(String messageId) _markTruncated;
+  final Future<void> Function(String turnTopicId) _refreshTopicPreview;
+  final Future<void> Function(String turnTopicId) _generateTitle;
+  final Future<void> Function(String turnTopicId, List<ChatMessageView> views)
+  _maybeGenerateSuggestions;
+  final Future<void> Function(String turnTopicId) _maybeExtractMemory;
 
-  // --- 搬出的常量与方法 ---
+  Ref get _ref => _refOf();
+  ChatToolExecutor get _toolExecutor => _toolExecutorOf();
+  StreamingRegistry get _registry => _registryOf();
 
   /// The most rounds the tool-call loop will run before forcing a final answer.
   /// Raised to 25 to match the web's agentic mode; complex multi-tool tasks
@@ -62,7 +167,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
   /// no (more) tools are requested the turn finalizes: blocks are persisted and
   /// the view reloaded; a stream error keeps any completed blocks and appends an
   /// `error` block. Shared by [send], [regenerate] and [resend].
-  Future<void> _streamInto({
+  Future<void> streamInto({
     required String turnTopicId,
     required LlmChatRequest request,
     required Model effective,
@@ -110,6 +215,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
       cancelScheduledUpdate();
       _emitTurn(turnTopicId, views, streaming: !finalizeTurn);
     }
+
     // Multi-key load balancing + failover. When the provider carries a multi-key
     // pool, each attempt strategy-selects a usable key ([ApiKeyManager]); a
     // connection-time failure (before anything streamed) fails over to the next
@@ -134,7 +240,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
 
     Future<void> persistKeyUpdates() async {
       if (keyUpdates.isEmpty) return;
-      await ref
+      await _ref
           .read(modelStoreProvider.notifier)
           .updateApiKeys(
             providerId: provider.id,
@@ -208,13 +314,11 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
       aggregatedForCount = completed.length;
       completedTextPrefix = <String>[
         for (final block in completed)
-          if (block is MainTextBlock && block.content.isNotEmpty)
-            block.content,
+          if (block is MainTextBlock && block.content.isNotEmpty) block.content,
       ].join('\n\n');
       completedThinkingPrefix = <String>[
         for (final block in completed)
-          if (block is ThinkingBlock && block.content.isNotEmpty)
-            block.content,
+          if (block is ThinkingBlock && block.content.isNotEmpty) block.content,
       ].join('\n\n');
     }
 
@@ -366,8 +470,8 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
           ),
         );
       }
-      ref.read(toolConfirmationProvider.notifier).rejectAll();
-      ref.read(runningCommandsProvider.notifier).cancelAll();
+      _ref.read(toolConfirmationProvider.notifier).rejectAll();
+      _ref.read(runningCommandsProvider.notifier).cancelAll();
       await checkpointChain;
       await _persistMessageBlocks(
         messageId: assistantMessageId,
@@ -410,12 +514,12 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
           effectiveForAttempt = effective;
           isFallbackAttempt = true;
         } else {
-          lastError ??= const _NoUsableApiKeyException();
+          lastError ??= const NoUsableApiKeyException();
           break;
         }
       }
 
-      final gateway = ref
+      final gateway = _ref
           .read(llmGatewayFactoryProvider)
           .forModel(effectiveForAttempt);
 
@@ -583,7 +687,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
             }
             // Record whether the response was still truncated after all auto-
             // continues so the UI can show a "继续生成" button.
-            if (truncated) _truncatedMessageId = assistantMessageId;
+            if (truncated) _markTruncated(assistantMessageId);
             break;
           }
 
@@ -639,10 +743,11 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
             final toolId = call.id.isEmpty ? call.name : call.id;
 
             final turnWorkspaces =
-                ref.read(workspaceStoreProvider).value ?? const <Workspace>[];
+                _ref.read(workspaceStoreProvider).value ?? const <Workspace>[];
             // 用户白名单（工作区管理页 → 工具授权）里的工具跳过审批；
             // 高危终端命令不受白名单覆盖。
-            final needsConfirm = toolNeedsConfirmation(
+            final needsConfirm =
+                toolNeedsConfirmation(
                   route,
                   call.name,
                   args,
@@ -650,7 +755,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                   workspaces: turnWorkspaces,
                 ) &&
                 !toolAutoApprovedByPolicy(
-                  ref.read(toolAuthPolicyProvider),
+                  _ref.read(toolAuthPolicyProvider),
                   route,
                   call.name,
                   args,
@@ -671,9 +776,8 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
               if (!isCancelableCommand) {
                 return _toolExecutor.runTool(route, call.name, args);
               }
-              final running = ref.read(runningCommandsProvider.notifier);
-              final liveOutput =
-                  ref.read(commandLiveOutputProvider.notifier);
+              final running = _ref.read(runningCommandsProvider.notifier);
+              final liveOutput = _ref.read(commandLiveOutputProvider.notifier);
               final cancelSignal = running.start(blockId);
               try {
                 return await _toolExecutor.runTool(
@@ -701,8 +805,8 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                 toolName: call.name,
                 arguments: args,
                 metadata: {
-                  _toolModeMetadataKey: mcp.mode.storageValue,
-                  _toolRoundMetadataKey: roundBlockId,
+                  kToolModeMetadataKey: mcp.mode.storageValue,
+                  kToolRoundMetadataKey: roundBlockId,
                   if (needsConfirm) 'needsConfirmation': true,
                 },
               ),
@@ -714,14 +818,12 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
 
             McpToolResult result;
             if (needsConfirm) {
-              final confirm = ref.read(toolConfirmationProvider.notifier);
+              final confirm = _ref.read(toolConfirmationProvider.notifier);
               // A 免确认 window opened earlier for this same tool lets it run
               // without prompting again (per-tool, per-conversation)。高危
               // 终端命令不受免确认窗口覆盖，必须逐条审批。
-              final graceUsable = confirm.isGraceActive(
-                    turnTopicId,
-                    call.name,
-                  ) &&
+              final graceUsable =
+                  confirm.isGraceActive(turnTopicId, call.name) &&
                   !(route is TerminalToolRoute &&
                       terminalCommandIsHighRisk(call.name, args));
               final approved = graceUsable
@@ -762,8 +864,8 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                 arguments: args,
                 content: result.text,
                 metadata: {
-                  _toolModeMetadataKey: mcp.mode.storageValue,
-                  _toolRoundMetadataKey: roundBlockId,
+                  kToolModeMetadataKey: mcp.mode.storageValue,
+                  kToolRoundMetadataKey: roundBlockId,
                 },
               ),
             );
@@ -876,12 +978,12 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
 
     // Terminal failure: reject any pending confirmations, persist any key stat
     // changes, then mark the message errored.
-    ref.read(toolConfirmationProvider.notifier).rejectAll();
-    ref.read(runningCommandsProvider.notifier).cancelAll();
+    _ref.read(toolConfirmationProvider.notifier).rejectAll();
+    _ref.read(runningCommandsProvider.notifier).cancelAll();
     await checkpointChain;
     await persistKeyUpdates();
     final messageText = _errorMessage(
-      lastError ?? const _NoUsableApiKeyException(),
+      lastError ?? const NoUsableApiKeyException(),
     );
     final partial = roundDisplay();
     await _persistMessageBlocks(

@@ -131,7 +131,7 @@ const _knownAcceptedViolations = <String>{
   'lib/features/backup/data/chatbox_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
   'lib/features/backup/data/chatbox_txt_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
   'lib/features/backup/data/cherry_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
-  'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/workspace/application/workspace_store.dart',
+  'lib/features/chat/application/send/turn_stream_binder.dart -> package:aetherlink_flutter/features/workspace/application/workspace_store.dart',
   'lib/features/chat/presentation/widgets/blocks/message_selection_area.dart -> package:aetherlink_flutter/features/settings/application/selection_menu_settings_controller.dart',
   'lib/features/chat/presentation/widgets/message_actions/message_toolbar.dart -> package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart',
   'lib/features/knowledge/presentation/mobile/knowledge_base_detail_page.dart -> package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart',
