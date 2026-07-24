@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/skill_manage_tool.dart';
 
 /// Tool permission level — mirrors the original `ToolPermission`.
 ///   read:    direct execution, no user prompt
@@ -102,6 +103,13 @@ const Map<String, List<SettingsToolMeta>> kSettingsToolMeta = {
       permission: SettingsToolPermission.read,
       description: '管理外部 MCP 服务器（列出/添加/删除/启停，写操作需确认）',
     ),
+    // skill_manage 同款分级（list 免审，其余走确认），
+    // 见 tool_confirmation 的 skillManageNeedsConfirmation。
+    SettingsToolMeta(
+      name: kSkillManageToolName,
+      permission: SettingsToolPermission.read,
+      description: '管理技能库（列出/新建/修改/删除/启停，写操作需确认）',
+    ),
   ],
 };
 
@@ -153,6 +161,8 @@ Future<McpToolResult> runSettingsTool(
       return _deleteModel(ref, args);
     case kMcpManageToolName:
       return runMcpManageTool(ref, args);
+    case kSkillManageToolName:
+      return runSkillManageTool(ref, args);
     default:
       return _error('未知的工具: $toolName');
   }

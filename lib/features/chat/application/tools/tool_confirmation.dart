@@ -5,6 +5,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tool
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/skill_manage_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 
@@ -24,6 +25,9 @@ bool toolNeedsConfirmation(
       (route is SettingsToolRoute &&
           toolName == kMcpManageToolName &&
           mcpManageNeedsConfirmation(args)) ||
+      (route is SettingsToolRoute &&
+          toolName == kSkillManageToolName &&
+          skillManageNeedsConfirmation(args)) ||
       (route is FileEditorToolRoute && fileEditorNeedsConfirmation(toolName)) ||
       (route is KnowledgeToolRoute &&
           knowledgeToolNeedsConfirmation(toolName, args)) ||
@@ -117,6 +121,9 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
     // MCP 服务器管理（mcp_manage，list 外均需确认）。
     case kMcpManageToolName:
       return mcpManageConfirmSummary(args);
+    // 技能库管理（skill_manage，list 外均需确认）。
+    case kSkillManageToolName:
+      return skillManageConfirmSummary(args);
     default:
       return '执行操作: $toolName';
   }
