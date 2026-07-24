@@ -143,6 +143,10 @@ Future<McpToolResult> _add(Ref ref, Map<String, Object?> args) async {
   if (existing.any((s) => s.name == name)) {
     return _error('已存在同名技能「$name」（想改内容用 update）');
   }
+  // create 默认直接启用；先查启用上限，避免绕过 toggle 的限额。
+  if (existing.where((s) => s.enabled).length >= kMaxEnabledSkills) {
+    return _error('已达同时启用上限（$kMaxEnabledSkills 个），请先 toggle 停用其他技能再新建');
+  }
   final skill = await ref
       .read(skillsProvider.notifier)
       .create(
@@ -161,6 +165,12 @@ Future<McpToolResult> _update(Ref ref, Map<String, Object?> args) async {
     return _error('内置技能「${skill.name}」不能修改，只能 toggle 启停');
   }
   final newName = (args['new_name'] as String?)?.trim();
+  if (newName != null && newName.isNotEmpty && newName != skill.name) {
+    final all = await _skills(ref);
+    if (all.any((s) => s.id != skill.id && s.name == newName)) {
+      return _error('已存在同名技能「$newName」，换个名字');
+    }
+  }
   final updated = skill.copyWith(
     name: (newName != null && newName.isNotEmpty) ? newName : skill.name,
     description: (args['description'] as String?)?.trim() ?? skill.description,

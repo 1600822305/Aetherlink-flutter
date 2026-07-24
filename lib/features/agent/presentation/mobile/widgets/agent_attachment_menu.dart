@@ -413,8 +413,9 @@ class _WorkspaceFileSearchSheetState
     final index = ref.watch(
       agentWorkspaceFileIndexProvider(widget.workspaceId),
     );
-    final indexing = index.isLoading;
-    final paths = index.value ?? const <String>[];
+    final snapshot = index.value;
+    final indexing = snapshot == null || !snapshot.done;
+    final paths = snapshot?.paths ?? const <String>[];
     final filtered = _filter(paths);
     return Column(
       children: [
