@@ -63,6 +63,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tool
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_context.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
@@ -300,6 +301,13 @@ const Set<String> _kReadOnlyToolNames = {
       kBrowserServerName,
       (name) => BuiltinToolRoute(kBrowserServerName, name),
     );
+  }
+  // MCP 自管理：单一 mcp_manage 工具（最小 schema，config 格式与流程
+  // 在内置技能「MCP 服务器管理」，模型按需 read_skill）。写操作走
+  // HITL 审批；Ask/Plan 只读模式不暴露。
+  if (!readOnly) {
+    definitions.add(kMcpManageToolDefinition);
+    routes[kMcpManageToolName] = const SettingsToolRoute(kMcpManageToolName);
   }
   // 子代理可用时 read_skill 必须同时可用（详细用法在内置技能
   // 「子代理派发」里，系统提示只留一句能力声明，模型按需读取）。

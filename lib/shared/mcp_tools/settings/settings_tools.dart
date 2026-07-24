@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
 
 /// Tool permission level — mirrors the original `ToolPermission`.
 ///   read:    direct execution, no user prompt
@@ -94,6 +95,13 @@ const Map<String, List<SettingsToolMeta>> kSettingsToolMeta = {
       permission: SettingsToolPermission.confirm,
       description: '从供应商中删除指定模型（需要用户确认）',
     ),
+    // mcp_manage 按 action 分级审批（list 免审，其余走确认），
+    // 见 tool_confirmation 的 mcpManageNeedsConfirmation。
+    SettingsToolMeta(
+      name: kMcpManageToolName,
+      permission: SettingsToolPermission.read,
+      description: '管理外部 MCP 服务器（列出/添加/删除/启停，写操作需确认）',
+    ),
   ],
 };
 
@@ -143,6 +151,8 @@ Future<McpToolResult> runSettingsTool(
       return _addModel(ref, args);
     case 'delete_model':
       return _deleteModel(ref, args);
+    case kMcpManageToolName:
+      return runMcpManageTool(ref, args);
     default:
       return _error('未知的工具: $toolName');
   }

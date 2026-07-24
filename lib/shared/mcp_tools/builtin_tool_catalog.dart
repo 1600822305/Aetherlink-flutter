@@ -1,4 +1,5 @@
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
 
 /// The static tool lists exposed by the built-in (in-memory) MCP servers — the
 /// port of each `*Server.ts`'s `ListToolsRequest` handler under
@@ -916,6 +917,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'required': ['providerId', 'modelId'],
       },
     ),
+    kMcpManageToolDefinition,
   ],
   '@aether/file-editor': [
     McpToolDefinition(
