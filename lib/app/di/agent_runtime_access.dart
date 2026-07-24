@@ -1417,13 +1417,13 @@ class _PolicyApprovalGate implements ApprovalGate {
     final base = await _evaluateBase(call, task);
     if (base != ApprovalRequirement.needsUser) return base;
     // permissionRequest hooks（对标 CC）：仅在即将弹审批时触发，
-    // hook 可免审放行（越 root 硬约束不可覆盖）/ 强制拒绝 / 照常审批。
+    // hook 可免审放行（高危命令硬约束不可覆盖）/ 强制拒绝 / 照常审批。
     final verdict = await _hookExecutor?.permissionRequestVerdict(call);
     switch (verdict?.outcome) {
       case AgentHookOutcome.block:
         return ApprovalRequirement.forbid;
       case AgentHookOutcome.allow:
-        if (await _escapesRootHardConstraint(call, task)) {
+        if (_highRiskHardConstraint(call)) {
           return ApprovalRequirement.needsUser;
         }
         return ApprovalRequirement.allow;
@@ -1432,25 +1432,11 @@ class _PolicyApprovalGate implements ApprovalGate {
     }
   }
 
-  /// 越出工作区 root 的终端命令硬约束（任何 allow 均不可覆盖）。
-  Future<bool> _escapesRootHardConstraint(
-    AgentToolCallRequest call,
-    AgentTask task,
-  ) async {
+  /// 高危终端命令硬约束（任何 allow 均不可覆盖）。
+  bool _highRiskHardConstraint(AgentToolCallRequest call) {
     final route = _routes[call.name];
     if (route is! TerminalToolRoute) return false;
-    var args = _decodeArgs(call.argsJson);
-    if (args['workspace'] == null ||
-        args['workspace'].toString().trim().isEmpty) {
-      args = {...args, 'workspace': task.workspaceId};
-    }
-    List<Workspace> workspaces;
-    try {
-      workspaces = await loadWorkspaces(_refOf());
-    } catch (_) {
-      workspaces = const [];
-    }
-    return terminalCommandEscapesRoot(call.name, args, workspaces: workspaces);
+    return terminalCommandIsHighRisk(call.name, _decodeArgs(call.argsJson));
   }
 
   Future<ApprovalRequirement> _evaluateBase(
@@ -1476,7 +1462,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     }
     // preToolUse hook 裁决（一次调用只跑一遍，结果缓存给执行器复用）：
     // block → 直接放行到执行器由其拦截（避免先弹审批再被拦）；
-    // ask → 强制审批；allow → 免审直通（越 root 硬约束不可覆盖）。
+    // ask → 强制审批；allow → 免审直通（高危命令硬约束不可覆盖）。
     final hookVerdict = await _hookExecutor?.preToolUseVerdict(call);
     switch (hookVerdict?.outcome) {
       case AgentHookOutcome.block:
@@ -1485,8 +1471,7 @@ class _PolicyApprovalGate implements ApprovalGate {
         return ApprovalRequirement.needsUser;
       case AgentHookOutcome.allow:
         if (route is TerminalToolRoute &&
-            terminalCommandEscapesRoot(call.name, args,
-                workspaces: workspaces)) {
+            terminalCommandIsHighRisk(call.name, args)) {
           return ApprovalRequirement.needsUser;
         }
         return ApprovalRequirement.allow;
@@ -1507,10 +1492,10 @@ class _PolicyApprovalGate implements ApprovalGate {
     if (decision.action == PermissionAction.deny) {
       return ApprovalRequirement.forbid;
     }
-    // 硬约束：越出工作区 root 的终端命令强制审批，任何 allow
-    // 规则 / auto 模式均不覆盖（双作用域设计稿 §4.1）。
+    // 硬约束：高危终端命令（提权/换根、黑名单、递归强删）强制
+    // 审批，任何 allow 规则 / auto 模式均不覆盖。
     if (route is TerminalToolRoute &&
-        terminalCommandEscapesRoot(call.name, args, workspaces: workspaces)) {
+        terminalCommandIsHighRisk(call.name, args)) {
       return ApprovalRequirement.needsUser;
     }
     // 外部 MCP 工具（远程 / stdio）：外部代码无法静态判定副作用，
@@ -1519,8 +1504,8 @@ class _PolicyApprovalGate implements ApprovalGate {
         task.mode == AgentSessionMode.auto) {
       return ApprovalRequirement.allow;
     }
-    // auto 模式：任务绑定工作区内的写/执行免审批直通；未绑定工作区
-    // 或调用越出绑定 root 时不免审。
+    // auto 模式：终端命令除高危外免审直通；文件编辑限任务绑定
+    // 工作区 root 内免审。
     if (task.mode == AgentSessionMode.auto &&
         _autoModeBypasses(task, route, call.name, args, workspaces)) {
       return ApprovalRequirement.allow;
@@ -1659,8 +1644,9 @@ class _PolicyApprovalGate implements ApprovalGate {
     );
   }
 
-  /// auto 模式的免审范围：只覆盖文件编辑与终端两组工作区工具，且所有
-  /// 路径/命令必须落在任务绑定工作区 root 内；其余需审批工具照常询问。
+  /// auto 模式的免审范围：终端命令除高危（提权/换根、黑名单、
+  /// 递归强删）外全部免审；文件编辑限任务绑定工作区 root 内免审；
+  /// 其余需审批工具照常询问。
   bool _autoModeBypasses(
     AgentTask task,
     ToolRoute route,
@@ -1668,19 +1654,14 @@ class _PolicyApprovalGate implements ApprovalGate {
     Map<String, Object?> args,
     List<Workspace> workspaces,
   ) {
+    if (route is TerminalToolRoute) {
+      return !terminalCommandIsHighRisk(toolName, args);
+    }
     final bound =
         workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
     if (bound == null) return false;
     if (route is FileEditorToolRoute) {
       return fileEditorPathsWithinRoot(args, root: bound.root);
-    }
-    if (route is TerminalToolRoute) {
-      return terminalCommandStaysInBoundRoot(
-        toolName,
-        args,
-        boundWorkspace: bound,
-        workspaces: workspaces,
-      );
     }
     return false;
   }

@@ -36,7 +36,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart'
     show toolAuthPolicyProvider;
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart'
-    show terminalCommandEscapesRoot;
+    show terminalCommandIsHighRisk;
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.dart';

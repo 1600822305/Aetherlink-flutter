@@ -44,8 +44,8 @@ bool toolNeedsConfirmation(
 
 /// Whether the user's tool authorization whitelist ([policy], 工作区管理页
 /// → 工具授权) lets this normally-gated call skip the confirmation prompt.
-/// 越出项目工作区 root 的终端命令不受白名单覆盖，仍强制审批
-/// （双作用域设计稿 §4.1 硬要求）。
+/// 高危终端命令（提权/换根、黑名单、递归强删）不受白名单覆盖，
+/// 仍强制审批。
 bool toolAutoApprovedByPolicy(
   ToolAuthPolicy policy,
   ToolRoute route,
@@ -63,7 +63,7 @@ bool toolAutoApprovedByPolicy(
   }
   if (!policy.isAutoApproved(server, toolName)) return false;
   return !(route is TerminalToolRoute &&
-      terminalCommandEscapesRoot(toolName, args, workspaces: workspaces));
+      terminalCommandIsHighRisk(toolName, args));
 }
 
 /// Whether this tool call is a command that can be aborted mid-flight
