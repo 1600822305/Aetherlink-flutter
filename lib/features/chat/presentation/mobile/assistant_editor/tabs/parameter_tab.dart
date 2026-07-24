@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/parameter_editor.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/parameter_editor/parameter_editor.dart';
 
 // ─── Parameter tab ─────────────────────────────────────────────────────────
 
