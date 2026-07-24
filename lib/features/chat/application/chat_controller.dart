@@ -7,8 +7,6 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
-import 'package:aetherlink_flutter/app/di/skills_access.dart';
-import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
 import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
@@ -21,12 +19,17 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/remote/media/m
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_send_hooks.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/interrupted_settlement.dart'
+    as send_svc;
+import 'package:aetherlink_flutter/features/chat/application/send/llm_history_builder.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/llm_request_params.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/message_view_projector.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/system_prompt_builder.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
-import 'package:aetherlink_flutter/features/chat/application/ocr_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
@@ -52,34 +55,27 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_file_re
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/multi_model_message_style.dart';
-import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_extraction.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
-import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
-import 'package:aetherlink_flutter/shared/config/skill_prompt_builder.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
-import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
-import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
-import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
-import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
 part 'chat_controller_debate.dart';
@@ -89,8 +85,8 @@ part 'chat_controller_post_turn.dart';
 part 'chat_controller_streaming.dart';
 part 'chat_controller_translate.dart';
 
-const String _toolModeMetadataKey = 'mcpMode';
-const String _toolRoundMetadataKey = 'toolRoundId';
+const String _toolModeMetadataKey = kToolModeMetadataKey;
+const String _toolRoundMetadataKey = kToolRoundMetadataKey;
 
 /// Orchestrates the chat send/stream loop (application layer).
 ///
@@ -152,6 +148,28 @@ class ChatController extends _$ChatController
   @override
   StreamingRegistry get _registry =>
       ref.read(streamingRegistryProvider.notifier);
+
+  /// Serialises views into LLM history (tool rounds, 正则, OCR fallback);
+  /// extracted to [LlmHistoryBuilder]. Same lazy-Ref rationale as
+  /// [_toolExecutor].
+  late final LlmHistoryBuilder _historyBuilder = LlmHistoryBuilder(() => ref);
+
+  /// Assembles the per-turn system prompt (skills / memory / MCP hints);
+  /// extracted to [SystemPromptBuilder].
+  late final SystemPromptBuilder _systemPromptBuilder = SystemPromptBuilder(
+    () => ref,
+    repo: () => _repo,
+    assistantId: () => _assistantId,
+    topicId: () => _topicId,
+  );
+
+  /// Projects persisted [Message]s into rendered [ChatMessageView]s;
+  /// extracted to [MessageViewProjector].
+  late final MessageViewProjector _viewProjector = MessageViewProjector(
+    () => ref,
+    repo: () => _repo,
+    debatePhaseOf: _debatePhaseOf,
+  );
 
   /// Aborts the streaming reply of the *current* topic, if any. The partial
   /// output already generated is kept and persisted (mirrors Cherry Studio's
@@ -1017,147 +1035,22 @@ class ChatController extends _$ChatController
 
   /// Reads the parameter settings and returns a record of fields suitable for
   /// spreading into an [LlmChatRequest] constructor. Only enabled parameters
-  /// are returned; disabled ones stay `null`.
+  /// are returned; disabled ones stay `null`. Extracted to
+  /// [readLlmParameterFields].
   @override
-  ({
-    double? temperature,
-    double? topP,
-    int? topK,
-    double? frequencyPenalty,
-    double? presencePenalty,
-    int? seed,
-    List<String>? stopSequences,
-    String? responseFormat,
-    bool? parallelToolCalls,
-    bool? logprobs,
-    String? user,
-    String? reasoningEffort,
-    int? thinkingBudget,
-    bool? includeThoughts,
-    bool? cacheControl,
-    String? structuredOutputMode,
-    bool? webSearchEnabled,
-    bool? codeExecutionEnabled,
-    bool? useSearchGrounding,
-    String? safetyLevel,
-    bool streamOutput,
-    Map<String, dynamic>? customParameters,
-  })
-  _parameterFields() {
-    final ps = ref.read(parameterSettingsControllerProvider);
+  LlmParameterFields _parameterFields() => readLlmParameterFields(ref);
 
-    T? enabled<T>(String key) {
-      if (!ps.isParameterEnabled(key)) return null;
-      final v = ps.getParameterValue(key);
-      if (v is T) return v;
-      return null;
-    }
-
-    int? enabledInt(String key) {
-      if (!ps.isParameterEnabled(key)) return null;
-      final v = ps.getParameterValue(key);
-      if (v is int) return v;
-      if (v is num) return v.toInt();
-      return null;
-    }
-
-    double? enabledDouble(String key) {
-      if (!ps.isParameterEnabled(key)) return null;
-      final v = ps.getParameterValue(key);
-      if (v is double) return v;
-      if (v is num) return v.toDouble();
-      return null;
-    }
-
-    // Stop sequences: stored as comma-separated string → List<String>
-    List<String>? stops;
-    final rawStops = enabled<String>('stopSequences');
-    if (rawStops != null && rawStops.isNotEmpty) {
-      stops = rawStops
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-      if (stops.isEmpty) stops = null;
-    }
-
-    // Custom parameters
-    Map<String, dynamic>? custom;
-    if (ps.customParameters.isNotEmpty) {
-      custom = <String, dynamic>{};
-      for (final cp in ps.customParameters) {
-        final name = cp['name'] as String?;
-        if (name != null && name.isNotEmpty) {
-          custom[name] = cp['value'];
-        }
-      }
-      if (custom.isEmpty) custom = null;
-    }
-
-    return (
-      temperature: enabledDouble('temperature'),
-      topP: enabledDouble('topP'),
-      topK: enabledInt('topK'),
-      frequencyPenalty: enabledDouble('frequencyPenalty'),
-      presencePenalty: enabledDouble('presencePenalty'),
-      seed: enabledInt('seed'),
-      stopSequences: stops,
-      responseFormat: enabled<String>('responseFormat'),
-      parallelToolCalls: enabled<bool>('parallelToolCalls'),
-      logprobs: enabled<bool>('logprobs'),
-      user: enabled<String>('user'),
-      reasoningEffort: enabled<String>('reasoningEffort'),
-      thinkingBudget: enabledInt('thinkingBudget'),
-      includeThoughts: enabled<bool>('includeThoughts'),
-      cacheControl: enabled<bool>('cacheControl'),
-      structuredOutputMode: enabled<String>('structuredOutputMode'),
-      webSearchEnabled: enabled<bool>('webSearchEnabled'),
-      codeExecutionEnabled: enabled<bool>('codeExecutionEnabled'),
-      useSearchGrounding: enabled<bool>('useSearchGrounding'),
-      safetyLevel: enabled<String>('safetyLevel'),
-      streamOutput: ps.isParameterEnabled('streamOutput')
-          ? (ps.getParameterValue('streamOutput') as bool?) ?? true
-          : true,
-      customParameters: custom,
-    );
-  }
-
-  /// Trims [views] to the last [count] entries so only recent history is sent
-  /// to the model. When [count] covers all views the list is returned as-is.
+  /// Extracted to [trimViewsForContext].
   static List<ChatMessageView> _trimViews(
     List<ChatMessageView> views,
     int count,
-  ) {
-    if (views.length <= count) return views;
-    return views.sublist(views.length - count);
-  }
+  ) => trimViewsForContext(views, count);
 
-  /// Multi-model 对比 context hygiene: the displayed list inlines every
-  /// sibling of a group, but the conversation continues from the `foldSelected`
-  /// one — so LLM history keeps only that sibling per group. Siblings of
-  /// [excludeGroupId] (the group being regenerated) are dropped entirely, so
-  /// each model answers the shared conversation independently instead of
-  /// seeing its siblings' answers to the same question.
-  /// Groups without a `foldSelected` member (pre-flag data) keep their last
-  /// sibling instead, so the turn never silently vanishes from the context.
+  /// Extracted to [filterSiblingsForContext].
   static List<ChatMessageView> _filterSiblingsForContext(
     List<ChatMessageView> views, {
     int? excludeGroupId,
-  }) {
-    final keptOfGroup = <int, ChatMessageView>{};
-    for (final view in views) {
-      final group = view.siblingsGroupId;
-      if (group == 0 || group == excludeGroupId) continue;
-      final kept = keptOfGroup[group];
-      if (kept == null || !kept.foldSelected) keptOfGroup[group] = view;
-    }
-    return [
-      for (final view in views)
-        if (view.siblingsGroupId == 0 ||
-            identical(keptOfGroup[view.siblingsGroupId], view))
-          view,
-    ];
-  }
+  }) => filterSiblingsForContext(views, excludeGroupId: excludeGroupId);
 
   /// Replaces every block of [messageId] with [blocks] (in order) and stamps the
   /// message [status]. Deleting first keeps the streaming placeholder and any
@@ -1170,21 +1063,14 @@ class ChatController extends _$ChatController
     required List<MessageBlock> blocks,
     Usage? usage,
     Metrics? metrics,
-  }) async {
-    final now = DateTime.now();
-    final message = await _repo.getMessage(messageId);
-    await _repo.replaceMessageBlocks(
-      messageId: messageId,
-      blocks: blocks,
-      message: message?.copyWith(
-        status: status,
-        updatedAt: now,
-        blocks: [for (final block in blocks) block.id],
-        usage: usage ?? message.usage,
-        metrics: metrics ?? message.metrics,
-      ),
-    );
-  }
+  }) => send_svc.persistMessageBlocks(
+    _repo,
+    messageId: messageId,
+    status: status,
+    blocks: blocks,
+    usage: usage,
+    metrics: metrics,
+  );
 
   /// 崩溃恢复：把 [topicId] 里上次运行遗留在 streaming 状态的消息落定（对齐
   /// Cherry Studio 启动时的 `reconcileStalePendingMessages`）。检查点持久化让
@@ -1192,60 +1078,8 @@ class ChatController extends _$ChatController
   /// 一点内容都没有才标记 error；块级的 streaming/processing 状态一并落定，
   /// 其中未完成的工具块标记为 error（结果已随进程一起丢失），避免重启后出现
   /// 永远转圈的气泡。仅在该话题没有活跃流时调用。
-  Future<void> _settleInterruptedMessages(String topicId) async {
-    try {
-      final messages = await _repo.getMessagesByTopicId(topicId);
-      for (final message in messages) {
-        if (message.status != MessageStatus.streaming) continue;
-        final blocks = await _repo.getMessageBlocksByMessageId(message.id);
-        final settled = <MessageBlock>[
-          for (final block in blocks)
-            switch (block) {
-              ToolBlock(status: MessageBlockStatus.processing) =>
-                block.copyWith(
-                  status: MessageBlockStatus.error,
-                  updatedAt: DateTime.now(),
-                  content: '应用在工具执行期间退出，本次调用的结果已丢失',
-                ),
-              _
-                  when block.status == MessageBlockStatus.streaming ||
-                      block.status == MessageBlockStatus.processing ||
-                      block.status == MessageBlockStatus.pending =>
-                block.copyWith(
-                  status: MessageBlockStatus.success,
-                  updatedAt: DateTime.now(),
-                ),
-              _ => block,
-            },
-        ];
-        final hasContent = settled.any(
-          (b) =>
-              (b is MainTextBlock && b.content.trim().isNotEmpty) ||
-              (b is ThinkingBlock && b.content.trim().isNotEmpty) ||
-              b is ToolBlock,
-        );
-        await _persistMessageBlocks(
-          messageId: message.id,
-          status: hasContent ? MessageStatus.success : MessageStatus.error,
-          blocks: [
-            for (final b in settled)
-              if (b is! MainTextBlock || b.content.trim().isNotEmpty) b,
-            if (!hasContent)
-              MessageBlock.error(
-                id: generateId('block'),
-                messageId: message.id,
-                status: MessageBlockStatus.error,
-                createdAt: DateTime.now(),
-                content: '',
-                message: '回复在应用退出时被中断',
-              ),
-          ],
-        );
-      }
-    } on Object catch (_) {
-      // Recovery is best-effort; never block loading the conversation.
-    }
-  }
+  Future<void> _settleInterruptedMessages(String topicId) =>
+      send_svc.settleInterruptedMessages(_repo, topicId);
 
   /// Deletes [messageId] together with its blocks and drops it from the view.
   ///
@@ -1420,7 +1254,7 @@ class ChatController extends _$ChatController
   /// payload inline (no disk file is written): an image becomes an `IMAGE`
   /// block (raw base64 for inline rendering), a text/file attachment a `FILE`
   /// block (a base64 data URI; text attachments stay `text/plain` so
-  /// [_decodeFileText] feeds them to the model).
+  /// `decodeFileText` feeds them to the model).
   @override
   MessageBlock _attachmentBlock({
     required String messageId,
@@ -1490,288 +1324,26 @@ class ChatController extends _$ChatController
     List<AssistantRegex>? regexRules,
     bool dropEmptyAssistant = true,
     required McpMode toolMode,
-  }) async {
-    final ocr = await _resolveOcrFallback(chatModel);
-    final messages = <LlmMessage>[];
-    for (final view in views) {
-      final hasToolBlocks = view.blocks.any((block) => block is ToolBlock);
-      if (dropEmptyAssistant &&
-          view.role == MessageRole.assistant &&
-          view.text.isEmpty &&
-          !hasToolBlocks) {
-        continue;
-      }
-      if (view.role == MessageRole.assistant && hasToolBlocks) {
-        messages.addAll(
-          _toolHistoryMessages(
-            view,
-            fallbackMode: toolMode,
-            regexRules: regexRules,
-          ),
-        );
-        continue;
-      }
-      var content = _requestContent(view, regexRules: regexRules);
-      var images = _requestImages(view);
-      if (ocr != null && images != null && images.isNotEmpty) {
-        final ocrText = await ref
-            .read(ocrServiceProvider)
-            .recognizeImages(
-              images: images,
-              ocrModel: ocr.model,
-              prompt: ocr.prompt,
-            );
-        if (ocrText != null && ocrText.isNotEmpty) {
-          content = content.isEmpty ? ocrText : '$ocrText\n\n$content';
-          images = null;
-        }
-      }
-      messages.add(
-        LlmMessage(role: view.role, content: content, images: images),
-      );
-    }
-    return messages;
-  }
+  }) => _historyBuilder.buildLlmMessages(
+    views,
+    chatModel: chatModel,
+    regexRules: regexRules,
+    dropEmptyAssistant: dropEmptyAssistant,
+    toolMode: toolMode,
+  );
 
-  List<LlmMessage> _toolHistoryMessages(
-    ChatMessageView view, {
-    required McpMode fallbackMode,
-    List<AssistantRegex>? regexRules,
-  }) {
-    final messages = <LlmMessage>[];
-    final pendingText = <String>[];
-    final blocks = view.blocks;
-    var index = 0;
-
-    void flushText() {
-      final content = _applySendingRegex(
-        pendingText.join('\n\n'),
-        view.role,
-        regexRules,
-      );
-      pendingText.clear();
-      if (content.isNotEmpty) {
-        messages.add(LlmMessage(role: view.role, content: content));
-      }
-    }
-
-    while (index < blocks.length) {
-      final block = blocks[index];
-      if (block is MainTextBlock) {
-        if (block.content.isNotEmpty) pendingText.add(block.content);
-        index++;
-        continue;
-      }
-      if (block is! ToolBlock) {
-        index++;
-        continue;
-      }
-
-      final roundId = block.metadata?[_toolRoundMetadataKey]?.toString();
-      final round = <ToolBlock>[block];
-      index++;
-      while (index < blocks.length && blocks[index] is ToolBlock) {
-        final next = blocks[index] as ToolBlock;
-        final nextRoundId = next.metadata?[_toolRoundMetadataKey]?.toString();
-        if (roundId != null ? nextRoundId != roundId : nextRoundId != null) {
-          break;
-        }
-        round.add(next);
-        index++;
-      }
-
-      final prose = _applySendingRegex(
-        pendingText.join('\n\n'),
-        view.role,
-        regexRules,
-      );
-      pendingText.clear();
-      final mode = McpMode.fromStorage(
-        block.metadata?[_toolModeMetadataKey]?.toString(),
-      );
-      final effectiveMode = block.metadata?[_toolModeMetadataKey] == null
-          ? fallbackMode
-          : mode;
-
-      if (effectiveMode == McpMode.prompt) {
-        messages.add(
-          LlmMessage(
-            role: MessageRole.assistant,
-            content: <String>[
-              if (prose.isNotEmpty) prose,
-              for (final tool in round) _promptToolCall(tool),
-            ].join('\n\n'),
-          ),
-        );
-        for (final tool in round) {
-          messages.add(
-            LlmMessage(
-              role: MessageRole.user,
-              content: formatToolUseResult(
-                tool.toolName ?? tool.toolId,
-                _toolResultText(tool.content),
-              ),
-            ),
-          );
-        }
-      } else {
-        messages.add(
-          LlmMessage(
-            role: MessageRole.assistant,
-            content: prose,
-            toolCalls: [
-              for (final tool in round)
-                LlmToolCall(
-                  id: tool.toolId,
-                  name: tool.toolName ?? tool.toolId,
-                  arguments: jsonEncode(tool.arguments ?? const {}),
-                ),
-            ],
-          ),
-        );
-        for (final tool in round) {
-          messages.add(
-            LlmMessage(
-              role: MessageRole.user,
-              content: _toolResultText(tool.content),
-              toolCallId: tool.toolId,
-              toolName: tool.toolName ?? tool.toolId,
-            ),
-          );
-        }
-      }
-    }
-
-    flushText();
-    return messages;
-  }
-
-  String _promptToolCall(ToolBlock block) {
-    final name = block.toolName ?? block.toolId;
-    final arguments = jsonEncode(block.arguments ?? const {});
-    return '<tool_use>\n<name>$name</name>\n<arguments>$arguments</arguments>\n'
-        '</tool_use>';
-  }
-
-  String _toolResultText(Object? content) {
-    if (content == null) return '';
-    if (content is String) return content;
-    return jsonEncode(content);
-  }
-
-  /// Resolves the OCR fallback for [chatModel]: returns the configured OCR
-  /// (vision) model + prompt only when [chatModel] itself lacks vision support
-  /// and a usable 辅助模型 → OCR model is configured. Vision support is read
-  /// from the model's detected capabilities (registry/inference) or an explicit
-  /// `ModelType.vision` selection (see `isVisionModel`).
-  /// Returns `null` otherwise, so vision-capable models keep receiving images
-  /// directly and image turns are left untouched when no OCR model is set
-  /// (footnote: "未设置时使用聊天模型识别图片").
-  Future<({Model model, String prompt})?> _resolveOcrFallback(
-    Model chatModel,
-  ) async {
-    if (isVisionModel(chatModel)) return null;
-    final auxState = ref.read(auxiliaryModelControllerProvider);
-    final providers = await ref.read(appModelProvidersProvider.future);
-    final resolved = resolveAuxiliaryModel(auxState.ocrModelKey, providers);
-    if (resolved == null) return null;
-    return (model: effectiveModelFor(resolved), prompt: auxState.ocrPrompt);
-  }
-
-  /// The image parts on [view] (raw base64) for a multimodal request, decoded
-  /// from its `IMAGE` blocks; `null` when it has none so plain-text turns are
-  /// serialised unchanged.
-  List<LlmContentImage>? _requestImages(ChatMessageView view) {
-    final images = <LlmContentImage>[
-      for (final block in view.blocks)
-        if (block is ImageBlock)
-          if (_imagePart(block) case final part?) part,
-    ];
-    return images.isEmpty ? null : images;
-  }
-
-  /// Resolves an [ImageBlock] to a request image part, preferring its raw
-  /// [ImageBlock.base64Data] and falling back to the file reference's `data:`
-  /// URI; `null` when neither carries data.
-  LlmContentImage? _imagePart(ImageBlock block) {
-    final raw = block.base64Data;
-    if (raw != null && raw.isNotEmpty) {
-      return LlmContentImage(mimeType: block.mimeType, base64Data: raw);
-    }
-    final reference = block.file?.base64Data;
-    if (reference != null && reference.isNotEmpty) {
-      final comma = reference.indexOf(',');
-      final encoded = comma >= 0 ? reference.substring(comma + 1) : reference;
-      if (encoded.isNotEmpty) {
-        return LlmContentImage(mimeType: block.mimeType, base64Data: encoded);
-      }
-    }
-    return null;
-  }
-
-  /// The request content for [view]: its main text with each FILE block's
-  /// decoded text appended, so the model receives pasted-as-file content (and
-  /// likewise for history, since [_viewOf] carries FILE blocks through).
-  ///
-  /// When [regexRules] are supplied, the assistant's non-`visualOnly` 正则规则
-  /// are applied (scoped by `view.role`) before sending — the port of the web
-  /// `applyRegexRulesForSending` step in `apiPreparation.ts`.
+  /// The request content for [view] (main text + decoded FILE blocks, 发送期
+  /// 正则 applied); extracted to [LlmHistoryBuilder.requestContent].
   @override
   String _requestContent(
     ChatMessageView view, {
     List<AssistantRegex>? regexRules,
-  }) {
-    final parts = <String>[
-      if (view.text.isNotEmpty) view.text,
-      for (final block in view.blocks)
-        if (block is FileBlock)
-          if (_decodeFileText(block) case final text? when text.isNotEmpty)
-            text,
-    ];
-    final content = parts.join('\n\n');
-    return _applySendingRegex(content, view.role, regexRules);
-  }
-
-  String _applySendingRegex(
-    String content,
-    MessageRole role,
-    List<AssistantRegex>? regexRules,
-  ) {
-    final scope = _regexScopeFor(role);
-    if (scope == null || regexRules == null || regexRules.isEmpty) {
-      return content;
-    }
-    return applyRegexRulesForSending(content, regexRules, scope);
-  }
-
-  /// Maps a [MessageRole] to its 正则 scope, or null for roles (e.g. system)
-  /// that 正则规则 never target.
-  static AssistantRegexScope? _regexScopeFor(MessageRole role) =>
-      switch (role) {
-        MessageRole.user => AssistantRegexScope.user,
-        MessageRole.assistant => AssistantRegexScope.assistant,
-        _ => null,
-      };
+  }) => _historyBuilder.requestContent(view, regexRules: regexRules);
 
   /// The current assistant's 正则规则, used to process outgoing message content.
   @override
   Future<List<AssistantRegex>?> _sendingRegexRules() async =>
       (await _repo.getAssistant(_assistantId))?.regexRules;
-
-  /// Decodes a FILE block's inline text, or `null` when it carries no decodable
-  /// `text/plain` base64 data URI.
-  String? _decodeFileText(FileBlock block) {
-    if (block.mimeType != 'text/plain') return null;
-    final data = block.file?.base64Data;
-    if (data == null || data.isEmpty) return null;
-    final comma = data.indexOf(',');
-    final encoded = comma >= 0 ? data.substring(comma + 1) : data;
-    try {
-      return utf8.decode(base64Decode(encoded));
-    } catch (_) {
-      return null;
-    }
-  }
 
   /// Reloads [messageId]'s persisted view into the conversation state without a
   /// full topic reload, after a version mutation.
@@ -1801,126 +1373,33 @@ class ChatController extends _$ChatController
     return _viewOf(message);
   }
 
-  /// Assembles the system prompt for a conversation turn: the assistant's
-  /// 系统提示词 combined with the 话题提示词 (the port of apiPreparation's
-  /// `assistantPrompt [+ '\n\n' + topicPrompt]`), substitutes inline
-  /// placeholder variables ([replaceSystemPromptPlaceholders] — `{model_name}`,
-  /// `{assistant_name}`, `{cur_date}` …), then appends the enabled 系统提示词变量
-  /// (time / location / OS / locale). Returns `null` when the assembled prompt
-  /// is empty, so requests with no system prompt stay system-less (the
-  /// append-only variables are never injected into an empty prompt, matching the
-  /// web `injectSystemPromptVariables`).
+  /// Assembles the system prompt for a conversation turn; extracted to
+  /// [SystemPromptBuilder.buildSystemPrompt].
   @override
   Future<String?> _buildSystemPrompt({
     required String modelName,
     required String modelId,
     required String providerName,
-  }) async {
-    final assistant = await _repo.getAssistant(_assistantId);
-    final assistantPrompt = assistant?.systemPrompt ?? '';
-    final topicId = _topicId;
-    final topic = topicId == null ? null : await _repo.getTopic(topicId);
-    final topicPrompt = (topic?.prompt?.trim().isNotEmpty ?? false)
-        ? topic!.prompt!
-        : '';
+  }) => _systemPromptBuilder.buildSystemPrompt(
+    modelName: modelName,
+    modelId: modelId,
+    providerName: providerName,
+  );
 
-    final enabledSkills = await _enabledSkillsFor(assistant?.skillIds);
-    final base = enabledSkills.isNotEmpty
-        ? assembleSkillSystemPrompt(
-            assistantPrompt: assistantPrompt,
-            enabledSkills: enabledSkills,
-            topicPrompt: topicPrompt,
-          )
-        : (topicPrompt.isNotEmpty
-              ? (assistantPrompt.isNotEmpty
-                    ? '$assistantPrompt\n\n$topicPrompt'
-                    : topicPrompt)
-              : assistantPrompt);
-
-    final memorySection = await buildChatMemoryInjection(
-      ref,
-      assistantId: _assistantId,
-    );
-    return _composeSystemPrompt(
-      replaceSystemPromptPlaceholders(
-        base,
-        modelName: modelName,
-        modelId: modelId,
-        assistantName: assistant?.name ?? '',
-        providerName: providerName,
-      ),
-      memorySection,
-    );
-  }
-
-  /// Injects prompt variables into [base] and appends the resolved
-  /// [memorySection] (the `<user_memories>` block, or null/empty for none),
-  /// returning null when the result is empty. Split out so [send] can reuse the
-  /// already-resolved memory section instead of querying the store twice.
-  String? _composeSystemPrompt(String base, String? memorySection) {
-    final injected = injectSystemPromptVariables(
-      base,
-      ref.read(systemPromptVariablesProvider),
-    );
-    final withMemory = (memorySection == null || memorySection.isEmpty)
-        ? injected
-        : (injected.isEmpty ? memorySection : '$injected\n\n$memorySection');
-    return withMemory.isEmpty ? null : withMemory;
-  }
-
-  /// Like [_buildSystemPrompt] but reuses a pre-resolved [memorySection] (from
-  /// [collectChatMemoryInjection]) so the memory store is read once per turn.
+  /// Like [_buildSystemPrompt] but reuses a pre-resolved memory section;
+  /// extracted to [SystemPromptBuilder.buildSystemPromptWith].
   @override
   Future<String?> _buildSystemPromptWith(
     String? memorySection, {
     required String modelName,
     required String modelId,
     required String providerName,
-  }) async {
-    final assistant = await _repo.getAssistant(_assistantId);
-    final assistantPrompt = assistant?.systemPrompt ?? '';
-    final topicId = _topicId;
-    final topic = topicId == null ? null : await _repo.getTopic(topicId);
-    final topicPrompt = (topic?.prompt?.trim().isNotEmpty ?? false)
-        ? topic!.prompt!
-        : '';
-
-    final enabledSkills = await _enabledSkillsFor(assistant?.skillIds);
-    final base = enabledSkills.isNotEmpty
-        ? assembleSkillSystemPrompt(
-            assistantPrompt: assistantPrompt,
-            enabledSkills: enabledSkills,
-            topicPrompt: topicPrompt,
-          )
-        : (topicPrompt.isNotEmpty
-              ? (assistantPrompt.isNotEmpty
-                    ? '$assistantPrompt\n\n$topicPrompt'
-                    : topicPrompt)
-              : assistantPrompt);
-
-    return _composeSystemPrompt(
-      replaceSystemPromptPlaceholders(
-        base,
-        modelName: modelName,
-        modelId: modelId,
-        assistantName: assistant?.name ?? '',
-        providerName: providerName,
-      ),
-      memorySection,
-    );
-  }
-
-  /// The skills bound to the assistant ([skillIds]) that are currently enabled,
-  /// in binding order — the port of `SkillManager.getSkillsForAssistant`.
-  Future<List<Skill>> _enabledSkillsFor(List<String>? skillIds) async {
-    if (skillIds == null || skillIds.isEmpty) return const <Skill>[];
-    final skills = await ref.read(skillsProvider.future);
-    final byId = {for (final s in skills) s.id: s};
-    return [
-      for (final id in skillIds)
-        if (byId[id]?.enabled ?? false) byId[id]!,
-    ];
-  }
+  }) => _systemPromptBuilder.buildSystemPromptWith(
+    memorySection,
+    modelName: modelName,
+    modelId: modelId,
+    providerName: providerName,
+  );
 
   /// Assembles the [McpSetup] for the current turn (see [buildMcpSetup]);
   /// the bound-skills lookup stays here because it needs the repository and
@@ -1930,47 +1409,15 @@ class ChatController extends _$ChatController
     ref,
     loadBoundSkills: () async {
       final assistant = await _repo.getAssistant(_assistantId);
-      return _enabledSkillsFor(assistant?.skillIds);
+      return _systemPromptBuilder.enabledSkillsFor(assistant?.skillIds);
     },
   );
 
-  /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
-  /// into [base] (web `buildSystemPrompt`); otherwise [base] is used as-is and
-  /// tools ride the native `tools` field. When 网络搜索 is active, a hint is
-  /// appended encouraging the model to use the search tool.
+  /// The system prompt for a turn (tool catalogue injection + capability
+  /// hints); extracted to [SystemPromptBuilder.systemFor].
   @override
-  String? _systemFor(McpSetup mcp, String? base) {
-    var prompt = mcp.usePromptInjection
-        ? buildMcpSystemPrompt(base, mcp.tools)
-        : base;
-    if (ref.read(inputModeControllerProvider) == InputMode.webSearch) {
-      const hint =
-          '\n\n[网络搜索已启用] '
-          '你可以使用 builtin_web_search 工具搜索互联网获取实时信息。'
-          '当用户的问题可能需要最新信息时，请主动使用搜索工具。'
-          '搜索结果中如果有有用的链接，请在回答中引用。';
-      prompt = (prompt ?? '') + hint;
-    }
-    if (shouldExposeMemorySearchTool(ref)) {
-      const hint =
-          '\n\n[长期记忆已启用] '
-          '你可以使用 search_memory 工具检索关于用户的长期记忆（偏好、事实、历史）。'
-          '当回答可能依赖用户的个人偏好或既往信息时，请先调用该工具确认。';
-      prompt = (prompt ?? '') + hint;
-    }
-    if (mcp.routes.values.any((r) => r is KnowledgeToolRoute)) {
-      const hint =
-          '\n\n[知识库已启用] '
-          '你可以使用 kb_search 工具在用户的知识库中检索资料，用 kb_read 取回条目全文。'
-          '当用户的问题可能依赖其知识库内容时，请主动检索，并在回答中引用来源。';
-      prompt = (prompt ?? '') + hint;
-    }
-    final workspaceContext = mcp.workspaceContext;
-    if (workspaceContext != null && workspaceContext.isNotEmpty) {
-      prompt = '${prompt ?? ''}\n\n$workspaceContext';
-    }
-    return prompt;
-  }
+  String? _systemFor(McpSetup mcp, String? base) =>
+      _systemPromptBuilder.systemFor(mcp, base);
 
   @override
   Future<String> _ensureTopic() async {
@@ -1991,63 +1438,10 @@ class ChatController extends _$ChatController
     return topicId;
   }
 
-  Future<ChatMessageView> _viewOf(Message message) async {
-    final fetched = await _repo.getMessageBlocksByMessageId(message.id);
-    final blocks = _orderBlocks(message.blocks, fetched);
-    final mainText = blocks
-        .whereType<MainTextBlock>()
-        .map((block) => block.content)
-        .join('\n\n');
-    final summaryText = blocks
-        .whereType<ContextSummaryBlock>()
-        .map((block) => block.content)
-        .join('\n\n');
-    final text = mainText.isNotEmpty ? mainText : summaryText;
-    final thinking = blocks
-        .whereType<ThinkingBlock>()
-        .map((block) => block.content)
-        .join('\n\n');
-    final errors = blocks.whereType<ErrorBlock>();
-    final error = errors.isEmpty ? null : errors.first;
-    final model = message.model;
-    String? providerName;
-    if (model != null) {
-      if (model.provider == kModelComboProviderId) {
-        providerName = '模型组合';
-      } else {
-        final providers = await ref.read(appModelProvidersProvider.future);
-        for (final provider in providers) {
-          if (provider.id == model.provider) {
-            providerName = provider.name;
-            break;
-          }
-        }
-      }
-    }
-    return ChatMessageView(
-      id: message.id,
-      role: message.role,
-      status: message.status,
-      blocks: blocks,
-      text: text,
-      thinking: thinking,
-      errorText: error?.message ?? error?.content,
-      createdAt: message.createdAt,
-      modelName: model?.name,
-      providerName: providerName,
-      modelId: model?.id ?? message.modelId,
-      providerId: model?.provider,
-      askId: message.askId,
-      debatePhase: _debatePhaseOf(message.metadata),
-      siblingsGroupId: message.siblingsGroupId,
-      multiModelMessageStyle: message.multiModelMessageStyle,
-      foldSelected: message.foldSelected ?? false,
-      versions: message.versions ?? const <MessageVersion>[],
-      currentVersionId: message.currentVersionId,
-      usage: message.usage,
-      metrics: message.metrics,
-    );
-  }
+  /// Projects a persisted [Message] into its rendered view; extracted to
+  /// [MessageViewProjector.viewOf].
+  Future<ChatMessageView> _viewOf(Message message) =>
+      _viewProjector.viewOf(message);
 
   /// Returns [blocks] sorted by the `message.blocks` id order (the canonical
   /// render order); any block not referenced there is appended at the end.
@@ -2055,17 +1449,7 @@ class ChatController extends _$ChatController
   List<MessageBlock> _orderBlocks(
     List<String> order,
     List<MessageBlock> blocks,
-  ) {
-    if (order.isEmpty) return blocks;
-    final byId = {for (final block in blocks) block.id: block};
-    final ordered = <MessageBlock>[];
-    for (final id in order) {
-      final block = byId.remove(id);
-      if (block != null) ordered.add(block);
-    }
-    ordered.addAll(byId.values);
-    return ordered;
-  }
+  ) => orderMessageBlocks(order, blocks);
 
   @override
   void _emit(List<ChatMessageView> views, {required bool isStreaming}) {
