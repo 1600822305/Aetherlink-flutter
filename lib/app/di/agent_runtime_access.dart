@@ -9,6 +9,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/agent_file_watch_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_hooks_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
+import 'package:aetherlink_flutter/app/di/dynamic_tool_catalog.dart';
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
@@ -131,7 +132,7 @@ class AgentRuntime {
       llm: _GatewayAgentLlmClient(
         _refOf,
         profile,
-        catalog.definitions,
+        catalog,
         modelOverride: modelOverride,
       ),
       tools: hooked,
@@ -193,17 +194,21 @@ Future<AgentContextBreakdown> agentContextBreakdown(
   } catch (_) {
     // MCP 服务不可用时分解仍可用（少算 MCP 工具定义）。
   }
-  final client = _GatewayAgentLlmClient(() => ref, profile, catalog.definitions);
+  // 与真实请求同源：按原始事件流重建已激活技能集，否则延迟组
+  // 激活后分解显示的工具定义与实际发送不符。
+  final definitions =
+      catalog.definitionsFor(await _activatedSkillIds(ref, catalog, events));
+  final client = _GatewayAgentLlmClient(() => ref, profile, catalog);
   final system = buildAgentSystemPrompt(
     task: task,
     profile: profile,
     events: events,
-    environmentContext: await client._environmentContext(ref, task),
+    environmentContext: await client._environmentContext(ref, task, definitions),
     projectInstructions: await client._projectInstructions(ref, task),
   );
   return computeContextBreakdown(
     systemPrompt: system,
-    toolDefinitions: catalog.definitions,
+    toolDefinitions: definitions,
     messages: _replayMessages(events),
     apiContextTokens: task.contextTokens,
   );
@@ -255,8 +260,7 @@ const Set<String> _kReadOnlyToolNames = {
 /// 控制工具（update_plan/ask_user/finish_task）恒在，由引擎内部处理。
 /// Ask/Plan 模式只保留只读工具（见 [_kReadOnlyToolNames]）；
 /// Auto 与 Code 同样全能力，差别只在审批门。
-({List<McpToolDefinition> definitions, Map<String, ToolRoute> routes})
-    _catalogFor(
+DynamicToolCatalog _catalogFor(
   Set<AgentToolGroup> groups, {
   AgentSessionMode mode = AgentSessionMode.code,
   bool enableSubagents = true,
@@ -264,6 +268,7 @@ const Set<String> _kReadOnlyToolNames = {
   final readOnly =
       mode == AgentSessionMode.ask || mode == AgentSessionMode.plan;
   final definitions = <McpToolDefinition>[...kAgentControlToolDefinitions];
+  final deferred = <String, List<McpToolDefinition>>{};
   // 计划模式控制工具（引擎内部处理，对标 CC Enter/ExitPlanMode）：
   // 仅顶层任务暴露（子代理不可切模式）；Code/Auto 可请求进入计划模式，
   // Plan 模式提交方案请求批准退出（Ask 模式两者都不暴露）。
@@ -296,11 +301,21 @@ const Set<String> _kReadOnlyToolNames = {
   if (groups.contains(AgentToolGroup.webSearch)) {
     definitions.add(kBuiltinWebSearchToolDefinition);
     routes[kBuiltinWebSearchToolName] = const WebSearchToolRoute();
-    // 内置浏览器只读三件套随网络搜索组暴露（浏览器设计稿 §6 已定）。
-    addServer(
-      kBrowserServerName,
-      (name) => BuiltinToolRoute(kBrowserServerName, name),
-    );
+    // 内置浏览器组走渐进披露：定义进延迟组（read_skill 读取
+    // 「内置浏览器」技能后下一轮注入），路由照常全量。子代理
+    // 上下文短、无需渐进披露，直接常驻。Ask/Plan 只读过滤
+    // 对延迟组同样生效。
+    final browserDefs = <McpToolDefinition>[];
+    for (final def in builtinToolsFor(kBrowserServerName)) {
+      if (readOnly && !_kReadOnlyToolNames.contains(def.name)) continue;
+      browserDefs.add(def);
+      routes[def.name] = BuiltinToolRoute(kBrowserServerName, def.name);
+    }
+    if (enableSubagents) {
+      deferred['builtin-browser'] = browserDefs;
+    } else {
+      definitions.addAll(browserDefs);
+    }
   }
   // MCP 自管理：单一 mcp_manage 工具（最小 schema，config 格式与流程
   // 在内置技能「MCP 服务器管理」，模型按需 read_skill）。写操作走
@@ -320,7 +335,29 @@ const Set<String> _kReadOnlyToolNames = {
   if (enableSubagents) {
     definitions.add(kSpawnSubagentToolDefinition);
   }
-  return (definitions: definitions, routes: routes);
+  return DynamicToolCatalog(
+    resident: definitions,
+    deferred: deferred,
+    routes: routes,
+  );
+}
+
+/// 按原始事件流重建已激活的延迟技能集。技能库加载失败时
+/// fail-open（视为全部激活）：宁可多发几个定义，不能让已激活
+/// 的工具在续跑时消失。
+Future<Set<String>> _activatedSkillIds(
+  Ref ref,
+  DynamicToolCatalog catalog,
+  List<AgentEvent> events,
+) async {
+  if (catalog.deferred.isEmpty) return const {};
+  List<Skill> skills;
+  try {
+    skills = await ref.read(skillsProvider.future);
+  } catch (_) {
+    return catalog.deferred.keys.toSet();
+  }
+  return activatedSkillIdsFromEvents(events, skills);
 }
 
 /// 档案勾选的外部 MCP 服务器（远程 / stdio）：在线发现工具并并入目录。
@@ -331,8 +368,7 @@ Future<void> _addMcpServerTools(
   Ref ref,
   AgentProfile profile,
   AgentSessionMode mode,
-  ({List<McpToolDefinition> definitions, Map<String, ToolRoute> routes})
-      catalog,
+  DynamicToolCatalog catalog,
 ) async {
   if (profile.mcpServerIds.isEmpty) return;
   if (mode == AgentSessionMode.ask || mode == AgentSessionMode.plan) return;
@@ -353,7 +389,7 @@ Future<void> _addMcpServerTools(
         for (final tool in discovered) {
           final exposed = tool.definition.name;
           if (catalog.routes.containsKey(exposed)) continue;
-          catalog.definitions.add(tool.definition);
+          catalog.resident.add(tool.definition);
           catalog.routes[exposed] = RemoteToolRoute(server, tool.toolName);
         }
       } else if (StdioMcpConnectionManager.isStdio(server)) {
@@ -363,7 +399,7 @@ Future<void> _addMcpServerTools(
         for (final tool in discovered) {
           final exposed = tool.definition.name;
           if (catalog.routes.containsKey(exposed)) continue;
-          catalog.definitions.add(tool.definition);
+          catalog.resident.add(tool.definition);
           catalog.routes[exposed] = StdioToolRoute(server, tool.toolName);
         }
       }
@@ -404,13 +440,13 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   _GatewayAgentLlmClient(
     this._refOf,
     this._profile,
-    this._definitions, {
+    this._catalog, {
     Model? modelOverride,
   }) : _lockedModel = modelOverride;
 
   final Ref Function() _refOf;
   final AgentProfile _profile;
-  final List<McpToolDefinition> _definitions;
+  final DynamicToolCatalog _catalog;
 
   /// 运行内锁定的模型：首轮解析后本次运行（含压缩）不再跟随默认模型
   /// 切换——重放历史里的 tool_call 结构与 provider 绑定，中途换
@@ -449,11 +485,19 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     final model = await _resolveModel(ref);
     final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(model);
 
+    // 渐进披露：扫原始事件流里成功的 read_skill 调用确定已激活
+    // 技能，本轮 tools = 常驻 + 已激活组。无状态重算天然覆盖
+    // 续跑/重启恢复，与 agentContextBreakdown 同源。
+    final definitions = _catalog.definitionsFor(
+      await _activatedSkillIds(ref, _catalog, context.events),
+    );
+
     final system = buildAgentSystemPrompt(
       task: context.task,
       profile: _profile,
       events: context.events,
-      environmentContext: await _environmentContext(ref, context.task),
+      environmentContext:
+          await _environmentContext(ref, context.task, definitions),
       projectInstructions: await _projectInstructions(ref, context.task),
     );
 
@@ -483,7 +527,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       model: model,
       messages: messages,
       system: system,
-      tools: _definitions,
+      tools: definitions,
       reasoningEffort: thinkParams.effort,
       thinkingBudget: thinkParams.budget,
       includeThoughts: thinkParams.includeThoughts,
@@ -627,7 +671,11 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// （+ spawn_subagent 可用时的自定义子代理档案清单）。
   /// 工作区摘要锚定任务绑定的工作区，且不列其他工作区（绑定即
   /// 隔离，双作用域设计稿 §3.1）；找不到绑定工作区时退回当前工作区。
-  Future<String> _environmentContext(Ref ref, AgentTask task) async {
+  Future<String> _environmentContext(
+    Ref ref,
+    AgentTask task,
+    List<McpToolDefinition> definitions,
+  ) async {
     String? workspace;
     var onSharedStorage = false;
     try {
@@ -646,7 +694,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     } catch (_) {
       workspace = null;
     }
-    final toolNames = [for (final d in _definitions) d.name].join('、');
+    final toolNames = [for (final d in definitions) d.name].join('、');
     return [
       '平台：${Platform.operatingSystem}',
       if (workspace != null) workspace,
@@ -663,7 +711,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// 已启用技能清单：read_skill 可读的技能名 + 一句话描述，
   /// 模型按需读取正文（决策 29 skills 联动 / 决策 30）。
   Future<List<String>> _skillsSection(Ref ref) async {
-    if (!_definitions.any((d) => d.name == kReadSkillToolName)) {
+    if (!_catalog.resident.any((d) => d.name == kReadSkillToolName)) {
       return const [];
     }
     List<Skill> skills;
@@ -677,14 +725,15 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     return [
       '可用技能（read_skill 按名称读取正文）：',
       for (final s in enabled)
-        '- ${s.name}${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}',
+        '- ${s.name}${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}'
+            '${_catalog.deferred.containsKey(s.id) ? '（读取本技能后，对应工具将在下一轮可用）' : ''}',
     ];
   }
 
   /// 自定义子代理档案清单（工作区 .aetherlink/agents / .cursor/agents 的
   /// markdown 定义）：spawn_subagent 的 type 可填档案名按需委派。
   Future<List<String>> _customSubagentsSection(Ref ref) async {
-    if (!_definitions.any((d) => d.name == kToolSpawnSubagent)) {
+    if (!_catalog.resident.any((d) => d.name == kToolSpawnSubagent)) {
       return const [];
     }
     List<AgentSubagentProfile> profiles;
@@ -1107,7 +1156,8 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
       return AgentToolResult(
         ok: false,
         summary: '未知工具 ✗',
-        detail: '工具 ${call.name} 不在当前智能体的工具集内',
+        detail: '工具 ${call.name} 不在当前智能体的工具集内；'
+            '若为技能绑定的延迟工具，先用 read_skill 读取对应技能',
       );
     }
 
