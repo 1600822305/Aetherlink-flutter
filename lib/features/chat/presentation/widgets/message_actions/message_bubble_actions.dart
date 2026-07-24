@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/app/di/tts_access.dart';
-import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_actions_builder.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action_sheets.dart';
-import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
+
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/micro_bubbles.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/version_switchers.dart';
 
 /// The 功能气泡模式 presentation layer (`MessageActions` `renderMode === 'full'` +
 /// `'menuOnly'`), i.e. 信息气泡管理 → 操作显示模式 = 功能气泡模式.
@@ -75,13 +74,13 @@ class _MessageMicroBubblesState extends ConsumerState<MessageMicroBubbles> {
       runSpacing: 6,
       children: [
         if (hasBranches)
-          _BranchSwitcher(
+          BranchSwitcher(
             view: widget.view,
             baseColor: baseColor,
             pillColor: pillColor,
           ),
         if (hasVersions)
-          _VersionSwitcher(
+          VersionSwitcher(
             view: widget.view,
             style: widget.versionSwitchStyle,
             baseColor: baseColor,
@@ -89,14 +88,14 @@ class _MessageMicroBubblesState extends ConsumerState<MessageMicroBubbles> {
           ),
         for (final action in primary)
           if (action.id == MessageActionId.tts)
-            _TtsMicroBubble(
+            TtsMicroBubble(
               messageId: widget.view.id,
               baseColor: baseColor,
               pillColor: pillColor,
               onTap: () => action.onInvoke(),
             )
           else
-            _MicroBubble(
+            MicroBubble(
               icon: action.icon,
               tooltip: action.tooltip,
               color: baseColor,
@@ -280,361 +279,3 @@ class _MessageActionMenuState extends ConsumerState<MessageActionMenu> {
 // -- Internal widgets --------------------------------------------------------
 
 /// A small pill-shaped 功能气泡 wrapping a single icon action.
-class _MicroBubble extends StatelessWidget {
-  const _MicroBubble({
-    required this.icon,
-    required this.tooltip,
-    required this.color,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-        shape: const StadiumBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Icon(icon, size: 15, color: color),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The 语音播放 micro-bubble: swaps icon/background with live playback state.
-class _TtsMicroBubble extends ConsumerWidget {
-  const _TtsMicroBubble({
-    required this.messageId,
-    required this.baseColor,
-    required this.pillColor,
-    required this.onTap,
-  });
-
-  final String messageId;
-  final Color baseColor;
-  final Color pillColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    TtsPlaybackState? ttsState;
-    try {
-      ttsState = ref.watch(ttsPlaybackProvider);
-    } catch (_) {
-      // Provider not ready — show default icon.
-    }
-    final isPlayingThis =
-        ttsState != null &&
-        ttsState.messageId == messageId &&
-        (ttsState.status == TtsStatus.playing ||
-            ttsState.status == TtsStatus.loading);
-    // Original web 播放 chip: idle shows the muted icon + 「播放」, while playing
-    // shows the speaker icon + 「播放中」. Like the web Chip, the icon/text keep
-    // the 文本主色 and only the background switches to the 气泡激活色 — it never
-    // recolors to the primary swatch.
-    return _LabeledBubble(
-      icon: isPlayingThis ? LucideIcons.volume2 : LucideIcons.volumeX,
-      label: isPlayingThis ? '播放中' : '播放',
-      tooltip: isPlayingThis ? '停止播放' : '语音播放',
-      color: baseColor,
-      backgroundColor: isPlayingThis
-          ? _activeColor(pillColor, baseColor)
-          : pillColor,
-      onTap: onTap,
-    );
-  }
-}
-
-/// A small pill-shaped 功能气泡 carrying an icon **and** a text label, mirroring
-/// the original web Chip (e.g. the 播放/播放中 chip).
-class _LabeledBubble extends StatelessWidget {
-  const _LabeledBubble({
-    required this.icon,
-    required this.label,
-    required this.tooltip,
-    required this.color,
-    required this.backgroundColor,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String tooltip;
-  final Color color;
-  final Color backgroundColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: backgroundColor,
-        surfaceTintColor: Colors.transparent,
-        shadowColor: _pillShadowColor,
-        elevation: 1,
-        shape: const StadiumBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 14, color: color),
-                const SizedBox(width: 4),
-                Text(
-                  label,
-                  style: theme.textTheme.labelSmall?.copyWith(color: color),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Soft drop shadow matching the original web chip's `0 1px 2px rgba(0,0,0,0.1)`.
-const Color _pillShadowColor = Color(0x66000000);
-
-/// The 气泡激活色: the original web swaps a chip to `--theme-msg-*-bg-active`
-/// when active. We approximate it by nudging the 气泡底色 toward the 文本主色.
-Color _activeColor(Color base, Color toward) =>
-    Color.alphaBlend(toward.withValues(alpha: 0.14), base);
-
-/// The 版本切换 control. In [VersionSwitchStyle.popup] it shows a pill with the
-/// current index that opens the 版本历史 sheet; in [VersionSwitchStyle.arrows] it
-/// shows `‹ n/total ›` arrows that step between versions (the final slot is the
-/// 最新版本, like the history sheet).
-class _VersionSwitcher extends ConsumerWidget {
-  const _VersionSwitcher({
-    required this.view,
-    required this.style,
-    required this.baseColor,
-    required this.pillColor,
-  });
-
-  final ChatMessageView view;
-  final VersionSwitchStyle style;
-  final Color baseColor;
-  final Color pillColor;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final versions = view.versions;
-    // Selectable slots: each saved version, then the 最新版本 pseudo-slot.
-    final total = versions.length + 1;
-    final currentIndex = view.currentVersionId == null
-        ? total - 1
-        : versions
-              .indexWhere((v) => v.id == view.currentVersionId)
-              .clamp(0, total - 1);
-
-    final label = '${currentIndex + 1}/$total';
-    final popupLabel = '版本 $label';
-
-    if (style == VersionSwitchStyle.arrows) {
-      return Material(
-        color: pillColor,
-        surfaceTintColor: Colors.transparent,
-        shadowColor: _pillShadowColor,
-        elevation: 1,
-        shape: const StadiumBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ArrowButton(
-              icon: LucideIcons.chevronLeft,
-              color: baseColor,
-              enabled: currentIndex > 0,
-              onTap: () => _switchTo(ref, currentIndex - 1),
-            ),
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(color: baseColor),
-            ),
-            _ArrowButton(
-              icon: LucideIcons.chevronRight,
-              color: baseColor,
-              enabled: currentIndex < total - 1,
-              onTap: () => _switchTo(ref, currentIndex + 1),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // popup style: a pill that opens the full 版本历史 sheet.
-    return Tooltip(
-      message: '版本历史',
-      child: Material(
-        color: pillColor,
-        surfaceTintColor: Colors.transparent,
-        shadowColor: _pillShadowColor,
-        elevation: 1,
-        shape: const StadiumBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => _openHistory(context),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(LucideIcons.history, size: 14, color: baseColor),
-                const SizedBox(width: 4),
-                Text(
-                  popupLabel,
-                  style: theme.textTheme.labelSmall?.copyWith(color: baseColor),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _switchTo(WidgetRef ref, int index) {
-    final versions = view.versions;
-    final notifier = ref.read(chatControllerProvider.notifier);
-    if (index >= versions.length) {
-      notifier.switchToLatest(view.id);
-    } else {
-      notifier.switchToVersion(view.id, versions[index].id);
-    }
-  }
-
-  Future<void> _openHistory(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => MessageVersionHistorySheet(messageId: view.id),
-    );
-  }
-}
-
-/// The 分支切换 control rendered at a 叉路 (a message whose parent has multiple
-/// regular branch children). Shows `‹ k/n ›` arrows that flip the topic's active
-/// branch ([ChatController.switchActiveBranch]); wraps around like Cherry's
-/// `SiblingNavigator`. Only shown when [ChatMessageView.branchSiblingIds] has 2+.
-class _BranchSwitcher extends ConsumerWidget {
-  const _BranchSwitcher({
-    required this.view,
-    required this.baseColor,
-    required this.pillColor,
-  });
-
-  final ChatMessageView view;
-  final Color baseColor;
-  final Color pillColor;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final siblings = view.branchSiblingIds;
-    final total = siblings.length;
-    final index = siblings.indexOf(view.id).clamp(0, total - 1);
-    final label = '${index + 1}/$total';
-
-    void switchBy(int direction) {
-      final next = (index + direction + total) % total;
-      ref
-          .read(chatControllerProvider.notifier)
-          .switchActiveBranch(siblings[next]);
-    }
-
-    return Tooltip(
-      message: '切换分支',
-      child: Material(
-        color: pillColor,
-        surfaceTintColor: Colors.transparent,
-        shadowColor: _pillShadowColor,
-        elevation: 1,
-        shape: const StadiumBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ArrowButton(
-              icon: LucideIcons.chevronLeft,
-              color: baseColor,
-              enabled: true,
-              onTap: () => switchBy(-1),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(LucideIcons.gitBranch, size: 12, color: baseColor),
-                const SizedBox(width: 3),
-                Text(
-                  label,
-                  style: theme.textTheme.labelSmall?.copyWith(color: baseColor),
-                ),
-              ],
-            ),
-            _ArrowButton(
-              icon: LucideIcons.chevronRight,
-              color: baseColor,
-              enabled: true,
-              onTap: () => switchBy(1),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ArrowButton extends StatelessWidget {
-  const _ArrowButton({
-    required this.icon,
-    required this.color,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final Color color;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkResponse(
-      onTap: enabled ? onTap : null,
-      radius: 16,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        child: Icon(
-          icon,
-          size: 14,
-          color: enabled ? color : color.withValues(alpha: 0.3),
-        ),
-      ),
-    );
-  }
-}
