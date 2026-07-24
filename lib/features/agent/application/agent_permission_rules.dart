@@ -68,10 +68,15 @@ final agentPermissionRulesProvider =
 class AgentPermissionRulesNotifier extends Notifier<List<PermissionRule>> {
   /// 异步加载完成前不写库，避免加载期间 [add] 的规则把存量规则覆盖掉。
   bool _loaded = false;
+  late Future<void> _ready;
+
+  /// 持久规则加载完成的信号：审批门判定前 await，否则重启后紧接的
+  /// 首次审批会拿到空规则层，「总是允许/永久白名单」看似失效。
+  Future<void> ensureLoaded() => _ready;
 
   @override
   List<PermissionRule> build() {
-    ref
+    _ready = ref
         .read(appSettingsStoreProvider)
         .getSetting(kAgentPermissionRulesKey)
         .then((raw) {
@@ -80,6 +85,9 @@ class AgentPermissionRulesNotifier extends Notifier<List<PermissionRule>> {
       _loaded = true;
       if (stored.isNotEmpty) state = [...stored, ...pendingAdds];
       if (pendingAdds.isNotEmpty) _persist();
+    }).catchError((_) {
+      // 读库失败也要解除写保护，否则本次会话的新授权永远不落库。
+      _loaded = true;
     });
     return const [];
   }
