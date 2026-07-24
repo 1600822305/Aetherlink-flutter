@@ -1427,7 +1427,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '不存在自动新建，无需单独的创建步骤。'
           '默认目标是内置终端（应用内 Alpine Linux 沙箱）；传 workspace 参数可在'
           ' SSH / Termux 工作区的远端 shell 里执行。'
-          '超时不杀命令——命令继续在会话里跑，可用 terminal_session action=output 回看。执行前会请用户确认。',
+          '超时不杀命令——命令继续在会话里跑，可用 terminal_session action=output 回看。'
+          '不要用本工具启动 vim / top 等全屏交互程序；命令需要交互输入（如 [y/n]）时用 '
+          'terminal_session action=write 写 stdin，优先用非交互参数（--yes 等）。'
+          '不要执行裸 exit（会结束长驻会话）。执行前会请用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
