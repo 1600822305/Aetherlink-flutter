@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/event_stream_page.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_page.dart';
 
 /// 任务工作台两页横滑壳（已拍板 2 页，工作区页同款 `PageView` 交互）：
 /// 左页=事件流（主视图，默认落这）、右页=工作台（UI 稿 §四）。

@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_context_tab.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_diff_tab.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_files_tab.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_focus_tab.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_terminal_tab.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_context_tab.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_diff_tab.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_files_tab.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_focus_tab.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_terminal_tab.dart';
 
 /// 右页：工作台（UI 稿 §4.3）——顶部小 tab 切换
 /// 「终端 / 焦点 / 改动 diff / 文件」：终端实时围观任务工作区

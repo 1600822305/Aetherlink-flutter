@@ -5,7 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_compaction_settings_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_compaction_settings_page.dart';
 
 /// 智能体设置正文：入口列表。
 class AgentAppSettingsBody extends StatelessWidget {

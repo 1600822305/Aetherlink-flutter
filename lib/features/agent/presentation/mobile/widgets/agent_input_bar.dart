@@ -8,6 +8,8 @@ import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_attachment_menu.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_mode_picker.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_send_actions.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -204,35 +206,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       );
       return;
     }
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(LucideIcons.listPlus, size: 20),
-              title: const Text('排队'),
-              subtitle: const Text('不打断当前工具，下一轮生效'),
-              onTap: () => Navigator.pop(context, 'queue'),
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.zap, size: 20),
-              title: const Text('立即打断并发送'),
-              subtitle: const Text('中止当前工具，模型下一轮先响应这条指令'),
-              onTap: () => Navigator.pop(context, 'interrupt'),
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.pencil, size: 20),
-              title: const Text('继续编辑'),
-              onTap: () => Navigator.pop(context, 'edit'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (action == 'queue') {
+    final action = await showAgentSendActionSheet(context);
+    if (action == AgentSendAction.queue) {
       clearInput();
       await runner.sendMessage(
         task,
@@ -240,7 +215,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
         queued: true,
         attachments: attachments,
       );
-    } else if (action == 'interrupt') {
+    } else if (action == AgentSendAction.interrupt) {
       clearInput();
       await runner.interruptAndSend(task, text, attachments: attachments);
     }
@@ -255,26 +230,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   }
 
   Future<void> _onForceStopLongPress() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('强制终止任务？'),
-        content: const Text('立即中止当前执行，任务转为已取消，不可恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('强制终止'),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await confirmAgentForceStop(context);
     final task = widget.task;
     if (confirmed == true && task != null) {
       ref.read(agentTaskRunnerProvider.notifier).forceStop(task.id);
@@ -284,48 +240,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   Future<void> _onModeTap() async {
     // 先释放焦点，面板关闭后不自动顶起输入法。
     FocusManager.instance.primaryFocus?.unfocus();
-    final mode = await showModalBottomSheet<AgentSessionMode>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final (m, desc) in const [
-              (AgentSessionMode.code, '执行模式：写/终端全能力，走审批+白名单'),
-              (AgentSessionMode.auto, '自动模式：工作区内写/执行免审批，越界仍审批'),
-              (AgentSessionMode.ask, '只问答：仅只读工具，不改任何东西'),
-              (AgentSessionMode.plan, '只读规划：先出完整方案，确认后转 Code'),
-            ])
-              ListTile(
-                selected: m == _mode,
-                selectedTileColor: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.08),
-                leading: Icon(
-                  m == _mode ? LucideIcons.circleCheck : LucideIcons.circle,
-                  size: 20,
-                ),
-                title: Text(
-                  agentModeLabel(m),
-                  style: m == _mode
-                      ? const TextStyle(fontWeight: FontWeight.w600)
-                      : null,
-                ),
-                subtitle: Text(desc),
-                trailing: m == _mode ? const Text('当前') : null,
-                onTap: () => Navigator.pop(context, m),
-              ),
-          ],
-        ),
-      ),
-    );
+    final mode = await showAgentModePicker(context, current: _mode);
     if (mode == null) return;
-    // auto 二次确认：选中才生效，取消保持原模式。
-    if (mode == AgentSessionMode.auto && _mode != AgentSessionMode.auto) {
-      final confirmed = await _confirmAutoMode();
-      if (confirmed != true) return;
-    }
     setState(() => _mode = mode);
     final task = widget.task;
     if (task == null || task.status == AgentTaskStatus.draft) {
@@ -337,33 +253,6 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       // 在下个安全点暂停后以新模式的工具目录自动续跑。
       await ref.read(agentTaskRunnerProvider.notifier).switchMode(task, mode);
     }
-  }
-
-  Future<bool?> _confirmAutoMode() {
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('启用 Auto 模式？'),
-        content: const Text(
-          '绑定工作区内的文件写入与命令执行将不再逐条审批，'
-          '越出工作区的操作仍会请求授权。未绑定工作区时不会免审。\n\n'
-          '仅在信任当前任务时启用。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.amber.shade700,
-            ),
-            child: const Text('启用 Auto'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
