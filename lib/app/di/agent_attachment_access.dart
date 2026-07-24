@@ -42,7 +42,10 @@ final agentWorkspaceDirProvider = FutureProvider.autoDispose
 /// （[kListIgnoredDirs]），受 [kMaxRecursiveEntries] 上限保护；
 /// 完成后缓存 2 分钟，重开搜索面板不重扫。
 final agentWorkspaceFileIndexProvider = StreamProvider.autoDispose
-    .family<List<String>, String?>((ref, workspaceId) async* {
+    .family<({List<String> paths, bool done}), String?>((
+      ref,
+      workspaceId,
+    ) async* {
       final link = ref.keepAlive();
       Timer? expiry;
       ref.onCancel(() {
@@ -53,7 +56,7 @@ final agentWorkspaceFileIndexProvider = StreamProvider.autoDispose
 
       final resolved = await resolveAgentWorkspace(ref, workspaceId);
       if (resolved == null) {
-        yield const [];
+        yield (paths: const <String>[], done: true);
         return;
       }
       final (workspace, backend) = resolved;
@@ -90,10 +93,10 @@ final agentWorkspaceFileIndexProvider = StreamProvider.autoDispose
         }
         if (sinceEmit >= 50) {
           sinceEmit = 0;
-          yield List.unmodifiable(out);
+          yield (paths: List<String>.unmodifiable(out), done: false);
         }
       }
-      yield List.unmodifiable(out);
+      yield (paths: List<String>.unmodifiable(out), done: true);
     });
 
 /// 读取工作区文件为文本附件（@ 引用选中后调用）。

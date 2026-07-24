@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_workspace_access.dart';
@@ -18,6 +20,21 @@ const List<String> kProjectSkillDirs = [
 
 /// 项目技能的 id 前缀，与全局技能库的 id 空间隔开。
 const String kProjectSkillIdPrefix = 'project-skill:';
+
+/// 按工作区缓存的项目技能：系统提示每轮都要列清单、read_skill
+/// 每次调用都要查找，慢后端（SAF 等）上重复扫目录 + 读全部
+/// SKILL.md 很昂贵；扫一次后保活，无人监听 2 分钟后过期重扫。
+final projectSkillsProvider = FutureProvider.autoDispose
+    .family<List<Skill>, String?>((ref, workspaceId) {
+      final link = ref.keepAlive();
+      Timer? expiry;
+      ref.onCancel(() {
+        expiry = Timer(const Duration(minutes: 2), link.close);
+      });
+      ref.onResume(() => expiry?.cancel());
+      ref.onDispose(() => expiry?.cancel());
+      return loadProjectSkills(ref, workspaceId);
+    });
 
 Future<List<Skill>> loadProjectSkills(Ref ref, String? workspaceId) async {
   final resolved = await resolveAgentWorkspace(ref, workspaceId);

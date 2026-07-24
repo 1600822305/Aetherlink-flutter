@@ -803,7 +803,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     // skills 目录）：只随该工作区的任务动态加载，不进全局技能库。
     List<Skill> project = const [];
     try {
-      project = await loadProjectSkills(ref, workspaceId);
+      project = await ref.read(projectSkillsProvider(workspaceId).future);
     } catch (_) {}
     if (enabled.isEmpty && project.isEmpty) return const [];
     return [
@@ -1334,11 +1334,14 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
   ) async {
     final ref = _refOf();
     final skills = <Skill>[];
+    // 项目技能排前：同名时绑定工作区的项目技能优先命中。
     try {
-      skills.addAll(await ref.read(skillsProvider.future));
+      skills.addAll(
+        await ref.read(projectSkillsProvider(_boundWorkspaceId).future),
+      );
     } catch (_) {}
     try {
-      skills.addAll(await loadProjectSkills(ref, _boundWorkspaceId));
+      skills.addAll(await ref.read(skillsProvider.future));
     } catch (_) {}
     return executeReadSkill(skills, args);
   }
