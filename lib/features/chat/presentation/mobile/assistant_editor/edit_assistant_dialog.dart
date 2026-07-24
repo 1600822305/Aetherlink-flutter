@@ -29,7 +29,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_e
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_editor/tabs/prompt_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_editor/tabs/skills_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_preset_sheet.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/mobile/regex_rules_tab.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/regex_rules_tab/regex_rules_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/agent_prompt_selector.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_chat_background.dart';
