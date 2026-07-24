@@ -112,8 +112,13 @@ List<TerminalQuickInstall> quickInstallsFor(TerminalDistro distro) {
         TerminalQuickInstall(
           id: 'node',
           label: 'Node.js',
-          description: 'nodejs + npm',
-          command: 'apt-get update && apt-get install -y nodejs npm',
+          // noble 官方源的 nodejs 停在 18.x；走 NodeSource 装 22 LTS
+          // （glibc rootfs 下官方二进制可直接跑），npm 随包自带。
+          description: 'Node.js 22 LTS + npm（NodeSource 源）',
+          command: 'apt-get update && '
+              'apt-get install -y curl ca-certificates && '
+              'curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && '
+              'apt-get install -y nodejs',
         ),
         TerminalQuickInstall(
           id: 'git',
