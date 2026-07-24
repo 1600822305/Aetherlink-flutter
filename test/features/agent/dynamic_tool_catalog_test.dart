@@ -167,6 +167,59 @@ void main() {
     });
   });
 
+  group('子代理派发延迟组', () {
+    const subagentSkill = Skill(
+      id: 'builtin-subagent-dispatch',
+      name: '子代理派发',
+      description: '',
+      source: SkillSource.builtin,
+      enabled: true,
+      content: 'x',
+    );
+    const spawn = McpToolDefinition(name: 'spawn_subagent', description: '');
+
+    test('读取「子代理派发」后 spawn_subagent 注入', () {
+      final c = DynamicToolCatalog(
+        resident: [readFile],
+        deferred: {
+          'builtin-subagent-dispatch': [spawn],
+        },
+        routes: {},
+      );
+      expect(
+        c.definitionsFor(const {}).map((d) => d.name),
+        isNot(contains('spawn_subagent')),
+      );
+      final activated = activatedSkillIdsFromEvents(
+        [
+          readSkillEvent(
+            state: AgentToolCallState.success,
+            argsDetail: '{"skill_name":"子代理派发"}',
+          ),
+        ],
+        const [subagentSkill],
+      );
+      expect(activated, {'builtin-subagent-dispatch'});
+      expect(
+        c.definitionsFor(activated).map((d) => d.name),
+        contains('spawn_subagent'),
+      );
+    });
+
+    test('hasTool 覆盖常驻与延迟组，与激活状态无关', () {
+      final c = DynamicToolCatalog(
+        resident: [readFile],
+        deferred: {
+          'builtin-subagent-dispatch': [spawn],
+        },
+        routes: {},
+      );
+      expect(c.hasTool('read_file'), isTrue);
+      expect(c.hasTool('spawn_subagent'), isTrue);
+      expect(c.hasTool('nope'), isFalse);
+    });
+  });
+
   test('matchSkillByName 三段式：精确 → 忽略大小写 → 子串', () {
     const en = Skill(
       id: 'en',
