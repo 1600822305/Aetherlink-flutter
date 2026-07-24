@@ -11,7 +11,7 @@ import 'package:aetherlink_flutter/app/di/agent_terminal_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_workspace_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_compaction_settings_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_compaction_settings_page.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 输入栏「＋」菜单：紧凑图标宫格——附件类（工作区 @ 引用 / 设备文件 /

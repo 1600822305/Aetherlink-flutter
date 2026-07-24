@@ -6,7 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_profile_edit_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/widgets/agent_sidebar_widgets.dart';
 
 class AgentProfileTab extends ConsumerWidget {

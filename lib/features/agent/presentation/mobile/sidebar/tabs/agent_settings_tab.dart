@@ -10,8 +10,8 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_compaction_settings_page.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_compaction_settings_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_profile_edit_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
 class AgentSettingsTab extends ConsumerWidget {

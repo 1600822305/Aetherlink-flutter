@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_app_settings_body.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_app_settings_body.dart';
 import 'package:aetherlink_flutter/features/settings/application/settings_view_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_catalog.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/setting_group.dart';

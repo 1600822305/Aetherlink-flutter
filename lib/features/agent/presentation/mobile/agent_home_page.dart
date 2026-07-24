@@ -10,10 +10,10 @@ import 'package:aetherlink_flutter/features/agent/application/agent_providers.da
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/hooks/agent_hooks_page.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_mcp_page.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_permission_rules_page.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_skills_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_mcp_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_permission_rules_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_profile_edit_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_skills_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_task_shell.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/agent_sidebar.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
