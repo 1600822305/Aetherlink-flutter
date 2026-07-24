@@ -72,8 +72,11 @@ Future<List<AgentUserAttachment>> showAgentAttachmentMenu(
   if (action == null || !context.mounted) return const [];
   switch (action) {
     case 'workspace':
-      final attachment = await showAgentWorkspaceFilePicker(context, ref,
-          workspaceId: workspaceId);
+      final attachment = await showAgentWorkspaceFilePicker(
+        context,
+        ref,
+        workspaceId: workspaceId,
+      );
       return [if (attachment != null) attachment];
     case 'device':
       final attachment = await _pickDeviceFile(context);
@@ -175,20 +178,26 @@ Future<AgentUserAttachment?> showAgentWorkspaceFilePicker(
 }
 
 const Set<String> _kImageExtensions = {
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'heic',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'heic',
 };
 
 /// 单个设备文件附件上限（8 MB）：base64/文本都随事件落库，防止巨型附件。
 const int _kDeviceFileByteCap = 8 * 1024 * 1024;
 
 String _mimeOf(String ext) => switch (ext) {
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'gif' => 'image/gif',
-      'webp' => 'image/webp',
-      'bmp' => 'image/bmp',
-      'heic' => 'image/heic',
-      _ => 'image/png',
-    };
+  'jpg' || 'jpeg' => 'image/jpeg',
+  'gif' => 'image/gif',
+  'webp' => 'image/webp',
+  'bmp' => 'image/bmp',
+  'heic' => 'image/heic',
+  _ => 'image/png',
+};
 
 Future<AgentUserAttachment?> _pickDeviceFile(BuildContext context) async {
   final result = await FilePicker.pickFiles();
@@ -227,7 +236,8 @@ Future<List<AgentUserAttachment>> _pickImages(BuildContext context) async {
       AgentUserAttachment(
         kind: AgentAttachmentKind.image,
         name: file.name,
-        mimeType: file.mimeType ?? _mimeOf(file.name.split('.').last.toLowerCase()),
+        mimeType:
+            file.mimeType ?? _mimeOf(file.name.split('.').last.toLowerCase()),
         base64Data: base64Encode(await file.readAsBytes()),
       ),
   ];
@@ -312,6 +322,9 @@ class _WorkspaceFileSearchSheetState
     extends ConsumerState<_WorkspaceFileSearchSheet> {
   String _query = '';
 
+  /// 浏览模式的当前目录（相对路径，'' 为根）。
+  String _dir = '';
+
   /// 子序列模糊匹配（Cursor 同款体验）：查询字符按序出现即命中，
   /// 文件名段命中的排前面。
   List<String> _filter(List<String> paths) {
@@ -343,10 +356,100 @@ class _WorkspaceFileSearchSheetState
     return [...nameHits, ...pathHits].take(100).toList();
   }
 
+  /// 浏览模式：只 listDir 当前一层目录，即开即显；用户逐层点选。
+  Widget _browseView(BuildContext context) {
+    final dir = ref.watch(
+      agentWorkspaceDirProvider((widget.workspaceId, _dir)),
+    );
+    final parent = _dir.contains('/')
+        ? _dir.substring(0, _dir.lastIndexOf('/'))
+        : '';
+    return switch (dir) {
+      AsyncData(:final value) => ListView(
+        children: [
+          if (_dir.isNotEmpty)
+            ListTile(
+              dense: true,
+              leading: const Icon(LucideIcons.cornerLeftUp, size: 18),
+              title: const Text('..'),
+              subtitle: Text(
+                _dir,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () => setState(() => _dir = parent),
+            ),
+          if (value.isEmpty && _dir.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: Text('工作区为空或未绑定工作区')),
+            ),
+          for (final e in value)
+            ListTile(
+              dense: true,
+              leading: Icon(
+                e.isDirectory ? LucideIcons.folder : LucideIcons.fileText,
+                size: 18,
+              ),
+              title: Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              onTap: () {
+                final rel = _dir.isEmpty ? e.name : '$_dir/${e.name}';
+                if (e.isDirectory) {
+                  setState(() => _dir = rel);
+                } else {
+                  Navigator.pop(context, rel);
+                }
+              },
+            ),
+        ],
+      ),
+      AsyncError(:final error) => Center(child: Text('加载失败 · $error')),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
+  }
+
+  /// 搜索模式：后台索引边扫边出，来多少搜多少，不等整棵树扫完。
+  Widget _searchView(BuildContext context) {
+    final index = ref.watch(
+      agentWorkspaceFileIndexProvider(widget.workspaceId),
+    );
+    final indexing = index.isLoading;
+    final paths = index.value ?? const <String>[];
+    final filtered = _filter(paths);
+    return Column(
+      children: [
+        if (indexing) const LinearProgressIndicator(minHeight: 2),
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(child: Text(indexing ? '索引中…' : '没有匹配的文件'))
+              : ListView.builder(
+                  itemCount: filtered.length,
+                  itemBuilder: (context, i) {
+                    final path = filtered[i];
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(LucideIcons.fileText, size: 18),
+                      title: Text(
+                        path.split('/').last,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        path,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => Navigator.pop(context, path),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final index =
-        ref.watch(agentWorkspaceFileIndexProvider(widget.workspaceId));
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -361,7 +464,7 @@ class _WorkspaceFileSearchSheetState
                 autofocus: true,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(LucideIcons.search, size: 18),
-                  hintText: '搜索工作区文件…',
+                  hintText: '搜索文件，或直接在下方浏览…',
                   isDense: true,
                   border: OutlineInputBorder(),
                 ),
@@ -369,43 +472,9 @@ class _WorkspaceFileSearchSheetState
               ),
             ),
             Expanded(
-              child: switch (index) {
-                AsyncData(:final value) when value.isEmpty => const Center(
-                    child: Text('工作区为空或未绑定工作区'),
-                  ),
-                AsyncData(:final value) => Builder(builder: (context) {
-                    final filtered = _filter(value);
-                    if (filtered.isEmpty) {
-                      return const Center(child: Text('没有匹配的文件'));
-                    }
-                    return ListView.builder(
-                      itemCount: filtered.length,
-                      itemBuilder: (context, i) {
-                        final path = filtered[i];
-                        return ListTile(
-                          dense: true,
-                          leading:
-                              const Icon(LucideIcons.fileText, size: 18),
-                          title: Text(
-                            path.split('/').last,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            path,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          onTap: () => Navigator.pop(context, path),
-                        );
-                      },
-                    );
-                  }),
-                AsyncError(:final error) => Center(
-                    child: Text('加载失败 · $error'),
-                  ),
-                _ => const Center(child: CircularProgressIndicator()),
-              },
+              child: _query.trim().isEmpty
+                  ? _browseView(context)
+                  : _searchView(context),
             ),
           ],
         ),
