@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/features/workspace/application/primary_terminal_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/primary_terminal.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
@@ -177,8 +178,17 @@ Future<McpToolResult> _workspaces(Ref ref) async {
   });
 }
 
-Future<List<McpServer>> _servers(Ref ref) =>
-    ref.read(mcpServersProvider.future);
+/// mcp_manage 只管外部服务器：内置/助手类（@aether/* inMemory）与外部
+/// 配置同住一个存储，但它们由工具分组/设置页管理，不应在这里
+/// 被列出或被 remove/toggle 误伤。
+Future<List<McpServer>> _servers(Ref ref) async =>
+    (await ref.read(mcpServersProvider.future))
+        .where(
+          (s) =>
+              s.type != McpServerType.inMemory &&
+              !isBuiltinMcpServerName(s.name),
+        )
+        .toList();
 
 Future<McpServer?> _find(Ref ref, Map<String, Object?> args) async {
   final id = (args['id'] as String?)?.trim();
@@ -202,6 +212,9 @@ Future<McpToolResult> _add(Ref ref, Map<String, Object?> args) async {
   final name = (args['name'] as String?)?.trim() ?? '';
   final config = args['config'];
   if (name.isEmpty) return _error('add 需要 name');
+  if (isBuiltinMcpServerName(name)) {
+    return _error('「$name」是内置工具服务器名称，不能用作外部服务器名');
+  }
   if (config is! Map<String, Object?>) {
     return _error('add 需要 config 对象（格式见内置技能「MCP 服务器管理」）');
   }

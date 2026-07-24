@@ -14,6 +14,7 @@ void main() {
     expect(skill.content, contains('stdio'));
     expect(skill.content, contains('mcpServers 条目'));
     expect(skill.content, contains('workspaces'));
+    expect(skill.content, contains('内置工具（@aether/…）不在本工具管辖范围'));
   });
 
   test('mcp_manage 工具定义指向技能，schema 含五个 action', () {
