@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/reasoning_effort_picker.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/widgets/reasoning_effort_icons.dart';

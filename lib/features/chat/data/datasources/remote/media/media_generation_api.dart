@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/llm_protocol.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/media_generation_gateway.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_type.dart';
 import 'package:aetherlink_flutter/shared/utils/api_host.dart';
@@ -16,7 +17,7 @@ import 'package:dio/dio.dart';
 ///   operation 轮询；其余走硅基流动风格的 `/video/submit` + `/video/status` 轮询。
 ///
 /// 返回值是可直接放进 IMAGE/VIDEO 块 `url` 字段的地址（http(s) 或 data URL）。
-class MediaGenerationApi {
+class MediaGenerationApi implements MediaGenerationGateway {
   MediaGenerationApi(this._dio);
 
   final Dio _dio;
@@ -33,7 +34,8 @@ class MediaGenerationApi {
 
   /// Whether [model] is treated as video-generation-capable (the web's
   /// `isVideoModel` check in `useVideoGeneration`).
-  static bool isVideoGenerationModel(Model model) {
+  @override
+  bool isVideoGenerationModel(Model model) {
     if (model.modelTypes?.contains(ModelType.videoGen) ?? false) return true;
     if (model.videoGeneration ?? false) return true;
     if (model.capabilities?.videoGeneration ?? false) return true;
@@ -55,6 +57,7 @@ class MediaGenerationApi {
 
   /// Generates images for [prompt] and returns their URLs (http(s) or
   /// `data:` URLs). Throws on failure with a user-showable message.
+  @override
   Future<List<String>> generateImages({
     required Model model,
     required String prompt,
@@ -227,6 +230,7 @@ class MediaGenerationApi {
 
   /// Generates a video for [prompt] and returns its playable URL. Long-running:
   /// submits the job then polls every 10s (up to 10 minutes), like the web.
+  @override
   Future<String> generateVideo({required Model model, required String prompt}) {
     if (isVeoModel(model)) {
       return _veoVideo(model: model, prompt: prompt);

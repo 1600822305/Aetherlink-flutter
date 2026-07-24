@@ -99,8 +99,9 @@ class TranslateModelSelection extends _$TranslateModelSelection {
   @override
   String? build() {
     // Derive from auxiliary model controller — single source of truth.
-    final auxiliaryKey =
-        ref.watch(auxiliaryModelControllerProvider).translateModelKey;
+    final auxiliaryKey = ref
+        .watch(auxiliaryModelControllerProvider)
+        .translateModelKey;
     if (auxiliaryKey != null && auxiliaryKey.isNotEmpty) return auxiliaryKey;
 
     // One-time migration: if user previously configured via translate page

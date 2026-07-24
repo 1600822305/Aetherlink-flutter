@@ -15,7 +15,6 @@ import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
-import 'package:aetherlink_flutter/features/chat/data/datasources/remote/media/media_generation_api.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_send_hooks.dart';
@@ -44,7 +43,7 @@ import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.dart';
 import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
-import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';

@@ -19,7 +19,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_searc
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/context_condense_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/branch_manager_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mini_map_sheet.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
