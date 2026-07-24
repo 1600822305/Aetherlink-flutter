@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_s
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway_factory.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/media_generation_gateway.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
@@ -59,7 +60,7 @@ LlmGatewayFactory llmGatewayFactory(Ref ref) =>
 /// 图像/视频生成的供应商适配层（OpenAI 兼容 / Gemini / DashScope / Veo /
 /// 硅基流动），与 LLM 通道共用同一套 dio 构造（含代理配置）。
 @Riverpod(keepAlive: true)
-MediaGenerationApi mediaGenerationApi(Ref ref) => MediaGenerationApi(
+MediaGenerationGateway mediaGenerationApi(Ref ref) => MediaGenerationApi(
   buildLlmDio(proxy: ref.watch(appNetworkProxyConfigProvider)),
 );
 

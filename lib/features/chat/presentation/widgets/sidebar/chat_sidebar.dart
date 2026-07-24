@@ -12,7 +12,7 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/tabs/assistant_tab.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/tabs/settings_tab.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/tabs/settings/settings_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/tabs/topic_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
@@ -220,13 +220,22 @@ class _SidebarTabBar extends StatelessWidget {
         labelPadding: EdgeInsets.zero,
         tabs: [
           const _SidebarTab(
-              icon: LucideIcons.sparkles, label: _assistantTabLabel),
+            icon: LucideIcons.sparkles,
+            label: _assistantTabLabel,
+          ),
           const _SidebarTab(
-              icon: LucideIcons.messagesSquare, label: _topicTabLabel),
+            icon: LucideIcons.messagesSquare,
+            label: _topicTabLabel,
+          ),
           if (showNotes)
             const _SidebarTab(
-                icon: LucideIcons.fileText, label: _notesTabLabel),
-          const _SidebarTab(icon: LucideIcons.sliders, label: _settingsTabLabel),
+              icon: LucideIcons.fileText,
+              label: _notesTabLabel,
+            ),
+          const _SidebarTab(
+            icon: LucideIcons.sliders,
+            label: _settingsTabLabel,
+          ),
         ],
       ),
     );
@@ -246,11 +255,7 @@ class _SidebarTab extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14),
-          const SizedBox(width: 4),
-          Text(label),
-        ],
+        children: [Icon(icon, size: 14), const SizedBox(width: 4), Text(label)],
       ),
     );
   }

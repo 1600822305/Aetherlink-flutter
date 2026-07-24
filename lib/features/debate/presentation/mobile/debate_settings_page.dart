@@ -4,7 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/debate/application/debate_settings_controller.dart';
 import 'package:aetherlink_flutter/features/debate/domain/debate_models.dart';
 import 'package:aetherlink_flutter/features/debate/domain/debate_templates.dart';

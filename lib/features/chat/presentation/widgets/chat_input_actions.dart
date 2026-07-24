@@ -14,7 +14,7 @@ import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_b
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/knowledge_mount_sheet.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_quick_panel_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_panel/mcp_quick_panel_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/multi_model_selector_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phrase_sheet.dart';
 import 'package:aetherlink_flutter/features/debate/presentation/widgets/debate_start_sheet.dart';

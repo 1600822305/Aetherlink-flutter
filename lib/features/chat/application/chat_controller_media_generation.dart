@@ -1,6 +1,6 @@
 // 图像/视频生成模式的发送链路，从 chat_controller.dart 主体拆出的 part 文件：
 // 输入框的「图像生成 / 视频生成」互斥模式（InputMode.image / .video）激活时，
-// send() 不再走 LLM 对话，而是走 MediaGenerationApi 的供应商路由（web 版
+// send() 不再走 LLM 对话，而是走 MediaGenerationGateway 的供应商路由（web 版
 // handleMessageSend → handleImageGeneration / handleVideoPrompt 的移植）。
 // 与 _ensureTopic / _emitTurn / _persistMessageBlocks 等私有成员强耦合，因此
 // 以 part + mixin 的形式与 ChatController 同库拆分。
@@ -146,8 +146,7 @@ mixin _ChatMediaGeneration on _$ChatController {
     final api = ref.read(mediaGenerationApiProvider);
     try {
       final List<MessageBlock> finalBlocks;
-      if (mode == InputMode.video &&
-          !MediaGenerationApi.isVideoGenerationModel(effective)) {
+      if (mode == InputMode.video && !api.isVideoGenerationModel(effective)) {
         throw StateError(
           '模型 ${effective.name} 不支持视频生成。'
           '请选择支持视频生成的模型，如 HunyuanVideo 或 Wan-AI 系列模型。',

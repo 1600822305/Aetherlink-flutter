@@ -5,7 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/memory/application/memory_settings_controller.dart';
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_settings.dart';
@@ -76,8 +76,9 @@ class MemorySettingsPage extends ConsumerWidget {
                     mode: MemoryInjectionMode.values[i],
                     selected:
                         config.injectionMode == MemoryInjectionMode.values[i],
-                    onTap: () =>
-                        controller.setInjectionMode(MemoryInjectionMode.values[i]),
+                    onTap: () => controller.setInjectionMode(
+                      MemoryInjectionMode.values[i],
+                    ),
                   ),
                 ],
               ],
@@ -208,7 +209,8 @@ class MemorySettingsPage extends ConsumerWidget {
                   icon: LucideIcons.zap,
                   accent: const Color(0xFFEC4899),
                   label: 'sqlite-vec 原生向量检索',
-                  description: '实验性：用原生 sqlite-vec 扩展做向量最近邻检索。扩展可能在部分平台无法加载，加载失败会自动退回 Dart 余弦。建议先用下方按钮检测可用性',
+                  description:
+                      '实验性：用原生 sqlite-vec 扩展做向量最近邻检索。扩展可能在部分平台无法加载，加载失败会自动退回 Dart 余弦。建议先用下方按钮检测可用性',
                   value: config.useSqliteVec,
                   onChanged: controller.setUseSqliteVec,
                 ),
@@ -364,7 +366,8 @@ class _EmbeddingModelRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final providers = ref.watch(appModelProvidersProvider).asData?.value ??
+    final providers =
+        ref.watch(appModelProvidersProvider).asData?.value ??
         const <ModelProvider>[];
     final pair = decodeEmbeddingModelKey(modelKey);
     String? selectedProviderId;
@@ -446,8 +449,10 @@ class _EmbeddingModelRow extends ConsumerWidget {
               if (configured)
                 IconButton(
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints.tightFor(width: 32, height: 32),
+                  constraints: const BoxConstraints.tightFor(
+                    width: 32,
+                    height: 32,
+                  ),
                   icon: const Icon(LucideIcons.x, size: 16),
                   color: theme.colorScheme.onSurfaceVariant,
                   onPressed: () => onSelect(null),
@@ -455,7 +460,9 @@ class _EmbeddingModelRow extends ConsumerWidget {
               Icon(
                 LucideIcons.chevronRight,
                 size: 18,
-                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.5,
+                ),
               ),
             ],
           ),

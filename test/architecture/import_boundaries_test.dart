@@ -98,7 +98,8 @@ void main() {
     expect(
       violations,
       isEmpty,
-      reason: 'cross-feature application/data imports found:\n'
+      reason:
+          'cross-feature application/data imports found:\n'
           '${violations.join('\n')}',
     );
   });
@@ -113,13 +114,13 @@ const _knownAcceptedViolations = <String>{
   'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/settings/application/model_combo_providers.dart',
   'lib/features/chat/application/combo_executor.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
   'lib/features/chat/application/context_condense_service.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
-  'lib/features/chat/application/translate_controller.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
+  'lib/features/chat/application/translate/translate_controller.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
   'lib/features/chat/presentation/widgets/chat_top_bar.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
-  'lib/features/chat/presentation/widgets/model_selector_dialog.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
-  'lib/features/chat/presentation/widgets/model_selector_dialog.dart -> package:aetherlink_flutter/features/settings/application/model_combo_providers.dart',
+  'lib/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
+  'lib/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart -> package:aetherlink_flutter/features/settings/application/model_combo_providers.dart',
   'lib/features/settings/application/auxiliary_model_controller.dart -> package:aetherlink_flutter/features/chat/application/chat_providers.dart',
   'lib/features/settings/presentation/mobile/skill_store_page.dart -> package:aetherlink_flutter/features/chat/application/chat_providers.dart',
-  'lib/features/settings/presentation/mobile/skill_store_page.dart -> package:aetherlink_flutter/features/chat/application/translate_controller.dart',
+  'lib/features/settings/presentation/mobile/skill_store_page.dart -> package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart',
   'lib/features/settings/presentation/mobile/web_search/add_search_provider_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
   'lib/features/settings/presentation/mobile/web_search/search_provider_detail_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
   'lib/features/settings/presentation/mobile/web_search_settings_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',

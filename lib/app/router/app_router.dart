@@ -7,7 +7,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_home
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page/chat_page.dart';
 import 'package:aetherlink_flutter/features/buddy/presentation/buddy_page.dart';
 import 'package:aetherlink_flutter/features/buddy/presentation/buddy_settings_page.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate/translate_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_editor_page.dart';
 import 'package:aetherlink_flutter/features/debate/presentation/mobile/debate_settings_page.dart';
@@ -277,8 +277,7 @@ abstract final class AppRouter {
       GoRoute(
         path: gitReviewPath,
         name: 'git-review',
-        pageBuilder: (context, state) =>
-            _instant(state, const GitReviewPage()),
+        pageBuilder: (context, state) => _instant(state, const GitReviewPage()),
       ),
       GoRoute(
         path: settingsPath,

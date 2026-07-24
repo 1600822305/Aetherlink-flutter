@@ -9,14 +9,14 @@ import 'package:aetherlink_flutter/features/chat/application/chat_controller.dar
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
-import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/knowledge_mount_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action_sheets.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';

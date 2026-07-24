@@ -8,7 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
-import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';

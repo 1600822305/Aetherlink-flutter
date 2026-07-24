@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/mobile/edit_assistant_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_editor/edit_assistant_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/dialogs/sidebar_dialogs.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/sidebar_tokens.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_avatar.dart';
@@ -138,9 +138,7 @@ class _AssistantTabState extends ConsumerState<AssistantTab> {
                       // 跟随主题取色（固定黑色在深色模式下看不清）。
                       color: _searchOpen
                           ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurface.withValues(
-                              alpha: 0.54,
-                            ),
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.54),
                       onPressed: _toggleSearch,
                     ),
                     const SizedBox(width: 8),

@@ -1,22 +1,14 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:aetherlink_flutter/app/di/notion_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
-import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
-import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
-import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/application/message_export_service.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_export/export_image_renderer.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_export/export_sheet_chips.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Shows the export/share bottom sheet for one or more messages.
@@ -49,9 +41,6 @@ Future<void> showMessageExportSheet(
   );
 }
 
-/// The three one-tap export formats (多选底部栏的格式按钮).
-enum MessageExportFormat { txt, markdown, image }
-
 /// Exports [messages] in [format] directly — no sheet — honouring the
 /// 思考和工具/展开思考 toggles. Debate flow notices are always filtered, like
 /// the sheet's default. Used by the multi-select bottom bar's format buttons.
@@ -74,33 +63,33 @@ Future<void> exportMessagesAs(
   try {
     switch (format) {
       case MessageExportFormat.txt:
-        final content = _buildTxtFor(
+        final content = buildTxtForExport(
           msgs,
           topicTitle: topicTitle,
           showThinkingAndTools: showThinkingAndTools,
           expandThinking: expandThinking,
         );
-        final saved = await _saveTextFile(
+        final saved = await saveExportTextFile(
           content,
           'chat-export-${DateTime.now().millisecondsSinceEpoch}.txt',
           ['txt'],
         );
         if (saved && context.mounted) AppToast.info(context, '已导出');
       case MessageExportFormat.markdown:
-        final content = _buildMarkdownFor(
+        final content = buildMarkdownForExport(
           msgs,
           topicTitle: topicTitle,
           showThinkingAndTools: showThinkingAndTools,
           expandThinking: expandThinking,
         );
-        final saved = await _saveTextFile(
+        final saved = await saveExportTextFile(
           content,
           'chat-export-${DateTime.now().millisecondsSinceEpoch}.md',
           ['md'],
         );
         if (saved && context.mounted) AppToast.info(context, '已导出');
       case MessageExportFormat.image:
-        final file = await _renderMessagesAsImage(
+        final file = await renderMessagesAsImage(
           context,
           messages: msgs,
           topicTitle: topicTitle,
@@ -116,121 +105,6 @@ Future<void> exportMessagesAs(
   } catch (e) {
     if (context.mounted) AppToast.info(context, '导出失败: $e');
   }
-}
-
-/// Returns true when the file was written (false = user cancelled).
-Future<bool> _saveTextFile(
-  String content,
-  String filename,
-  List<String> extensions,
-) async {
-  final bytes = utf8.encode(content);
-  final path = await FilePicker.saveFile(
-    dialogTitle: '导出文件',
-    fileName: filename,
-    type: FileType.custom,
-    allowedExtensions: extensions,
-    bytes: Uint8List.fromList(bytes),
-  );
-  if (path == null) return false; // user cancelled
-  // On desktop, FilePicker.saveFile doesn't write bytes — write manually.
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    await File(path).writeAsString(content);
-  }
-  return true;
-}
-
-String _buildMarkdownFor(
-  List<ChatMessageView> messages, {
-  String? topicTitle,
-  required bool showThinkingAndTools,
-  required bool expandThinking,
-}) {
-  final buf = StringBuffer();
-  final title = topicTitle?.trim();
-  if (title != null && title.isNotEmpty) {
-    buf.writeln('# $title\n');
-  }
-  for (final msg in messages) {
-    final isUser = msg.role == MessageRole.user;
-    final roleName = isUser ? '用户' : (msg.modelName ?? 'AI助手');
-    final time = _formatTimeFull(msg.createdAt);
-    buf.writeln('> $time · $roleName\n');
-
-    if (showThinkingAndTools && expandThinking && msg.thinking.isNotEmpty) {
-      buf.writeln('**思考过程**\n');
-      buf.writeln('```text');
-      buf.writeln(msg.thinking.trim());
-      buf.writeln('```\n');
-    }
-
-    if (showThinkingAndTools) {
-      for (final block in msg.blocks) {
-        if (block is ToolBlock) {
-          final name = block.toolName ?? block.toolId;
-          final failed = block.status == MessageBlockStatus.error;
-          buf.writeln('> 🔧 **$name** → ${failed ? "错误" : "完成"}\n');
-        }
-      }
-    }
-
-    if (msg.text.trim().isNotEmpty) {
-      buf.writeln(msg.text.trim());
-      buf.writeln();
-    }
-    buf.writeln('---\n');
-  }
-  return buf.toString();
-}
-
-String _buildTxtFor(
-  List<ChatMessageView> messages, {
-  String? topicTitle,
-  required bool showThinkingAndTools,
-  required bool expandThinking,
-}) {
-  final buf = StringBuffer();
-  final title = topicTitle?.trim();
-  if (title != null && title.isNotEmpty) {
-    buf.writeln('$title\n');
-  }
-  for (final msg in messages) {
-    final isUser = msg.role == MessageRole.user;
-    final roleName = isUser ? '用户' : (msg.modelName ?? 'AI助手');
-    final time = _formatTimeFull(msg.createdAt);
-    buf.writeln('$time · $roleName\n');
-
-    if (showThinkingAndTools && expandThinking && msg.thinking.isNotEmpty) {
-      buf.writeln('[思考过程]');
-      buf.writeln(msg.thinking.trim());
-      buf.writeln();
-    }
-
-    if (showThinkingAndTools) {
-      for (final block in msg.blocks) {
-        if (block is ToolBlock) {
-          final name = block.toolName ?? block.toolId;
-          final failed = block.status == MessageBlockStatus.error;
-          buf.writeln('[工具] $name → ${failed ? "错误" : "完成"}');
-        }
-      }
-    }
-
-    if (msg.text.trim().isNotEmpty) {
-      buf.writeln(msg.text.trim());
-      buf.writeln();
-    }
-    buf.writeln('---\n');
-  }
-  return buf.toString();
-}
-
-String _formatTimeFull(DateTime? time) {
-  if (time == null) return '';
-  final t = time.toLocal();
-  String two(int v) => v.toString().padLeft(2, '0');
-  return '${t.year}-${two(t.month)}-${two(t.day)} '
-      '${two(t.hour)}:${two(t.minute)}';
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +188,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
             Row(
               children: [
                 Expanded(
-                  child: _CompactFormatButton(
+                  child: CompactFormatButton(
                     icon: LucideIcons.fileText,
                     label: '纯文本',
                     color: cs.tertiary,
@@ -323,7 +197,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _CompactFormatButton(
+                  child: CompactFormatButton(
                     icon: LucideIcons.bookOpenText,
                     label: 'Markdown',
                     color: cs.primary,
@@ -332,7 +206,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _CompactFormatButton(
+                  child: CompactFormatButton(
                     icon: LucideIcons.image,
                     label: '图片',
                     color: cs.secondary,
@@ -346,7 +220,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
             Row(
               children: [
                 Expanded(
-                  child: _ToggleChip(
+                  child: ToggleChip(
                     icon: LucideIcons.wrench,
                     label: '思考和工具',
                     selected: _showThinkingAndTools,
@@ -358,7 +232,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _ToggleChip(
+                  child: ToggleChip(
                     icon: LucideIcons.brain,
                     label: '展开思考',
                     selected: _expandThinking,
@@ -376,7 +250,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
               Row(
                 children: [
                   Expanded(
-                    child: _ToggleChip(
+                    child: ToggleChip(
                       icon: LucideIcons.megaphone,
                       label: '含辩论流程通告',
                       selected: _includeDebateNotices,
@@ -393,19 +267,19 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
             // Quick actions row (copy & share)
             Row(
               children: [
-                _QuickActionChip(
+                QuickActionChip(
                   icon: LucideIcons.copy,
                   label: '复制文本',
                   onTap: () => _copyContent(asMarkdown: false),
                 ),
                 const SizedBox(width: 8),
-                _QuickActionChip(
+                QuickActionChip(
                   icon: LucideIcons.copy,
                   label: '复制 MD',
                   onTap: () => _copyContent(asMarkdown: true),
                 ),
                 const SizedBox(width: 8),
-                _QuickActionChip(
+                QuickActionChip(
                   icon: LucideIcons.share2,
                   label: '分享',
                   onTap: _shareText,
@@ -414,7 +288,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
                   notionSettingsProvider.select((s) => s.isConfigured),
                 )) ...[
                   const SizedBox(width: 8),
-                  _QuickActionChip(
+                  QuickActionChip(
                     icon: LucideIcons.databaseZap,
                     label: 'Notion',
                     onTap: _exportToNotion,
@@ -432,14 +306,14 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
   // Content builders
   // ---------------------------------------------------------------------------
 
-  String _buildMarkdown() => _buildMarkdownFor(
+  String _buildMarkdown() => buildMarkdownForExport(
     _exportMessages,
     topicTitle: widget.topicTitle,
     showThinkingAndTools: _showThinkingAndTools,
     expandThinking: _expandThinking,
   );
 
-  String _buildTxt() => _buildTxtFor(
+  String _buildTxt() => buildTxtForExport(
     _exportMessages,
     topicTitle: widget.topicTitle,
     showThinkingAndTools: _showThinkingAndTools,
@@ -481,7 +355,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
   Future<void> _exportImage() async {
     setState(() => _exporting = true);
     try {
-      final file = await _renderMessagesAsImage(
+      final file = await renderMessagesAsImage(
         context,
         messages: _exportMessages,
         topicTitle: widget.topicTitle,
@@ -570,7 +444,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     String filename,
     List<String> extensions,
   ) async {
-    final saved = await _saveTextFile(content, filename, extensions);
+    final saved = await saveExportTextFile(content, filename, extensions);
     if (!saved || !mounted) return;
     Navigator.of(context).pop();
     _toast('已导出');
@@ -583,415 +457,5 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
   void _toast(String message) {
     if (!mounted) return;
     AppToast.info(context, message);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Image export: render messages off-screen → capture as PNG
-// ---------------------------------------------------------------------------
-
-Future<File?> _renderMessagesAsImage(
-  BuildContext context, {
-  required List<ChatMessageView> messages,
-  String? topicTitle,
-  bool showThinking = false,
-  bool showTools = false,
-}) async {
-  final theme = Theme.of(context);
-  const double width = 480;
-  const double pixelRatio = 3.0;
-
-  final boundaryKey = GlobalKey();
-
-  // Build the widget tree to render
-  Widget buildContent() {
-    final cs = theme.colorScheme;
-    return Container(
-      width: width,
-      color: cs.surface,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (topicTitle != null && topicTitle.trim().isNotEmpty) ...[
-            Text(
-              topicTitle,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: cs.onSurface,
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          for (var i = 0; i < messages.length; i++) ...[
-            _ExportMessageCard(
-              message: messages[i],
-              showThinking: showThinking,
-              showTools: showTools,
-            ),
-            if (i < messages.length - 1)
-              Divider(
-                height: 24,
-                color: cs.outlineVariant.withValues(alpha: 0.3),
-              ),
-          ],
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              'AetherLink',
-              style: TextStyle(
-                fontSize: 11,
-                color: cs.onSurface.withValues(alpha: 0.3),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  final overlay = Overlay.of(context);
-  final completer = Completer<void>();
-
-  late OverlayEntry entry;
-  entry = OverlayEntry(
-    builder: (ctx) {
-      int frameCount = 0;
-      void scheduleCompletion() {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          frameCount++;
-          if (frameCount < 3) {
-            scheduleCompletion();
-          } else if (!completer.isCompleted) {
-            completer.complete();
-          }
-        });
-      }
-
-      scheduleCompletion();
-
-      return Positioned(
-        left: -10000,
-        top: -10000,
-        child: MediaQuery(
-          data: MediaQuery.of(ctx).copyWith(textScaler: TextScaler.noScaling),
-          child: Theme(
-            data: theme,
-            child: RepaintBoundary(key: boundaryKey, child: buildContent()),
-          ),
-        ),
-      );
-    },
-  );
-
-  overlay.insert(entry);
-
-  try {
-    await completer.future.timeout(const Duration(seconds: 5));
-
-    final boundary =
-        boundaryKey.currentContext?.findRenderObject()
-            as RenderRepaintBoundary?;
-    if (boundary == null) return null;
-
-    final image = await boundary.toImage(pixelRatio: pixelRatio);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    image.dispose();
-    if (byteData == null) return null;
-
-    final dir = await getTemporaryDirectory();
-    final file = File(
-      '${dir.path}/chat-export-${DateTime.now().millisecondsSinceEpoch}.png',
-    );
-    await file.writeAsBytes(byteData.buffer.asUint8List());
-    return file;
-  } catch (_) {
-    return null;
-  } finally {
-    entry.remove();
-  }
-}
-
-/// A single message card for the export image.
-class _ExportMessageCard extends StatelessWidget {
-  const _ExportMessageCard({
-    required this.message,
-    required this.showThinking,
-    required this.showTools,
-  });
-
-  final ChatMessageView message;
-  final bool showThinking;
-  final bool showTools;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final isUser = message.role == MessageRole.user;
-    final roleName = isUser ? '用户' : (message.modelName ?? 'AI助手');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Role + time header
-        Row(
-          children: [
-            Container(
-              width: 20,
-              height: 20,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: isUser ? cs.primary : cs.secondary,
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Text(
-                isUser ? 'U' : 'AI',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              roleName,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: cs.onSurface,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        // Thinking
-        if (showThinking && message.thinking.isNotEmpty) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              message.thinking.trim(),
-              style: TextStyle(
-                fontSize: 11,
-                color: cs.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-        ],
-        // Tool blocks
-        if (showTools)
-          for (final block in message.blocks)
-            if (block is ToolBlock) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      LucideIcons.wrench,
-                      size: 12,
-                      color: cs.onSurface.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      block.toolName ?? block.toolId,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: cs.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 4),
-            ],
-        // Main text
-        if (message.text.trim().isNotEmpty)
-          Text(
-            message.text.trim(),
-            style: TextStyle(fontSize: 14, color: cs.onSurface, height: 1.5),
-          ),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Compact option row
-// ---------------------------------------------------------------------------
-
-/// Compact colored format button (Kelivo-style).
-class _CompactFormatButton extends StatelessWidget {
-  const _CompactFormatButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark
-        ? color.withValues(alpha: 0.15)
-        : color.withValues(alpha: 0.08);
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Toggle chip (like Kelivo's selection bar toggle)
-// ---------------------------------------------------------------------------
-
-class _ToggleChip extends StatelessWidget {
-  const _ToggleChip({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.enabled = true,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final fg = !enabled
-        ? cs.onSurface.withValues(alpha: 0.3)
-        : selected
-        ? cs.primary
-        : cs.onSurface.withValues(alpha: 0.7);
-    final bg = selected
-        ? cs.primary.withValues(alpha: 0.12)
-        : cs.surfaceContainerHighest.withValues(alpha: 0.5);
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 14, color: fg),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                    color: fg,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Quick action chip
-// ---------------------------------------------------------------------------
-
-class _QuickActionChip extends StatelessWidget {
-  const _QuickActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Expanded(
-      child: Material(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: 14,
-                  color: cs.onSurface.withValues(alpha: 0.7),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: cs.onSurface.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
