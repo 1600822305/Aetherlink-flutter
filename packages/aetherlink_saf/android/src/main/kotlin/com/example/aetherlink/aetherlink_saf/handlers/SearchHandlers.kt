@@ -12,6 +12,8 @@ import com.example.aetherlink.aetherlink_saf.core.opt
 import com.example.aetherlink.aetherlink_saf.core.req
 import com.example.aetherlink.aetherlink_saf.io.DocumentRepository
 import io.flutter.plugin.common.MethodCall
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 /**
  * P2 search + "open in system app" methods.
@@ -35,6 +37,8 @@ class SearchHandlers(
         val maxResults = call.opt<Number>("maxResults", 200).toInt()
         val recursive = call.opt("recursive", true)
         val useRegex = call.opt("useRegex", false)
+        val skipDirs = call.argument<List<String>>("skipDirs").orEmpty().toHashSet()
+        val maxMatchesPerFile = call.opt<Number>("maxMatchesPerFile", 5).toInt()
 
         val needle = query.lowercase()
         // When useRegex is set, compile once (case-insensitive, mirroring the
@@ -65,49 +69,84 @@ class SearchHandlers(
             }.getOrNull() ?: continue
             for (child in children) {
                 if (matches.size >= maxResults) break
+                val name = child["name"] as? String ?: continue
                 val isDir = child["type"] == "directory"
                 if (isDir) {
-                    if (recursive) stack.addLast(Uri.parse(child["uri"] as String))
+                    if (recursive && name !in skipDirs) {
+                        stack.addLast(Uri.parse(child["uri"] as String))
+                    }
                     continue
                 }
-                val name = child["name"] as? String ?: continue
                 if (fileTypes.isNotEmpty() &&
                     name.substringAfterLast('.', "").lowercase() !in fileTypes
                 ) {
                     continue
                 }
-                if (matchesEntry(child, name, needle, regex, searchType)) matches.add(child)
+                val byName = if (regex != null) {
+                    regex.containsMatchIn(name)
+                } else {
+                    name.lowercase().contains(needle)
+                }
+                when (searchType) {
+                    "content", "both" -> {
+                        val scan = scanContent(child, needle, regex, maxMatchesPerFile)
+                        val byContent = (scan?.matchCount ?: 0) > 0
+                        if ((searchType == "both" && byName) || byContent) {
+                            matches.add(
+                                if (scan == null) child
+                                else child + mapOf(
+                                    "matchCount" to scan.matchCount,
+                                    "matches" to scan.lines,
+                                ),
+                            )
+                        }
+                    }
+                    else -> if (byName) matches.add(child)
+                }
             }
         }
         return mapOf("files" to matches, "totalFound" to matches.size)
     }
 
-    private fun matchesEntry(
+    private class ContentScan(val matchCount: Int, val lines: List<Map<String, Any?>>)
+
+    /**
+     * Streams the file line-by-line collecting up to [maxLines] matching lines
+     * plus the total matching-line count. Null when the file couldn't be
+     * scanned as text (oversized / unreadable), so the caller can tell "not
+     * scanned" apart from "scanned with zero hits".
+     */
+    private fun scanContent(
         child: Map<String, Any?>,
-        name: String,
         needle: String,
         regex: Regex?,
-        searchType: String,
-    ): Boolean {
-        val byName = if (regex != null) {
-            regex.containsMatchIn(name)
-        } else {
-            name.lowercase().contains(needle)
-        }
-        return when (searchType) {
-            "name" -> byName
-            "content" -> contentMatches(child, needle, regex)
-            "both" -> byName || contentMatches(child, needle, regex)
-            else -> byName
-        }
-    }
-
-    private fun contentMatches(child: Map<String, Any?>, needle: String, regex: Regex?): Boolean {
+        maxLines: Int,
+    ): ContentScan? {
         val size = (child["size"] as? Number)?.toLong() ?: 0L
-        if (size > CONTENT_SEARCH_MAX_BYTES) return false
+        if (size > CONTENT_SEARCH_MAX_BYTES) return null
         val uri = Uri.parse(child["uri"] as String)
-        val text = runCatching { String(repo.readBytes(uri), Charsets.UTF_8) }.getOrNull() ?: return false
-        return if (regex != null) regex.containsMatchIn(text) else text.lowercase().contains(needle)
+        return runCatching {
+            BufferedReader(InputStreamReader(repo.openInput(uri), Charsets.UTF_8)).use { reader ->
+                var count = 0
+                var lineNumber = 0
+                val lines = ArrayList<Map<String, Any?>>()
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    lineNumber++
+                    val hit = if (regex != null) {
+                        regex.containsMatchIn(line)
+                    } else {
+                        line.lowercase().contains(needle)
+                    }
+                    if (!hit) continue
+                    count++
+                    if (lines.size < maxLines) {
+                        lines.add(mapOf("lineNumber" to lineNumber, "line" to line))
+                    }
+                }
+                ContentScan(count, lines)
+            }
+        }.getOrNull()
     }
 
     fun openSystemFileManager(call: MethodCall): Any? {

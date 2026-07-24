@@ -7,6 +7,7 @@ import com.example.aetherlink.aetherlink_saf.core.SafError
 import com.example.aetherlink.aetherlink_saf.core.SafException
 import java.io.ByteArrayOutputStream
 import java.io.FileNotFoundException
+import java.io.InputStream
 
 /**
  * The single SAF gateway: every `ContentResolver` / `DocumentsContract` call
@@ -121,6 +122,10 @@ class DocumentRepository(private val resolver: ContentResolver) {
     }
 
     // ===== reads =====
+
+    fun openInput(uri: Uri): InputStream =
+        resolver.openInputStream(uri)
+            ?: throw SafException(SafError.NOT_FOUND, "cannot open input stream", mapOf("uri" to uri.toString()))
 
     fun readBytes(uri: Uri): ByteArray =
         resolver.openInputStream(uri)?.use { it.readBytes() }

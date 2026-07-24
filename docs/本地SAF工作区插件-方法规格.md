@@ -121,6 +121,7 @@ SAF 没有 unix-style 路径,本插件统一约定:
 | `listPersistedPermissions()` | ✅ | — | `{uris: SelectedFileInfo[]}` | 列出所有已持久化的 treeUri,用于 UI 渲染"已授权工作区列表" |
 | `releasePersistableUriPermission(opts)` | ✅ | `{uri}` | void | 释放一个 treeUri 的持久化权限;**切换工作区时务必主动释放旧的**(避免触顶 128) |
 | `listDirectory(opts)` | ✅ | `{path, showHidden, sortBy:'name'\|'size'\|'mtime'\|'type', sortOrder:'asc'\|'desc'}` | `{files: FileInfo[], totalCount}` | 列目录;实现走 `ContentResolver.query(children URI)`,**禁用 `DocumentFile.listFiles()`** |
+| `listRecursive(opts)` | ✅ | `{directory, maxDepth, skipDirs[], maxEntries}` | `{files: FileInfo[], truncated}` | **一次通道调用**完成递归列表(深度优先前序、每层目录在前按名排序);`skipDirs` 命中的目录本身仍列出但不下探;收集满 `maxEntries` 条时提前停止并置 `truncated=true` |
 | `readFile(opts)` | ✅ | `{path, encoding:'utf8'\|'base64'}` | `{content, encoding, size}` | 读文件;超过 §3.3 的 10 MB 抛 `E_TOO_LARGE` |
 | `getFileInfo(opts)` | ✅ | `{path}` | `FileInfo` | 单个文件/目录元信息 |
 | `exists(opts)` | ✅ | `{path}` | `{exists}` | 路径是否存在 |
@@ -159,7 +160,7 @@ SAF 没有 unix-style 路径,本插件统一约定:
 | `insertContent(opts)` | `{path, line, content}` | void | 指定行前插入(1-based) |
 | `replaceInFile(opts)` | `{path, search, replace, isRegex?, replaceAll?, caseSensitive?}` | `{replacements, modified}` | 查找替换 |
 | `applyDiff(opts)` | `{path, diff, format:'unified'\|'search-replace', createBackup?, expectedRangeHash?}` | `{success, linesChanged, linesAdded, linesDeleted, backupPath?}` | **打 diff** — agent 改文件主力。`format` 决定 diff 解析方式,**原版用 `search-replace`,首选实现这个**;`expectedRangeHash`(配合 `rangeStartLine`/`rangeEndLine`,见 §3.3)不匹配抛 `E_RANGE_CONFLICT` |
-| `searchFiles(opts)` | `{directory, query, searchType:'name'\|'content'\|'both', fileTypes[], maxResults, recursive}` | `{files[], totalFound}` | 全文/文件名检索 |
+| `searchFiles(opts)` | `{directory, query, searchType:'name'\|'content'\|'both', fileTypes[], maxResults, recursive, useRegex, skipDirs[], maxMatchesPerFile}` | `{files[], totalFound}` | 全文/文件名检索。`skipDirs` 命中的目录不入栈(剪枝 node_modules/.git 等);内容搜索逐行流式扫描,扫到的文件在其 `files[]` 条目上附加 `matchCount`(全文件命中行总数)与 `matches: [{lineNumber, line}]`(最多 `maxMatchesPerFile` 条);未扫描(超大/不可读)的条目不带这两个字段 |
 | `openSystemFileManager(opts)` | `{path?}` | void | 跳系统文件管理器 |
 | `openFileWithSystemApp(opts)` | `{path, mimeType?}` | void | 用系统 App 打开 |
 

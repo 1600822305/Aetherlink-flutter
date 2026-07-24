@@ -122,6 +122,7 @@ class AetherlinkSafPlugin :
 
                 // P0 reads
                 "listDirectory" -> result.success(read.listDirectory(call))
+                "listRecursive" -> result.success(read.listRecursive(call))
                 "readFile" -> result.success(read.readFile(call))
                 "getFileInfo" -> result.success(read.getFileInfo(call))
                 "exists" -> result.success(read.exists(call))

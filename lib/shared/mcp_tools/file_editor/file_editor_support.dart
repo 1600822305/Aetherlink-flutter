@@ -41,9 +41,9 @@ McpToolResult fileEditorOk(Object? data) =>
 
 /// A failed tool result: `{ success: false, error: ... }`, flagged as error.
 McpToolResult fileEditorError(String message) => McpToolResult(
-      _prettyJson.convert({'success': false, 'error': message}),
-      isError: true,
-    );
+  _prettyJson.convert({'success': false, 'error': message}),
+  isError: true,
+);
 
 /// Reads a required string [key] from [args]; throws [FileEditorError] when
 /// missing or blank.
@@ -69,7 +69,9 @@ String? optionalString(Map<String, Object?> args, String key) {
 List<String> optionalStringList(Map<String, Object?> args, String key) {
   final value = args[key];
   if (value == null) return const [];
-  final Iterable<Object?> raw = value is List ? value : value.toString().split(',');
+  final Iterable<Object?> raw = value is List
+      ? value
+      : value.toString().split(',');
   return raw
       .map((e) => e?.toString().trim() ?? '')
       .where((e) => e.isNotEmpty)
@@ -85,7 +87,11 @@ int? optionalInt(Map<String, Object?> args, String key) {
 }
 
 /// Reads an optional bool [key], defaulting to [fallback].
-bool optionalBool(Map<String, Object?> args, String key, {bool fallback = false}) {
+bool optionalBool(
+  Map<String, Object?> args,
+  String key, {
+  bool fallback = false,
+}) {
   final value = args[key];
   if (value is bool) return value;
   if (value is String) {
@@ -109,9 +115,7 @@ Future<ResolvedWorkspace> resolveWorkspace(
 ) async {
   final workspaces = await loadWorkspaces(ref);
   if (workspaces.isEmpty) {
-    throw const FileEditorError(
-      '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
-    );
+    throw const FileEditorError('当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。');
   }
   final raw = requireString(args, 'workspace').trim();
 
@@ -181,9 +185,7 @@ Future<ResolvedWorkspace> _workspaceForArgs(
   }
   final workspaces = await loadWorkspaces(ref);
   if (workspaces.isEmpty) {
-    throw const FileEditorError(
-      '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
-    );
+    throw const FileEditorError('当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。');
   }
   return _resolve(ref, workspaces.first);
 }
@@ -277,9 +279,7 @@ bool fileEditorPathsWithinRoot(
 Future<WorkspaceBackend> backendForPath(Ref ref, String path) async {
   final workspaces = await loadWorkspaces(ref);
   if (workspaces.isEmpty) {
-    throw const FileEditorError(
-      '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
-    );
+    throw const FileEditorError('当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。');
   }
   Workspace? best;
   for (final w in workspaces) {
@@ -371,13 +371,13 @@ Future<String> navigateSubPath(
 
 /// Serialises a [WorkspaceEntry] for a tool result.
 Map<String, Object?> entryJson(WorkspaceEntry e) => {
-      'name': e.name,
-      'path': e.path,
-      'type': e.isDirectory ? 'directory' : 'file',
-      'size': e.size,
-      'mtime': e.mtime,
-      if (e.isHidden) 'isHidden': true,
-    };
+  'name': e.name,
+  'path': e.path,
+  'type': e.isDirectory ? 'directory' : 'file',
+  'size': e.size,
+  'mtime': e.mtime,
+  if (e.isHidden) 'isHidden': true,
+};
 
 /// Hard cap on entries returned by [listRecursive], so a deep/huge workspace
 /// tree can't produce a giant payload that bloats the model context or stalls
@@ -412,6 +412,24 @@ Future<RecursiveListing> listRecursive(
   RegExp? fileNamePattern,
   bool sortByMtime = false,
 }) async {
+  final native = await backend.listDirRecursive(
+    path,
+    maxDepth: maxDepth,
+    skipDirs: kListIgnoredDirs,
+    maxEntries: kMaxRecursiveEntries,
+  );
+  if (native != null) {
+    final out = <Map<String, Object?>>[
+      for (final e in native.entries)
+        if (fileNamePattern == null ||
+            (!e.isDirectory && fileNamePattern.hasMatch(e.name)))
+          entryJson(e),
+    ];
+    if (sortByMtime) {
+      out.sort((a, b) => (b['mtime'] as int).compareTo(a['mtime'] as int));
+    }
+    return RecursiveListing(out, truncated: native.truncated);
+  }
   final out = <Map<String, Object?>>[];
   var truncated = false;
   Future<void> walk(String dir, int depth) async {
@@ -537,8 +555,10 @@ int countLines(String text) {
 // unchanged"). These are specific enough to block a write on their own.
 final List<RegExp> _strongOmissionPatterns = [
   RegExp(r'(//|#|/\*)\s*rest\s+of\s+(the\s+)?code', caseSensitive: false),
-  RegExp(r'(//|#|/\*)\s*rest\s+of\s+(the\s+)?(file|function|method|class)',
-      caseSensitive: false),
+  RegExp(
+    r'(//|#|/\*)\s*rest\s+of\s+(the\s+)?(file|function|method|class)',
+    caseSensitive: false,
+  ),
   RegExp(r'(//|#|/\*)\s*previous\s+code', caseSensitive: false),
   RegExp(r'(//|#|/\*)\s*(code\s+)?unchanged', caseSensitive: false),
   RegExp(r'(//|#|/\*)\s*same\s+as\s+before', caseSensitive: false),
@@ -548,9 +568,7 @@ final List<RegExp> _strongOmissionPatterns = [
 
 // A bare "// ..." / "# ..." ellipsis. Common in real code/docs, so it only
 // counts as suspicious when the content is also far shorter than declared.
-final List<RegExp> _weakOmissionPatterns = [
-  RegExp(r'(//|#)\s*\.{3}'),
-];
+final List<RegExp> _weakOmissionPatterns = [RegExp(r'(//|#)\s*\.{3}')];
 
 /// Whether [content] contains a strong "rest of code unchanged"-style omission
 /// marker — specific enough to reject a whole-file overwrite on its own.
