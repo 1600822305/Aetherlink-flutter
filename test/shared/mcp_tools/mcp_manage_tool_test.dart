@@ -13,20 +13,29 @@ void main() {
     expect(skill.content, contains('mcp_manage'));
     expect(skill.content, contains('stdio'));
     expect(skill.content, contains('mcpServers 条目'));
+    expect(skill.content, contains('workspaces'));
   });
 
-  test('mcp_manage 工具定义指向技能，schema 含四个 action', () {
+  test('mcp_manage 工具定义指向技能，schema 含五个 action', () {
     expect(kMcpManageToolDefinition.name, kMcpManageToolName);
     expect(kMcpManageToolDefinition.description, contains('MCP 服务器管理'));
     final props =
         kMcpManageToolDefinition.inputSchema['properties']
             as Map<String, Object?>;
     final action = props['action'] as Map<String, Object?>;
-    expect(action['enum'], ['list', 'add', 'remove', 'toggle']);
+    expect(action['enum'], [
+      'list',
+      'add',
+      'remove',
+      'toggle',
+      'workspaces',
+    ]);
+    expect(props.containsKey('workspace'), isTrue);
   });
 
-  test('审批分级：list 免审，add/remove/toggle 需确认', () {
+  test('审批分级：list/workspaces 免审，add/remove/toggle 需确认', () {
     expect(mcpManageNeedsConfirmation({'action': 'list'}), isFalse);
+    expect(mcpManageNeedsConfirmation({'action': 'workspaces'}), isFalse);
     expect(mcpManageNeedsConfirmation({'action': 'add'}), isTrue);
     expect(mcpManageNeedsConfirmation({'action': 'remove'}), isTrue);
     expect(mcpManageNeedsConfirmation({'action': 'toggle'}), isTrue);
