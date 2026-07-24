@@ -81,6 +81,18 @@ abstract class AetherlinkSafPlatform extends PlatformInterface {
     throw UnimplementedError('listDirectory() has not been implemented.');
   }
 
+  /// Recursive directory listing done in one native call (depth-first
+  /// pre-order, capped at [maxEntries]); directories named in [skipDirs] are
+  /// listed but not descended into.
+  Future<ListRecursiveResult> listRecursive({
+    required String directory,
+    required int maxDepth,
+    List<String> skipDirs = const [],
+    int maxEntries = 2000,
+  }) {
+    throw UnimplementedError('listRecursive() has not been implemented.');
+  }
+
   Future<ReadFileResult> readFile({
     required String path,
     String encoding = 'utf8',
@@ -229,6 +241,8 @@ abstract class AetherlinkSafPlatform extends PlatformInterface {
     int maxResults = 200,
     bool recursive = true,
     bool useRegex = false,
+    List<String> skipDirs = const [],
+    int maxMatchesPerFile = 5,
   }) {
     throw UnimplementedError('searchFiles() has not been implemented.');
   }

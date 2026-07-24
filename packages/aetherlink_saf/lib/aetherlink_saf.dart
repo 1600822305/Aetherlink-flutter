@@ -46,33 +46,43 @@ class AetherlinkSaf {
     List<String>? accept,
     String? startDirectory,
     String? title,
-  }) =>
-      _p.openSystemFilePicker(
-        type: type,
-        multiple: multiple,
-        accept: accept,
-        startDirectory: startDirectory,
-        title: title,
-      );
+  }) => _p.openSystemFilePicker(
+    type: type,
+    multiple: multiple,
+    accept: accept,
+    startDirectory: startDirectory,
+    title: title,
+  );
 
   Future<ListDirectoryResult> listDirectory({
     required String path,
     bool showHidden = false,
     FileSortBy sortBy = FileSortBy.byName,
     FileSortOrder sortOrder = FileSortOrder.asc,
-  }) =>
-      _p.listDirectory(
-        path: path,
-        showHidden: showHidden,
-        sortBy: sortBy,
-        sortOrder: sortOrder,
-      );
+  }) => _p.listDirectory(
+    path: path,
+    showHidden: showHidden,
+    sortBy: sortBy,
+    sortOrder: sortOrder,
+  );
+
+  /// Recursive listing done in one native call; see the platform interface.
+  Future<ListRecursiveResult> listRecursive({
+    required String directory,
+    required int maxDepth,
+    List<String> skipDirs = const [],
+    int maxEntries = 2000,
+  }) => _p.listRecursive(
+    directory: directory,
+    maxDepth: maxDepth,
+    skipDirs: skipDirs,
+    maxEntries: maxEntries,
+  );
 
   Future<ReadFileResult> readFile({
     required String path,
     String encoding = 'utf8',
-  }) =>
-      _p.readFile(path: path, encoding: encoding);
+  }) => _p.readFile(path: path, encoding: encoding);
 
   Future<FileInfo> getFileInfo({required String path}) =>
       _p.getFileInfo(path: path);
@@ -86,13 +96,12 @@ class AetherlinkSaf {
     required String content,
     String encoding = 'utf8',
     bool append = false,
-  }) =>
-      _p.writeFile(
-        path: path,
-        content: content,
-        encoding: encoding,
-        append: append,
-      );
+  }) => _p.writeFile(
+    path: path,
+    content: content,
+    encoding: encoding,
+    append: append,
+  );
 
   Future<PathResult> createFile({
     required String parentPath,
@@ -100,58 +109,53 @@ class AetherlinkSaf {
     String? content,
     String encoding = 'utf8',
     String? mimeType,
-  }) =>
-      _p.createFile(
-        parentPath: parentPath,
-        name: name,
-        content: content,
-        encoding: encoding,
-        mimeType: mimeType,
-      );
+  }) => _p.createFile(
+    parentPath: parentPath,
+    name: name,
+    content: content,
+    encoding: encoding,
+    mimeType: mimeType,
+  );
 
   Future<PathResult> createDirectory({
     required String parentPath,
     required String name,
     bool recursive = false,
-  }) =>
-      _p.createDirectory(
-        parentPath: parentPath,
-        name: name,
-        recursive: recursive,
-      );
+  }) => _p.createDirectory(
+    parentPath: parentPath,
+    name: name,
+    recursive: recursive,
+  );
 
   Future<void> deleteFile({required String path}) => _p.deleteFile(path: path);
 
-  Future<void> deleteDirectory({required String path, bool recursive = false}) =>
-      _p.deleteDirectory(path: path, recursive: recursive);
+  Future<void> deleteDirectory({
+    required String path,
+    bool recursive = false,
+  }) => _p.deleteDirectory(path: path, recursive: recursive);
 
   Future<PathResult> renameFile({
     required String path,
     required String newName,
-  }) =>
-      _p.renameFile(path: path, newName: newName);
+  }) => _p.renameFile(path: path, newName: newName);
 
   Future<PathResult> moveFile({
     required String sourcePath,
     required String destinationParent,
   }) =>
-      _p.moveFile(
-        sourcePath: sourcePath,
-        destinationParent: destinationParent,
-      );
+      _p.moveFile(sourcePath: sourcePath, destinationParent: destinationParent);
 
   Future<PathResult> copyFile({
     required String sourcePath,
     required String destinationParent,
     String? newName,
     bool overwrite = false,
-  }) =>
-      _p.copyFile(
-        sourcePath: sourcePath,
-        destinationParent: destinationParent,
-        newName: newName,
-        overwrite: overwrite,
-      );
+  }) => _p.copyFile(
+    sourcePath: sourcePath,
+    destinationParent: destinationParent,
+    newName: newName,
+    overwrite: overwrite,
+  );
 
   // ===== P1: advanced reads =====
 
@@ -160,20 +164,18 @@ class AetherlinkSaf {
     required int startLine,
     required int endLine,
     String? encoding,
-  }) =>
-      _p.readFileRange(
-        path: path,
-        startLine: startLine,
-        endLine: endLine,
-        encoding: encoding,
-      );
+  }) => _p.readFileRange(
+    path: path,
+    startLine: startLine,
+    endLine: endLine,
+    encoding: encoding,
+  );
 
   Future<Uint8List> readFileBytes({
     required String path,
     int? offset,
     int? length,
-  }) =>
-      _p.readFileBytes(path: path, offset: offset, length: length);
+  }) => _p.readFileBytes(path: path, offset: offset, length: length);
 
   Future<int> getLineCount({required String path}) =>
       _p.getLineCount(path: path);
@@ -181,8 +183,7 @@ class AetherlinkSaf {
   Future<FileHashResult> getFileHash({
     required String path,
     HashAlgorithm algorithm = HashAlgorithm.sha256,
-  }) =>
-      _p.getFileHash(path: path, algorithm: algorithm);
+  }) => _p.getFileHash(path: path, algorithm: algorithm);
 
   // ===== P2: advanced editing =====
 
@@ -190,8 +191,7 @@ class AetherlinkSaf {
     required String path,
     required int line,
     required String content,
-  }) =>
-      _p.insertContent(path: path, line: line, content: content);
+  }) => _p.insertContent(path: path, line: line, content: content);
 
   Future<ReplaceResult> replaceInFile({
     required String path,
@@ -200,15 +200,14 @@ class AetherlinkSaf {
     bool isRegex = false,
     bool replaceAll = true,
     bool caseSensitive = true,
-  }) =>
-      _p.replaceInFile(
-        path: path,
-        search: search,
-        replace: replace,
-        isRegex: isRegex,
-        replaceAll: replaceAll,
-        caseSensitive: caseSensitive,
-      );
+  }) => _p.replaceInFile(
+    path: path,
+    search: search,
+    replace: replace,
+    isRegex: isRegex,
+    replaceAll: replaceAll,
+    caseSensitive: caseSensitive,
+  );
 
   /// Applies a [diff] to the file.
   ///
@@ -225,16 +224,15 @@ class AetherlinkSaf {
     String? expectedRangeHash,
     int? rangeStartLine,
     int? rangeEndLine,
-  }) =>
-      _p.applyDiff(
-        path: path,
-        diff: diff,
-        format: format,
-        createBackup: createBackup,
-        expectedRangeHash: expectedRangeHash,
-        rangeStartLine: rangeStartLine,
-        rangeEndLine: rangeEndLine,
-      );
+  }) => _p.applyDiff(
+    path: path,
+    diff: diff,
+    format: format,
+    createBackup: createBackup,
+    expectedRangeHash: expectedRangeHash,
+    rangeStartLine: rangeStartLine,
+    rangeEndLine: rangeEndLine,
+  );
 
   // ===== P2: search & system apps =====
 
@@ -246,20 +244,25 @@ class AetherlinkSaf {
     int maxResults = 200,
     bool recursive = true,
     bool useRegex = false,
-  }) =>
-      _p.searchFiles(
-        directory: directory,
-        query: query,
-        searchType: searchType,
-        fileTypes: fileTypes,
-        maxResults: maxResults,
-        recursive: recursive,
-        useRegex: useRegex,
-      );
+    List<String> skipDirs = const [],
+    int maxMatchesPerFile = 5,
+  }) => _p.searchFiles(
+    directory: directory,
+    query: query,
+    searchType: searchType,
+    fileTypes: fileTypes,
+    maxResults: maxResults,
+    recursive: recursive,
+    useRegex: useRegex,
+    skipDirs: skipDirs,
+    maxMatchesPerFile: maxMatchesPerFile,
+  );
 
   Future<void> openSystemFileManager({String? path}) =>
       _p.openSystemFileManager(path: path);
 
-  Future<void> openFileWithSystemApp({required String path, String? mimeType}) =>
-      _p.openFileWithSystemApp(path: path, mimeType: mimeType);
+  Future<void> openFileWithSystemApp({
+    required String path,
+    String? mimeType,
+  }) => _p.openFileWithSystemApp(path: path, mimeType: mimeType);
 }

@@ -81,11 +81,12 @@ RegExp? globToRegExp(String glob) {
 
 /// glob 是否命中一个文件：模式含 `/` 时按 [relPath]（相对搜索目录）匹配，
 /// 否则按文件名匹配。
-bool globHits(RegExp pattern, String glob, {
+bool globHits(
+  RegExp pattern,
+  String glob, {
   required String name,
   required String relPath,
-}) =>
-    glob.contains('/') ? pattern.hasMatch(relPath) : pattern.hasMatch(name);
+}) => glob.contains('/') ? pattern.hasMatch(relPath) : pattern.hasMatch(name);
 
 /// 从 [path] 推出相对 [directory] 的路径（POSIX 风格）。SAF 的
 /// `content://` URI 会先做 URL 解码再取后缀；推不出来时退回文件名。
@@ -110,8 +111,10 @@ String relativePathOf(String directory, String path, String name) {
   final direct = strip(directory, path);
   if (direct != null) return direct;
   try {
-    final decoded =
-        strip(Uri.decodeComponent(directory), Uri.decodeComponent(path));
+    final decoded = strip(
+      Uri.decodeComponent(directory),
+      Uri.decodeComponent(path),
+    );
     if (decoded != null) return decoded;
   } on ArgumentError {
     // 非法转义序列——按原样处理。
@@ -131,13 +134,13 @@ class LineMatch {
   final List<({int line, String text})>? context;
 
   Map<String, Object?> toJson() => {
-        'line': line,
-        'text': text,
-        if (context != null)
-          'context': [
-            for (final c in context!) {'line': c.line, 'text': c.text},
-          ],
-      };
+    'line': line,
+    'text': text,
+    if (context != null)
+      'context': [
+        for (final c in context!) {'line': c.line, 'text': c.text},
+      ],
+  };
 }
 
 /// [content] 中所有命中 [matcher] 的行。[maxMatches] 限制返回条数
@@ -158,10 +161,12 @@ List<LineMatch> findMatchingLines(
       final end = (i + contextLines).clamp(0, lines.length - 1);
       context = [
         for (var j = start; j <= end; j++)
-          (line: j + 1, text: _snip(lines[j])),
+          (line: j + 1, text: snipMatchLine(lines[j])),
       ];
     }
-    matches.add(LineMatch(line: i + 1, text: _snip(lines[i]), context: context));
+    matches.add(
+      LineMatch(line: i + 1, text: snipMatchLine(lines[i]), context: context),
+    );
     if (matches.length >= maxMatches) break;
   }
   return matches;
@@ -176,6 +181,7 @@ int countMatchingLines(String content, SearchLineMatcher matcher) {
   return count;
 }
 
-String _snip(String line) => line.length > kMaxMatchLineChars
+/// 命中行截断到 [kMaxMatchLineChars]，防超长行炸上下文。
+String snipMatchLine(String line) => line.length > kMaxMatchLineChars
     ? '${line.substring(0, kMaxMatchLineChars)}…'
     : line;

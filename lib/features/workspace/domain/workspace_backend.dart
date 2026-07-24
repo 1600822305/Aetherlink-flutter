@@ -87,13 +87,13 @@ class WorkspaceEntry {
   });
 
   factory WorkspaceEntry.fromJson(Map<String, dynamic> json) => WorkspaceEntry(
-        name: json['name'] as String,
-        path: json['path'] as String,
-        isDirectory: json['isDirectory'] as bool? ?? false,
-        size: (json['size'] as num?)?.toInt() ?? 0,
-        mtime: (json['mtime'] as num?)?.toInt() ?? 0,
-        isHidden: json['isHidden'] as bool? ?? false,
-      );
+    name: json['name'] as String,
+    path: json['path'] as String,
+    isDirectory: json['isDirectory'] as bool? ?? false,
+    size: (json['size'] as num?)?.toInt() ?? 0,
+    mtime: (json['mtime'] as num?)?.toInt() ?? 0,
+    isHidden: json['isHidden'] as bool? ?? false,
+  );
 
   final String name;
 
@@ -108,13 +108,13 @@ class WorkspaceEntry {
   final bool isHidden;
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'path': path,
-        'isDirectory': isDirectory,
-        'size': size,
-        'mtime': mtime,
-        'isHidden': isHidden,
-      };
+    'name': name,
+    'path': path,
+    'isDirectory': isDirectory,
+    'size': size,
+    'mtime': mtime,
+    'isHidden': isHidden,
+  };
 }
 
 /// A slice of a file read by line range (backend-neutral mirror of the
@@ -231,6 +231,45 @@ abstract class WorkspaceProcessSession {
   Future<void> close();
 }
 
+/// Flattened result of [WorkspaceBackend.listDirRecursive]: the entries in
+/// depth-first pre-order（每层目录在前、按名称排序）plus whether the
+/// `maxEntries` cap cut the walk short.
+class WorkspaceRecursiveListing {
+  const WorkspaceRecursiveListing(this.entries, {required this.truncated});
+
+  final List<WorkspaceEntry> entries;
+  final bool truncated;
+}
+
+/// A matched line returned by [WorkspaceBackend.searchFilesWithMatches].
+class WorkspaceSearchMatchLine {
+  const WorkspaceSearchMatchLine({
+    required this.lineNumber,
+    required this.line,
+  });
+
+  /// 1-based 行号。
+  final int lineNumber;
+  final String line;
+}
+
+/// A search hit from [WorkspaceBackend.searchFilesWithMatches]: the entry plus
+/// (for content searches) its matched lines. [matchCount] is the total number
+/// of matching lines in the file — it can exceed `matches.length` when the
+/// per-file cap truncated the list. Null when the backend didn't scan the
+/// file's content (name-only search, unreadable / oversized file).
+class WorkspaceSearchHit {
+  const WorkspaceSearchHit({
+    required this.entry,
+    this.matchCount,
+    this.matches = const [],
+  });
+
+  final WorkspaceEntry entry;
+  final int? matchCount;
+  final List<WorkspaceSearchMatchLine> matches;
+}
+
 /// Diff payload format for [WorkspaceBackend.applyDiff].
 enum WorkspaceDiffFormat { searchReplace, unified }
 
@@ -319,6 +358,18 @@ abstract class WorkspaceBackend {
   /// exist.
   Future<List<WorkspaceEntry>> listDir(String path);
 
+  /// Recursive listing done entirely on the backend side in a single call —
+  /// a fast path for backends where per-level [listDir] round-trips are
+  /// expensive (SAF's method channel). Directories named in [skipDirs] are
+  /// listed but not descended into. Returns null when the backend has no
+  /// native implementation; callers then fall back to a per-level walk.
+  Future<WorkspaceRecursiveListing?> listDirRecursive(
+    String path, {
+    required int maxDepth,
+    Set<String> skipDirs = const {},
+    int maxEntries = 2000,
+  }) async => null;
+
   /// Reads [path] as UTF-8 text. Throws when the file is too large for a
   /// whole-file read (see plugin spec §3.3, 10 MB on Android); callers
   /// must fall back to a range read in that case.
@@ -330,8 +381,7 @@ abstract class WorkspaceBackend {
     String path,
     int startLine,
     int endLine,
-  ) =>
-      throw UnsupportedError('readFileRange is not supported by this backend');
+  ) => throw UnsupportedError('readFileRange is not supported by this backend');
 
   /// Number of lines in [path].
   Future<int> getLineCount(String path) =>
@@ -357,8 +407,11 @@ abstract class WorkspaceBackend {
 
   /// Creates a file named [name] under [parentPath], returning its opaque
   /// path. When [content] is null an empty file is created.
-  Future<String> createFile(String parentPath, String name, {String? content}) =>
-      throw UnsupportedError('createFile is not supported by this backend');
+  Future<String> createFile(
+    String parentPath,
+    String name, {
+    String? content,
+  }) => throw UnsupportedError('createFile is not supported by this backend');
 
   /// Creates a file named [name] under [parentPath] with raw [bytes] (no text
   /// encoding — safe for binary content like imports and zip archives),
@@ -367,10 +420,9 @@ abstract class WorkspaceBackend {
     String parentPath,
     String name,
     List<int> bytes,
-  ) =>
-      throw UnsupportedError(
-        'createFileBytes is not supported by this backend',
-      );
+  ) => throw UnsupportedError(
+    'createFileBytes is not supported by this backend',
+  );
 
   /// Creates a directory named [name] under [parentPath], returning its
   /// opaque path.
@@ -378,10 +430,9 @@ abstract class WorkspaceBackend {
     String parentPath,
     String name, {
     bool recursive = false,
-  }) =>
-      throw UnsupportedError(
-        'createDirectory is not supported by this backend',
-      );
+  }) => throw UnsupportedError(
+    'createDirectory is not supported by this backend',
+  );
 
   /// Deletes the file or directory at [path]. For non-empty directories
   /// pass [recursive].
@@ -389,8 +440,7 @@ abstract class WorkspaceBackend {
     String path, {
     bool isDirectory = false,
     bool recursive = false,
-  }) =>
-      throw UnsupportedError('delete is not supported by this backend');
+  }) => throw UnsupportedError('delete is not supported by this backend');
 
   /// Renames the entry at [path] to [newName], returning its new opaque
   /// path.
@@ -409,8 +459,7 @@ abstract class WorkspaceBackend {
     String destinationParent, {
     String? newName,
     bool overwrite = false,
-  }) =>
-      throw UnsupportedError('copy is not supported by this backend');
+  }) => throw UnsupportedError('copy is not supported by this backend');
 
   /// Inserts [content] before 1-based [line] in [path].
   Future<void> insertContent(String path, int line, String content) =>
@@ -441,8 +490,7 @@ abstract class WorkspaceBackend {
     String? expectedRangeHash,
     int? rangeStartLine,
     int? rangeEndLine,
-  }) =>
-      throw UnsupportedError('applyDiff is not supported by this backend');
+  }) => throw UnsupportedError('applyDiff is not supported by this backend');
 
   // ===== command execution =====
 
@@ -462,8 +510,7 @@ abstract class WorkspaceBackend {
     Duration? timeout,
     Future<void>? cancelSignal,
     void Function(String chunk)? onOutput,
-  }) =>
-      throw UnsupportedError('exec is not supported by this backend');
+  }) => throw UnsupportedError('exec is not supported by this backend');
 
   /// Opens an interactive PTY shell (设计文档 §8.2) for a human terminal UI.
   /// Only valid when [WorkspaceCapabilities.canExec] is true. [columns] / [rows]
@@ -473,8 +520,7 @@ abstract class WorkspaceBackend {
     int columns = 80,
     int rows = 24,
     String? workingDirectory,
-  }) =>
-      throw UnsupportedError('startShell is not supported by this backend');
+  }) => throw UnsupportedError('startShell is not supported by this backend');
 
   /// Starts [command] as a long-lived **non-PTY** process and returns its
   /// stdio channels (see [WorkspaceProcessSession]). Only valid when
@@ -485,8 +531,7 @@ abstract class WorkspaceBackend {
     String command, {
     String? workingDirectory,
     Map<String, String>? environment,
-  }) =>
-      throw UnsupportedError('startProcess is not supported by this backend');
+  }) => throw UnsupportedError('startProcess is not supported by this backend');
 
   /// Searches under [directory] for entries matching [query]. When [useRegex]
   /// is true, [query] is treated as a (case-insensitive) regular expression.
@@ -498,6 +543,21 @@ abstract class WorkspaceBackend {
     int maxResults = 200,
     bool recursive = true,
     bool useRegex = false,
-  }) =>
-      throw UnsupportedError('searchFiles is not supported by this backend');
+  }) => throw UnsupportedError('searchFiles is not supported by this backend');
+
+  /// [searchFiles] variant that also returns each hit's matched lines
+  /// (content searches), so callers don't need to re-read every hit to
+  /// extract them. At most [maxMatchesPerFile] lines per file are returned;
+  /// `matchCount` carries the file's total. Returns null when the backend
+  /// can't provide match lines; callers then fall back to [searchFiles]
+  /// plus their own read.
+  Future<List<WorkspaceSearchHit>?> searchFilesWithMatches(
+    String directory,
+    String query, {
+    WorkspaceSearchType searchType = WorkspaceSearchType.name,
+    List<String> fileTypes = const [],
+    int maxResults = 200,
+    bool useRegex = false,
+    int maxMatchesPerFile = 5,
+  }) async => null;
 }

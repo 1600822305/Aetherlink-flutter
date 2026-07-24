@@ -42,9 +42,7 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
 
   @override
   Future<PermissionResult> checkPermissions({String? uri}) async {
-    final map = await _invokeMap('checkPermissions', {
-      'uri': ?uri,
-    });
+    final map = await _invokeMap('checkPermissions', {'uri': ?uri});
     return PermissionResult.fromMap(map);
   }
 
@@ -104,6 +102,22 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
       'sortOrder': sortOrder.wireValue,
     });
     return ListDirectoryResult.fromMap(map);
+  }
+
+  @override
+  Future<ListRecursiveResult> listRecursive({
+    required String directory,
+    required int maxDepth,
+    List<String> skipDirs = const [],
+    int maxEntries = 2000,
+  }) async {
+    final map = await _invokeMap('listRecursive', {
+      'directory': directory,
+      'maxDepth': maxDepth,
+      'skipDirs': skipDirs,
+      'maxEntries': maxEntries,
+    });
+    return ListRecursiveResult.fromMap(map);
   }
 
   @override
@@ -354,6 +368,8 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
     int maxResults = 200,
     bool recursive = true,
     bool useRegex = false,
+    List<String> skipDirs = const [],
+    int maxMatchesPerFile = 5,
   }) async {
     final map = await _invokeMap('searchFiles', {
       'directory': directory,
@@ -363,6 +379,8 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
       'maxResults': maxResults,
       'recursive': recursive,
       'useRegex': useRegex,
+      'skipDirs': skipDirs,
+      'maxMatchesPerFile': maxMatchesPerFile,
     });
     return SearchResult.fromMap(map);
   }

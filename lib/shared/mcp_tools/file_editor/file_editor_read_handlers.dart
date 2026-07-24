@@ -83,8 +83,7 @@ Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
     entries.sort(_dirsFirst);
   }
   final truncated = entries.length > kMaxRecursiveEntries;
-  final shown =
-      truncated ? entries.sublist(0, kMaxRecursiveEntries) : entries;
+  final shown = truncated ? entries.sublist(0, kMaxRecursiveEntries) : entries;
   return fileEditorOk({
     if (workspaceName != null) 'workspace': workspaceName,
     'path': dir,
@@ -132,16 +131,22 @@ Future<McpToolResult> readFile(
         results.add({
           'path': path,
           'status': 'skipped',
-          'error': '本次批量读取已达总量上限（$kMaxBatchReadChars 字符），'
+          'error':
+              '本次批量读取已达总量上限（$kMaxBatchReadChars 字符），'
               '该文件未读取；请分批调用或指定行范围。',
         });
         continue;
       }
       try {
         final one = await _readOne(
-            ref, args, path,
-            optionalInt(m, 'start_line'), optionalInt(m, 'end_line'),
-            withLineNumbers: withLineNumbers, sessionKey: sessionKey);
+          ref,
+          args,
+          path,
+          optionalInt(m, 'start_line'),
+          optionalInt(m, 'end_line'),
+          withLineNumbers: withLineNumbers,
+          sessionKey: sessionKey,
+        );
         totalChars += (one['content'] as String? ?? '').length;
         results.add({'status': 'success', ...one});
       } on FileEditorError catch (e) {
@@ -162,9 +167,14 @@ Future<McpToolResult> readFile(
   }
   final path = requireString(args, 'path');
   final one = await _readOne(
-      ref, args, path,
-      optionalInt(args, 'start_line'), optionalInt(args, 'end_line'),
-      withLineNumbers: withLineNumbers, sessionKey: sessionKey);
+    ref,
+    args,
+    path,
+    optionalInt(args, 'start_line'),
+    optionalInt(args, 'end_line'),
+    withLineNumbers: withLineNumbers,
+    sessionKey: sessionKey,
+  );
   return fileEditorOk(one);
 }
 
@@ -180,7 +190,10 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
   final directory = resolvedDir.path;
   final backend = resolvedDir.backend;
 
-  final searchType = switch (optionalString(args, 'search_type')?.toLowerCase()) {
+  final searchType = switch (optionalString(
+    args,
+    'search_type',
+  )?.toLowerCase()) {
     'content' => WorkspaceSearchType.content,
     'both' => WorkspaceSearchType.both,
     _ => WorkspaceSearchType.name,
@@ -190,9 +203,11 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
   final caseSensitive = optionalBool(args, 'case_sensitive');
   final contextLines = (optionalInt(args, 'context_lines') ?? 0).clamp(0, 10);
   final maxResults = (optionalInt(args, 'max_results') ?? 200).clamp(1, 1000);
-  final perFileLimit = (optionalInt(args, 'max_matches_per_file') ??
-          kMaxMatchesPerFile)
-      .clamp(1, 100);
+  final perFileLimit =
+      (optionalInt(args, 'max_matches_per_file') ?? kMaxMatchesPerFile).clamp(
+        1,
+        100,
+      );
   final offset = (optionalInt(args, 'offset') ?? 0).clamp(0, 1 << 30);
   final outputMode = optionalString(args, 'output_mode') ?? 'content';
   if (!const {'content', 'files_with_matches', 'count'}.contains(outputMode)) {
@@ -221,15 +236,37 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
 
   // 后端搜索是大小写不敏感的，其结果是 case_sensitive 命中的超集；
   // 大小写过滤在下面按行匹配时收紧。
-  var results = await backend.searchFiles(
-    directory,
-    query,
-    searchType: searchType,
-    fileTypes: fileTypes,
-    // 多要一条用于 hasMore 探测；offset 翻页需要后端给出足够多的候选。
-    maxResults: (maxResults + offset + 1).clamp(1, 2000),
-    useRegex: useRegex,
-  );
+  // 多要一条用于 hasMore 探测；offset 翻页需要后端给出足够多的候选。
+  final backendMax = (maxResults + offset + 1).clamp(1, 2000);
+  final contentSearch = searchType != WorkspaceSearchType.name;
+  // 内容搜索优先走能直接带回命中行的后端快路径（SAF 原生搜索），
+  // 命中文件就不用再跨后端整读一遍提取命中行。
+  Map<String, WorkspaceSearchHit>? hitByPath;
+  List<WorkspaceEntry> results;
+  final hits = contentSearch
+      ? await backend.searchFilesWithMatches(
+          directory,
+          query,
+          searchType: searchType,
+          fileTypes: fileTypes,
+          maxResults: backendMax,
+          useRegex: useRegex,
+          maxMatchesPerFile: perFileLimit + 1,
+        )
+      : null;
+  if (hits != null) {
+    hitByPath = {for (final h in hits) h.entry.path: h};
+    results = [for (final h in hits) h.entry];
+  } else {
+    results = await backend.searchFiles(
+      directory,
+      query,
+      searchType: searchType,
+      fileTypes: fileTypes,
+      maxResults: backendMax,
+      useRegex: useRegex,
+    );
+  }
   if (globPattern != null) {
     results = [
       for (final e in results)
@@ -247,8 +284,8 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
 
   // 内容搜索时把命中行（行号 + 内容 + 可选上下文）一并带回，模型不用再
   // 整读文件定位；count 模式给每文件命中行数；files_with_matches 只回文件。
-  final contentSearch = searchType != WorkspaceSearchType.name;
-  final needLines = contentSearch &&
+  final needLines =
+      contentSearch &&
       matcher != null &&
       (outputMode != 'files_with_matches' || caseSensitive);
   final files = <Map<String, Object?>>[];
@@ -267,33 +304,54 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
     List<LineMatch>? matches;
     var matchesTruncated = false;
     if (needLines && !e.isDirectory) {
-      final String? content = await _tryRead(backend, e.path);
-      if (content != null) {
+      final hit = hitByPath?[e.path];
+      // 后端已带命中行时直接用；需要上下文或大小写收紧时仍回读。
+      if (hit != null &&
+          hit.matchCount != null &&
+          !caseSensitive &&
+          contextLines == 0) {
         if (outputMode == 'count') {
-          matchCount = countMatchingLines(content, matcher);
-          if (matchCount == 0 &&
-              caseSensitive &&
-              searchType == WorkspaceSearchType.content) {
-            continue; // 大小写不敏感的候选，在敏感模式下实际没命中
-          }
+          matchCount = hit.matchCount;
         } else {
-          // 多要一条探测「还有更多命中」，命中满限时标记 matchesTruncated。
           final probed = totalMatches < kMaxTotalMatches
-              ? findMatchingLines(
-                  content,
-                  matcher,
-                  maxMatches: perFileLimit + 1,
-                  contextLines: contextLines,
-                )
-              : const <LineMatch>[];
-          if (probed.isEmpty &&
-              caseSensitive &&
-              searchType == WorkspaceSearchType.content) {
-            continue;
+              ? hit.matches
+              : const <WorkspaceSearchMatchLine>[];
+          matchesTruncated = hit.matchCount! > perFileLimit;
+          matches = [
+            for (final m in probed.take(perFileLimit))
+              LineMatch(line: m.lineNumber, text: snipMatchLine(m.line)),
+          ];
+        }
+      } else {
+        final String? content = await _tryRead(backend, e.path);
+        if (content != null) {
+          if (outputMode == 'count') {
+            matchCount = countMatchingLines(content, matcher);
+            if (matchCount == 0 &&
+                caseSensitive &&
+                searchType == WorkspaceSearchType.content) {
+              continue; // 大小写不敏感的候选，在敏感模式下实际没命中
+            }
+          } else {
+            // 多要一条探测「还有更多命中」，命中满限时标记 matchesTruncated。
+            final probed = totalMatches < kMaxTotalMatches
+                ? findMatchingLines(
+                    content,
+                    matcher,
+                    maxMatches: perFileLimit + 1,
+                    contextLines: contextLines,
+                  )
+                : const <LineMatch>[];
+            if (probed.isEmpty &&
+                caseSensitive &&
+                searchType == WorkspaceSearchType.content) {
+              continue;
+            }
+            matchesTruncated = probed.length > perFileLimit;
+            matches = matchesTruncated
+                ? probed.sublist(0, perFileLimit)
+                : probed;
           }
-          matchesTruncated = probed.length > perFileLimit;
-          matches =
-              matchesTruncated ? probed.sublist(0, perFileLimit) : probed;
         }
       }
     }
@@ -396,7 +454,8 @@ const String _kFileUnchangedNote =
       chars = next;
     }
     text = lines.take(kept).join('\n');
-    note = '内容过大，仅返回前 $kept 行（共 ${lines.length} 行）；'
+    note =
+        '内容过大，仅返回前 $kept 行（共 ${lines.length} 行）；'
         '请用 start_line=${kept + 1} 继续分段读取。';
   } else if (truncatedLines > 0) {
     note = '有 $truncatedLines 行超过 $_kMaxLineChars 字符已被截断。';
@@ -426,7 +485,9 @@ Future<Map<String, Object?>> _readOne(
   }
   final store = ref.read(fileReadStateProvider);
   if (info != null && !info.isDirectory) {
-    if (startLine == null && endLine == null && info.size > kMaxWholeReadBytes) {
+    if (startLine == null &&
+        endLine == null &&
+        info.size > kMaxWholeReadBytes) {
       throw FileEditorError(
         '文件过大（${info.size} 字节，整文件读取上限 $kMaxWholeReadBytes 字节），'
         '未读取。请用 start_line/end_line 分段读取。',
@@ -440,11 +501,7 @@ Future<Map<String, Object?>> _readOne(
       endLine: endLine,
       withLineNumbers: withLineNumbers,
     )) {
-      return {
-        'path': path,
-        'unchanged': true,
-        'note': _kFileUnchangedNote,
-      };
+      return {'path': path, 'unchanged': true, 'note': _kFileUnchangedNote};
     }
   }
 
@@ -464,6 +521,7 @@ Future<Map<String, Object?>> _readOne(
       ),
     );
   }
+
   // A range read kicks in when *either* bound is given: a missing start means
   // "from line 1", a missing end means "to the last line". (Previously both
   // had to be present or the whole file was returned silently.)

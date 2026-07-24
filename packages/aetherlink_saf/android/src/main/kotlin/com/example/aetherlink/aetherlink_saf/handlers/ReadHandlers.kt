@@ -29,6 +29,50 @@ class ReadHandlers(private val repo: DocumentRepository) {
         return mapOf("files" to items, "totalCount" to items.size)
     }
 
+    /**
+     * One-call recursive listing (depth-first pre-order, directories first
+     * within each level), so the Dart side doesn't pay one channel round-trip
+     * per directory level. Directories named in `skipDirs` are listed but not
+     * descended into; the walk stops once `maxEntries` entries are collected.
+     */
+    fun listRecursive(call: MethodCall): Any {
+        val directory: String = call.req("directory")
+        val maxDepth = call.opt<Number>("maxDepth", 3).toInt()
+        val skipDirs = call.argument<List<String>>("skipDirs").orEmpty().toHashSet()
+        val maxEntries = call.opt<Number>("maxEntries", 2000).toInt()
+
+        val out = ArrayList<Map<String, Any?>>()
+        var truncated = false
+
+        fun walk(dir: Uri, depth: Int) {
+            if (truncated) return
+            // Root errors (revoked grant, not a directory) must surface;
+            // unreadable subdirectories are skipped like the search walk.
+            val children = if (depth == 1) {
+                repo.listChildren(dir, showHidden = false, sortBy = "name", sortOrder = "asc")
+            } else {
+                runCatching {
+                    repo.listChildren(dir, showHidden = false, sortBy = "name", sortOrder = "asc")
+                }.getOrNull() ?: return
+            }
+            val ordered = children.sortedBy { if (it["type"] == "directory") 0 else 1 }
+            for (child in ordered) {
+                if (out.size >= maxEntries) {
+                    truncated = true
+                    return
+                }
+                out.add(child)
+                val name = child["name"] as? String ?: continue
+                if (child["type"] == "directory" && depth < maxDepth && name !in skipDirs) {
+                    walk(Uri.parse(child["uri"] as String), depth + 1)
+                }
+            }
+        }
+
+        walk(Uri.parse(directory), 1)
+        return mapOf("files" to out, "truncated" to truncated)
+    }
+
     fun readFile(call: MethodCall): Any {
         val path: String = call.req("path")
         val encoding = call.opt("encoding", "utf8")

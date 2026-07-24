@@ -13,7 +13,7 @@ import '../domain/workspace_backend.dart';
 
 class LocalSafBackend extends WorkspaceBackend {
   LocalSafBackend({saf.AetherlinkSaf? plugin})
-      : _plugin = plugin ?? const saf.AetherlinkSaf();
+    : _plugin = plugin ?? const saf.AetherlinkSaf();
 
   final saf.AetherlinkSaf _plugin;
 
@@ -44,13 +44,13 @@ class LocalSafBackend extends WorkspaceBackend {
 
   @override
   WorkspaceCapabilities get capabilities => const WorkspaceCapabilities(
-        // SAF can't run shell commands.
-        canExec: false,
-        // No inotify, but in-app mutations are reported through [watch]
-        // (see WorkspaceCapabilities.canWatch).
-        canWatch: true,
-        isRemote: false,
-      );
+    // SAF can't run shell commands.
+    canExec: false,
+    // No inotify, but in-app mutations are reported through [watch]
+    // (see WorkspaceCapabilities.canWatch).
+    canWatch: true,
+    isRemote: false,
+  );
 
   // SAF trees have no mount points; nothing is protected.
   @override
@@ -97,6 +97,24 @@ class LocalSafBackend extends WorkspaceBackend {
   }
 
   @override
+  Future<WorkspaceRecursiveListing?> listDirRecursive(
+    String path, {
+    required int maxDepth,
+    Set<String> skipDirs = const {},
+    int maxEntries = 2000,
+  }) async {
+    final r = await _plugin.listRecursive(
+      directory: path,
+      maxDepth: maxDepth,
+      skipDirs: skipDirs.toList(),
+      maxEntries: maxEntries,
+    );
+    return WorkspaceRecursiveListing([
+      for (final f in r.files) _toEntry(f),
+    ], truncated: r.truncated);
+  }
+
+  @override
   Future<String> readFile(String path) async {
     final result = await _plugin.readFile(path: path);
     return result.content;
@@ -132,15 +150,15 @@ class LocalSafBackend extends WorkspaceBackend {
   }
 
   @override
-  Future<List<int>> readFileBytes(
-    String path, {
-    int offset = 0,
-    int? length,
-  }) =>
+  Future<List<int>> readFileBytes(String path, {int offset = 0, int? length}) =>
       _plugin.readFileBytes(path: path, offset: offset, length: length);
 
   @override
-  Future<void> writeFile(String path, String content, {bool append = false}) async {
+  Future<void> writeFile(
+    String path,
+    String content, {
+    bool append = false,
+  }) async {
     await _plugin.writeFile(path: path, content: content, append: append);
     _emit(WorkspaceChangeKind.modified, path);
   }
@@ -319,29 +337,63 @@ class LocalSafBackend extends WorkspaceBackend {
       maxResults: maxResults,
       recursive: recursive,
       useRegex: useRegex,
+      skipDirs: kWorkspaceSkippedDirs.toList(),
     );
     return [for (final f in r.files) _toEntry(f)];
   }
 
+  @override
+  Future<List<WorkspaceSearchHit>> searchFilesWithMatches(
+    String directory,
+    String query, {
+    WorkspaceSearchType searchType = WorkspaceSearchType.name,
+    List<String> fileTypes = const [],
+    int maxResults = 200,
+    bool useRegex = false,
+    int maxMatchesPerFile = 5,
+  }) async {
+    final r = await _plugin.searchFiles(
+      directory: directory,
+      query: query,
+      searchType: _searchType(searchType),
+      fileTypes: fileTypes,
+      maxResults: maxResults,
+      useRegex: useRegex,
+      skipDirs: kWorkspaceSkippedDirs.toList(),
+      maxMatchesPerFile: maxMatchesPerFile,
+    );
+    return [
+      for (final h in r.hits)
+        WorkspaceSearchHit(
+          entry: _toEntry(h.info),
+          matchCount: h.matchCount,
+          matches: [
+            for (final m in h.matches)
+              WorkspaceSearchMatchLine(lineNumber: m.lineNumber, line: m.line),
+          ],
+        ),
+    ];
+  }
+
   static WorkspaceEntry _toEntry(saf.FileInfo f) => WorkspaceEntry(
-        name: f.name,
-        path: f.path,
-        isDirectory: f.type == saf.FileType.directory,
-        size: f.size,
-        mtime: f.mtime,
-        isHidden: f.isHidden,
-      );
+    name: f.name,
+    path: f.path,
+    isDirectory: f.type == saf.FileType.directory,
+    size: f.size,
+    mtime: f.mtime,
+    isHidden: f.isHidden,
+  );
 
   static saf.DiffFormat _diffFormat(WorkspaceDiffFormat f) => switch (f) {
-        WorkspaceDiffFormat.searchReplace => saf.DiffFormat.searchReplace,
-        WorkspaceDiffFormat.unified => saf.DiffFormat.unified,
-      };
+    WorkspaceDiffFormat.searchReplace => saf.DiffFormat.searchReplace,
+    WorkspaceDiffFormat.unified => saf.DiffFormat.unified,
+  };
 
   static saf.SearchType _searchType(WorkspaceSearchType t) => switch (t) {
-        WorkspaceSearchType.name => saf.SearchType.name,
-        WorkspaceSearchType.content => saf.SearchType.content,
-        WorkspaceSearchType.both => saf.SearchType.both,
-      };
+    WorkspaceSearchType.name => saf.SearchType.name,
+    WorkspaceSearchType.content => saf.SearchType.content,
+    WorkspaceSearchType.both => saf.SearchType.both,
+  };
 
   /// Launches the system directory picker, persists the grant, and returns
   /// the picked root as a backend-neutral [PickedDirectory] (or `null` when
@@ -349,8 +401,9 @@ class LocalSafBackend extends WorkspaceBackend {
   /// rather than [WorkspaceBackend] — callers get a neutral type back, no
   /// `aetherlink_saf` types leak out (spec §1 isolation rule).
   Future<PickedDirectory?> pickDirectory() async {
-    final result =
-        await _plugin.openSystemFilePicker(type: saf.PickerType.directory);
+    final result = await _plugin.openSystemFilePicker(
+      type: saf.PickerType.directory,
+    );
     if (result.cancelled || result.directories.isEmpty) return null;
     final d = result.directories.first;
     return PickedDirectory(
