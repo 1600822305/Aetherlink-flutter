@@ -8,6 +8,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_file_watch_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_hooks_access.dart';
+import 'package:aetherlink_flutter/app/di/agent_project_skills_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
 import 'package:aetherlink_flutter/app/di/dynamic_tool_catalog.dart';
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
@@ -67,6 +68,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/load_mcp_tools_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_client.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/skill_manage_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
@@ -338,6 +340,14 @@ DynamicToolCatalog _catalogFor(
   if (groups.contains(AgentToolGroup.skills) || enableSubagents) {
     definitions.add(kReadSkillToolDefinition);
     routes[kReadSkillToolName] = const SkillReadToolRoute();
+  }
+  // 技能库自管理：skill_manage（list 免审，写操作走 HITL 审批）。
+  // Ask/Plan 只读模式不暴露。
+  if (groups.contains(AgentToolGroup.skills) && !readOnly) {
+    definitions.add(kSkillManageToolDefinition);
+    routes[kSkillManageToolName] = const SettingsToolRoute(
+      kSkillManageToolName,
+    );
   }
   // 子代理派生入口（引擎内部处理，不进 executor）；子代理自身
   // 不再暴露，避免无限嵌套。定义走渐进披露：read_skill 读取
@@ -753,7 +763,10 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
             '其它需要 symlink 的操作（如 ln -s）会失败，请改用复制等替代方案。',
       '可用工具：$toolNames',
       ..._deferredMcpSection(),
-      ...await _skillsSection(ref),
+      ...await _skillsSection(
+        ref,
+        task.workspaceId.isNotEmpty ? task.workspaceId : _profile.workspaceId,
+      ),
       ...await _customSubagentsSection(ref),
     ].join('\n');
   }
@@ -777,23 +790,30 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 
   /// 已启用技能清单：read_skill 可读的技能名 + 一句话描述，
   /// 模型按需读取正文（决策 29 skills 联动 / 决策 30）。
-  Future<List<String>> _skillsSection(Ref ref) async {
+  Future<List<String>> _skillsSection(Ref ref, String? workspaceId) async {
     if (!_catalog.resident.any((d) => d.name == kReadSkillToolName)) {
       return const [];
     }
-    List<Skill> skills;
+    List<Skill> skills = const [];
     try {
       skills = await ref.read(skillsProvider.future);
-    } catch (_) {
-      return const [];
-    }
+    } catch (_) {}
     final enabled = skills.where((s) => s.enabled).toList();
-    if (enabled.isEmpty) return const [];
+    // 项目级技能（绑定工作区的 .aetherlink/.agents/.claude/.cursor
+    // skills 目录）：只随该工作区的任务动态加载，不进全局技能库。
+    List<Skill> project = const [];
+    try {
+      project = await loadProjectSkills(ref, workspaceId);
+    } catch (_) {}
+    if (enabled.isEmpty && project.isEmpty) return const [];
     return [
       '可用技能（read_skill 按名称读取正文）：',
       for (final s in enabled)
         '- ${s.name}${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}'
             '${_catalog.deferred.containsKey(s.id) ? '（读取本技能后，对应工具将在下一轮可用）' : ''}',
+      for (final s in project)
+        '- ${s.name}（项目技能）'
+            '${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}',
     ];
   }
 
@@ -1186,7 +1206,8 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     Ref Function() refOf,
     this._routes, {
     String? boundWorkspaceId,
-  })  : _boundWorkspaceId = boundWorkspaceId {
+  })  : _refOf = refOf,
+        _boundWorkspaceId = boundWorkspaceId {
     _executor = ChatToolExecutor(
       refOf,
       assistantId: () => '',
@@ -1205,6 +1226,7 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
   /// 锚定它（而不是内置终端/当前工作区），避免智能体越出绑定工作区
   /// 看到/操作其他终端会话。
   final String? _boundWorkspaceId;
+  final Ref Function() _refOf;
   late final ChatToolExecutor _executor;
 
   @override
@@ -1267,12 +1289,16 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
       // 表现为"点了没反应"。这里统一在信号命中时立即返回中断结果，
       // 引擎回到安全点收敛；底层调用继续在后台自然收尾，结果丢弃
       // （与工具超时路径同款语义）。
-      final pending = _executor.runTool(
-        route,
-        call.name,
-        args,
-        cancelSignal: interrupted.future,
-      );
+      // read_skill 在智能体侧要能读到项目级技能（绑定工作区的
+      // skills 目录），合并全局技能库后执行；其余路由照常分发。
+      final pending = route is SkillReadToolRoute
+          ? _readSkillWithProjectSkills(args)
+          : _executor.runTool(
+              route,
+              call.name,
+              args,
+              cancelSignal: interrupted.future,
+            );
       unawaited(pending.then((_) {}, onError: (_) {}));
       final result = await Future.any<McpToolResult?>([
         pending,
@@ -1299,6 +1325,22 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     } finally {
       cancel.removeListener(onCancelSignal);
     }
+  }
+
+  /// 合并全局技能库 + 绑定工作区的项目级技能后执行 read_skill，
+  /// 任一侧加载失败不影响另一侧。
+  Future<McpToolResult> _readSkillWithProjectSkills(
+    Map<String, Object?> args,
+  ) async {
+    final ref = _refOf();
+    final skills = <Skill>[];
+    try {
+      skills.addAll(await ref.read(skillsProvider.future));
+    } catch (_) {}
+    try {
+      skills.addAll(await loadProjectSkills(ref, _boundWorkspaceId));
+    } catch (_) {}
+    return executeReadSkill(skills, args);
   }
 
   /// 大输出截断落盘（循环设计稿 §5.2）：超阈值时头尾保留、砍中间，
