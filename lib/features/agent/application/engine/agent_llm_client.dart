@@ -29,10 +29,17 @@ class AgentLlmTurn {
     this.toolCalls = const [],
     this.tokensUsed = 0,
     this.contextTokens = 0,
+    this.finishReason = '',
   });
 
   final String text;
   final List<AgentToolCallRequest> toolCalls;
+
+  /// 供应商回报的结束原因（OpenAI 风格归一）；空 = 未知。
+  final String finishReason;
+
+  /// 输出因达到 token 上限被截断：不是模型自主停止，不能据此判收尾。
+  bool get truncated => finishReason == 'length';
 
   /// 本次调用的 token 用量（计费口径，跨轮累加进 task.tokenCount）。
   final int tokensUsed;
@@ -78,9 +85,10 @@ abstract class AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   });
 

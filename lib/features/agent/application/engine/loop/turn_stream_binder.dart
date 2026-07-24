@@ -98,26 +98,40 @@ class TurnStreamBinder {
     return store.appendToolCall(taskId, call, AgentToolCallState.running);
   }
 
-  /// 流中断：参数仍在流式生成中的事件按失败回填。
-  Future<void> failStreaming() async {
+  /// 流中断：参数仍在流式生成中的事件按失败回填；返回回填数，
+  /// 供引擎识别「模型发过工具调用但没流完」的非收尾轮。
+  Future<int> failStreaming() async {
+    final count = _streaming.length;
     for (final event in _streaming.values) {
       toolStream?.clear(event.id);
-      await store.updateToolCall(taskId, event,
-          state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
+      await store.updateToolCall(
+        taskId,
+        event,
+        state: AgentToolCallState.failure,
+        resultSummary: '已中断 ✗',
+      );
     }
     _streaming.clear();
+    return count;
   }
 
-  /// 预建了但未随 turn 返回的调用（流中断）按失败回填。
-  Future<void> failUnreturned(Set<String> returnedIds) async {
+  /// 预建了但未随 turn 返回的调用（流中断）按失败回填；返回回填数。
+  Future<int> failUnreturned(Set<String> returnedIds) async {
+    var count = 0;
     for (final entry in _preCreated.entries) {
       if (returnedIds.contains(entry.key)) continue;
       for (final event in entry.value) {
-        await store.updateToolCall(taskId, event,
-            state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
+        count++;
+        await store.updateToolCall(
+          taskId,
+          event,
+          state: AgentToolCallState.failure,
+          resultSummary: '已中断 ✗',
+        );
       }
       entry.value.clear();
     }
+    return count;
   }
 
   /// 本轮中止：尚未执行的全部预建事件按中断回填，避免永久停在
@@ -125,8 +139,12 @@ class TurnStreamBinder {
   Future<void> failAllPending() async {
     for (final entry in _preCreated.values) {
       for (final event in entry) {
-        await store.updateToolCall(taskId, event,
-            state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
+        await store.updateToolCall(
+          taskId,
+          event,
+          state: AgentToolCallState.failure,
+          resultSummary: '已中断 ✗',
+        );
       }
       entry.clear();
     }

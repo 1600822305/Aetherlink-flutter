@@ -149,6 +149,11 @@ class AgentEngine {
   /// finish_task 无正文拦截只触发一次（防弱模型反复空收尾死循环）。
   bool _finishGuardFired = false;
 
+  /// 输出被 token 上限截断时的自动续跑次数（对齐聊天侧
+  /// _kMaxAutoContinues）：有界，防每轮都截断的死循环。
+  static const int _kMaxLengthContinues = 3;
+  int _lengthContinues = 0;
+
   /// 最后一条用户消息之后是否存在非空助手正文：分析/调研类任务的
   /// 交付物就是正文，没有正文的 finish_task 视为零产出收尾。
   static bool _hasFinalReply(List<AgentEvent> events) {
@@ -431,8 +436,9 @@ class AgentEngine {
         }
         await writer.finish(turn.text);
         // 流中断时未闭合/未回到 turn 的预建事件按失败回填，避免永久 running。
-        await binder.failStreaming();
-        await binder.failUnreturned({for (final c in turn.toolCalls) c.id});
+        final interruptedToolAttempts =
+            await binder.failStreaming() +
+            await binder.failUnreturned({for (final c in turn.toolCalls) c.id});
         Future<void> failPendingToolEvents() => binder.failAllPending();
 
         budget.recordTokens(turn.tokensUsed);
@@ -470,6 +476,29 @@ class AgentEngine {
 
         // ⑤ 无工具调用 → 兜底判收尾（L1）。
         if (turn.toolCalls.isEmpty) {
+          // 模型发过工具调用但没流完（截断/网关丢块）：意图是继续
+          // 干活，不是收尾。失败回填已让模型下轮看到「已中断 ✗」
+          // 重发；计入连续失败熔断，极端反复时停在 paused。
+          if (interruptedToolAttempts > 0) {
+            budget.recordToolResult(ok: false);
+            continue;
+          }
+          // 输出因 token 上限被截断：不是模型自主停止，注入续跑
+          // 指令后回到循环顶部，而不是把半成品判 done。
+          if (turn.truncated && _lengthContinues < _kMaxLengthContinues) {
+            _lengthContinues++;
+            await store.appendStatusChange(
+              current.id,
+              '输出达 token 上限被截断，自动续跑'
+              '（$_lengthContinues/$_kMaxLengthContinues）',
+            );
+            await store.appendUserMessage(
+              current.id,
+              '[系统] 上一条回复因达到输出 token 上限被截断，任务尚未'
+              '结束。请从截断处继续完成剩余工作。',
+            );
+            continue;
+          }
           if (!_finishGuardFired &&
               !_hasFinalReply(await store.getEvents(current.id))) {
             _finishGuardFired = true;
