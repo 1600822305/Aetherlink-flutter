@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/scheduler.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
@@ -24,6 +23,7 @@ import 'package:aetherlink_flutter/features/chat/application/send/llm_history_bu
 import 'package:aetherlink_flutter/features/chat/application/send/llm_request_params.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/message_view_projector.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/system_prompt_builder.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/turn_stream_binder.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
@@ -32,19 +32,11 @@ import 'package:aetherlink_flutter/features/chat/application/multi_model_mention
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
-import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
-import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart'
-    show toolAuthPolicyProvider;
-import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart'
-    show terminalCommandIsHighRisk;
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.dart';
 import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart';
-import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
@@ -56,36 +48,25 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.
 import 'package:aetherlink_flutter/features/chat/domain/entities/multi_model_message_style.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
-import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_extraction.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
-import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
-import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
-import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 
 part 'chat_controller.g.dart';
 part 'chat_controller_debate.dart';
 part 'chat_controller_media_generation.dart';
 part 'chat_controller_multi_model.dart';
 part 'chat_controller_post_turn.dart';
-part 'chat_controller_streaming.dart';
 part 'chat_controller_translate.dart';
-
-const String _toolModeMetadataKey = kToolModeMetadataKey;
-const String _toolRoundMetadataKey = kToolRoundMetadataKey;
 
 /// Orchestrates the chat send/stream loop (application layer).
 ///
@@ -109,8 +90,7 @@ class ChatController extends _$ChatController
         _ChatMediaGeneration,
         _ChatMultiModel,
         _ChatPostTurn,
-        _ChatTranslate,
-        _ChatStreaming {
+        _ChatTranslate {
   static const String _defaultAssistantId = 'default-assistant';
 
   @override
@@ -133,7 +113,6 @@ class ChatController extends _$ChatController
 
   /// Runs each tool call along its [ToolRoute] (in-process built-in / remote
   /// MCP / bridge / web search / memory search).
-  @override
   late final ChatToolExecutor _toolExecutor = ChatToolExecutor(
     // Resolved lazily: `ref` returns a new object after every rebuild, and a
     // long tool-call turn routinely spans rebuilds (topic updates re-run
@@ -144,7 +123,6 @@ class ChatController extends _$ChatController
     sessionId: () => _topicId ?? '',
   );
 
-  @override
   StreamingRegistry get _registry =>
       ref.read(streamingRegistryProvider.notifier);
 
@@ -168,6 +146,58 @@ class ChatController extends _$ChatController
     () => ref,
     repo: () => _repo,
     debatePhaseOf: _debatePhaseOf,
+  );
+
+  /// Drives the gateway stream + MCP tool-call loop for one assistant reply;
+  /// extracted to [TurnStreamBinder]. Same lazy-Ref rationale as
+  /// [_toolExecutor]; state mutations and post-turn side effects are injected
+  /// back as callbacks.
+  late final TurnStreamBinder _streamBinder = TurnStreamBinder(
+    () => ref,
+    toolExecutor: () => _toolExecutor,
+    registry: () => _registry,
+    emitTurn: _emitTurn,
+    replace: _replace,
+    reloadView: _reloadView,
+    persistMessageBlocks: _persistMessageBlocks,
+    errorMessage: _errorMessage,
+    markTruncated: (messageId) => _truncatedMessageId = messageId,
+    refreshTopicPreview: (topicId) => _refreshTopicPreview(topicId),
+    generateTitle: (topicId) => _generateTitle(topicId),
+    maybeGenerateSuggestions: _maybeGenerateSuggestions,
+    maybeExtractMemory: _maybeExtractMemory,
+  );
+
+  /// Subscribes to the gateway stream for [request] and drives the MCP
+  /// tool-call loop; extracted to [TurnStreamBinder.streamInto]. Shared by
+  /// [send], [regenerate], [resend] and the mode mixins.
+  @override
+  Future<void> _streamInto({
+    required String turnTopicId,
+    required LlmChatRequest request,
+    required Model effective,
+    required ModelProvider provider,
+    required String assistantMessageId,
+    required String assistantBlockId,
+    required DateTime assistantTime,
+    required List<ChatMessageView> views,
+    required ChatMessageView assistantView,
+    required McpSetup mcp,
+    List<MessageBlock> leadingBlocks = const <MessageBlock>[],
+    bool finalizeTurn = true,
+  }) => _streamBinder.streamInto(
+    turnTopicId: turnTopicId,
+    request: request,
+    effective: effective,
+    provider: provider,
+    assistantMessageId: assistantMessageId,
+    assistantBlockId: assistantBlockId,
+    assistantTime: assistantTime,
+    views: views,
+    assistantView: assistantView,
+    mcp: mcp,
+    leadingBlocks: leadingBlocks,
+    finalizeTurn: finalizeTurn,
   );
 
   /// Aborts the streaming reply of the *current* topic, if any. The partial
@@ -1474,16 +1504,6 @@ class ChatController extends _$ChatController
     if (error is Failure) return error.message;
     return error.toString();
   }
-}
-
-/// Raised when a provider has a multi-key pool but every key is disabled,
-/// errored or still cooling down and there is no single-key fallback — surfaced
-/// as the assistant message's error so the user knows to re-enable / add a key.
-class _NoUsableApiKeyException implements Exception {
-  const _NoUsableApiKeyException();
-
-  @override
-  String toString() => '没有可用的 API Key：所有 Key 已禁用、失败或处于冷却中。';
 }
 
 /// Single-message lookup over the chat controller's async state.
