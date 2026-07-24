@@ -87,6 +87,35 @@ void main() {
       expect(text, isEmpty);
     });
 
+    test('drains held-back tail before a tool call delta', () async {
+      final gateway = ReasoningTagGateway(
+        _FakeGateway([
+          const LlmStreamChunk.textDelta('结论直接冲突'),
+          const LlmStreamChunk.toolCallDelta(
+            key: 'k',
+            id: 'id',
+            name: 'read_file',
+            argsTextSoFar: '{',
+          ),
+          const LlmStreamChunk.done(),
+        ]),
+      );
+      final order = <String>[];
+      await for (final chunk in gateway.streamChat(_request())) {
+        switch (chunk) {
+          case LlmTextDelta(text: final delta):
+            order.add('text:$delta');
+          case LlmToolCallDelta():
+            order.add('tool');
+          case LlmReasoningDelta():
+          case LlmToolCallChunk():
+          case LlmDone():
+            break;
+        }
+      }
+      expect(order, ['text:结论直接冲突', 'tool']);
+    });
+
     test('keeps native reasoning deltas untouched', () async {
       final (text, reasoning) = await _collect([
         const LlmStreamChunk.reasoningDelta('native'),
