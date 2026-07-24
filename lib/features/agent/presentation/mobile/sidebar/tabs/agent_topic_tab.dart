@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/wi
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/primary_terminal_sheet.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class AgentTopicTab extends ConsumerStatefulWidget {
   const AgentTopicTab({super.key});
@@ -58,8 +59,11 @@ class _AgentTopicTabState extends ConsumerState<AgentTopicTab> {
     final existingDraft = tasks
         .where((t) => t.status == AgentTaskStatus.draft)
         .firstOrNull;
-    final task = existingDraft ??
-        await ref.read(agentTaskRunnerProvider.notifier).createDraft(
+    final task =
+        existingDraft ??
+        await ref
+            .read(agentTaskRunnerProvider.notifier)
+            .createDraft(
               profile: profile,
               mode: ref.read(agentUiSettingsControllerProvider).defaultMode,
             );
@@ -90,14 +94,15 @@ class _AgentTopicTabState extends ConsumerState<AgentTopicTab> {
     }
     // 与聊天话题 tab 同款排序：固定的话题置顶，其余按最近活跃
     // （updatedAt）降序，新建/刚活跃的话题自然浮在顶部。
-    final tasks = ref
-        .watch(agentTasksProvider)
-        .where((t) => t.profileId == profile.id && !t.isSubtask)
-        .toList()
-      ..sort((a, b) {
-        if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
-        return b.updatedAt.compareTo(a.updatedAt);
-      });
+    final tasks =
+        ref
+            .watch(agentTasksProvider)
+            .where((t) => t.profileId == profile.id && !t.isSubtask)
+            .toList()
+          ..sort((a, b) {
+            if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+            return b.updatedAt.compareTo(a.updatedAt);
+          });
 
     final query = _query.trim().toLowerCase();
     final searching = query.isNotEmpty;
@@ -223,13 +228,12 @@ class _TaskCard extends ConsumerWidget {
     }
   }
 
-  /// 切换话题绑定的工作区：活跃任务（运行/等待/暂停）内工具正在
-  /// 该工作区里执行，中途换会错位，先拦下；其余状态下一轮生效。
+  /// 切换话题绑定的工作区：引擎跑动中（运行/等审批/等输入）工具正在
+  /// 该工作区里执行，中途换会错位，先拦下；已暂停/完成等其余状态
+  /// 可换，下一轮生效。
   Future<void> _switchWorkspace(BuildContext context, WidgetRef ref) async {
-    if (task.isActive) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('任务进行中，先暂停/完成后再切换工作区')),
-      );
+    if (task.isActive && task.status != AgentTaskStatus.paused) {
+      AppToast.warning(context, '任务进行中，先暂停/完成后再切换工作区');
       return;
     }
     final workspaces = ref.read(recentWorkspacesViewProvider);
@@ -310,7 +314,9 @@ class _TaskCard extends ConsumerWidget {
       name = workspace.name;
     }
     if (id == task.workspaceId) return;
-    await ref.read(agentTasksProvider.notifier).updateWorkspace(task.id, id, name);
+    await ref
+        .read(agentTasksProvider.notifier)
+        .updateWorkspace(task.id, id, name);
   }
 
   void _delete(WidgetRef ref) {

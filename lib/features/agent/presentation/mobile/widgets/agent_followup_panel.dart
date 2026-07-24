@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/agent/application/agent_providers.da
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// ask_user 建议答案面板（RooCode ask_followup_question 风格）：任务
 /// 等待回答时浮在输入框上方，问题 + 整行建议答案按钮，点选即提交；
@@ -16,8 +17,7 @@ class AgentFollowupPanel extends ConsumerStatefulWidget {
   final AgentTask task;
 
   @override
-  ConsumerState<AgentFollowupPanel> createState() =>
-      _AgentFollowupPanelState();
+  ConsumerState<AgentFollowupPanel> createState() => _AgentFollowupPanelState();
 }
 
 class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
@@ -32,9 +32,7 @@ class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
           .answerUserQuestion(widget.task, question, answer);
     } on StateError catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message.toString())));
+      AppToast.error(context, error.message.toString());
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -88,13 +86,13 @@ class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
                   ),
               ],
             ),
-            for (final (index, suggestion)
-                in question.suggestions.indexed)
+            for (final (index, suggestion) in question.suggestions.indexed)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: OutlinedButton(
-                  onPressed:
-                      _submitting ? null : () => _submit(question, suggestion),
+                  onPressed: _submitting
+                      ? null
+                      : () => _submit(question, suggestion),
                   style: OutlinedButton.styleFrom(
                     alignment: Alignment.centerLeft,
                     minimumSize: Size.zero,
@@ -103,9 +101,7 @@ class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
                       vertical: 7,
                     ),
                     visualDensity: VisualDensity.compact,
-                    side: BorderSide(
-                      color: cs.primary.withValues(alpha: 0.35),
-                    ),
+                    side: BorderSide(color: cs.primary.withValues(alpha: 0.35)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
                     ),

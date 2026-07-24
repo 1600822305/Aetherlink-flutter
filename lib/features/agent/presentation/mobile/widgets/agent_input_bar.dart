@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_attachment_menu.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 底部输入区（UI 稿输入区，已拍板）：与普通聊天输入框同款视觉——
 /// 圆角纸面卡片，上层无边框文本区域，下层单独一行按钮工具条
@@ -174,9 +175,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     if (task.status == AgentTaskStatus.waitingInput) {
       // 等待回答：输入框承接自定义回答，建议答案在上方面板点选。
       if (attachments.isNotEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('回答暂不支持附件')));
+        AppToast.warning(context, '回答暂不支持附件');
         return;
       }
       try {
@@ -185,9 +184,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
         clearInput();
       } on StateError catch (error) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.message.toString())));
+        AppToast.error(context, error.message.toString());
       }
       return;
     }
@@ -338,9 +335,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     if (task != null && task.status != AgentTaskStatus.draft) {
       // 经 runner 切模式：落审计事件 + prePlanMode 维护；运行中任务
       // 在下个安全点暂停后以新模式的工具目录自动续跑。
-      await ref
-          .read(agentTaskRunnerProvider.notifier)
-          .switchMode(task, mode);
+      await ref.read(agentTaskRunnerProvider.notifier).switchMode(task, mode);
     }
   }
 

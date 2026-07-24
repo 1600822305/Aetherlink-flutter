@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/debate/domain/debate_models.dart';
 import 'package:aetherlink_flutter/features/debate/domain/debate_templates.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 设置 → AI 辩论：基本参数、一键场景、角色管理与场景快照。
 class DebateSettingsPage extends ConsumerWidget {
@@ -198,9 +199,7 @@ class DebateSettingsPage extends ConsumerWidget {
                       scene: scene,
                       onLoad: () {
                         controller.loadScene(scene.id);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('已载入场景「${scene.name}」')),
-                        );
+                        AppToast.success(context, '已载入场景「${scene.name}」');
                       },
                       onDelete: () => controller.removeScene(scene.id),
                     ),
@@ -232,16 +231,12 @@ class DebateSettingsPage extends ConsumerWidget {
       roles.add(
         template.instantiate(
           id: generateId('debate_role'),
-          modelKey: modelKeys.isEmpty
-              ? ''
-              : modelKeys[i++ % modelKeys.length],
+          modelKey: modelKeys.isEmpty ? '' : modelKeys[i++ % modelKeys.length],
         ),
       );
     }
     ref.read(debateSettingsControllerProvider.notifier).replaceRoles(roles);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已套用「${setup.name}」（${roles.length} 个角色）')),
-    );
+    AppToast.success(context, '已套用「${setup.name}」（${roles.length} 个角色）');
   }
 
   String _modelDisplayName(List<ModelProvider> providers, String modelKey) {

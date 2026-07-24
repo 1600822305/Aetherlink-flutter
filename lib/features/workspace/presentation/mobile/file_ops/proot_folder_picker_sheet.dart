@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 选择结果：目录 guest 路径 + 是否开启独立 HOME（L2 语言级隔离）。
 class ProotFolderPick {
@@ -28,10 +29,8 @@ Future<ProotFolderPick?> showProotFolderPickerSheet(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (sheetContext) => _ProotFolderPickerSheet(
-      backend: backend,
-      initialPath: initialPath,
-    ),
+    builder: (sheetContext) =>
+        _ProotFolderPickerSheet(backend: backend, initialPath: initialPath),
   );
 }
 
@@ -83,9 +82,7 @@ class _ProotFolderPickerSheetState extends State<_ProotFolderPickerSheet> {
       _goTo(created);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('新建失败 · $e')),
-      );
+      AppToast.error(context, '新建失败 · $e');
     }
   }
 
@@ -193,7 +190,10 @@ class _ProotFolderPickerSheetState extends State<_ProotFolderPickerSheet> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        trailing: const Icon(LucideIcons.chevronRight, size: 16),
+                        trailing: const Icon(
+                          LucideIcons.chevronRight,
+                          size: 16,
+                        ),
                         onTap: () => _goTo(d.path),
                       );
                     },
@@ -233,10 +233,7 @@ class _ProotFolderPickerSheetState extends State<_ProotFolderPickerSheet> {
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () => Navigator.of(context).pop(
-                    ProotFolderPick(
-                      path: _path,
-                      isolatedHome: _isolatedHome,
-                    ),
+                    ProotFolderPick(path: _path, isolatedHome: _isolatedHome),
                   ),
                   icon: const Icon(LucideIcons.folderOpen, size: 18),
                   label: const Text('在此打开'),

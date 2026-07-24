@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+
 /// Page-level copy snapshot (devtools-design §5.5 "一键全量导出"): kept at library
 /// scope so [DevicePanel.exportAsText] (which has no context) can return the text
 /// the live view last assembled.
@@ -39,8 +41,9 @@ class _DeviceView extends StatefulWidget {
 }
 
 class _DeviceViewState extends State<_DeviceView> {
-  late final Future<Map<String, dynamic>> _deviceInfo =
-      DeviceInfoPlugin().deviceInfo.then((i) => i.data);
+  late final Future<Map<String, dynamic>> _deviceInfo = DeviceInfoPlugin()
+      .deviceInfo
+      .then((i) => i.data);
 
   @override
   Widget build(BuildContext context) {
@@ -50,10 +53,7 @@ class _DeviceViewState extends State<_DeviceView> {
         final sections = <_Section>[
           _Section('运行时', _runtime()),
           _Section('屏幕 / 显示', _display(context)),
-          _Section(
-            '内存',
-            _memory(),
-          ),
+          _Section('内存', _memory()),
           _Section(
             '设备',
             snap.connectionState != ConnectionState.done
@@ -89,7 +89,10 @@ class _DeviceViewState extends State<_DeviceView> {
         : 'debug';
     return [
       MapEntry('构建模式', mode),
-      MapEntry('操作系统', '${Platform.operatingSystem} ${Platform.operatingSystemVersion}'),
+      MapEntry(
+        '操作系统',
+        '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      ),
       MapEntry('Locale', Platform.localeName),
       MapEntry('CPU 核数', '${Platform.numberOfProcessors}'),
       MapEntry('Dart', Platform.version.split(' ').first),
@@ -107,14 +110,25 @@ class _DeviceViewState extends State<_DeviceView> {
       refresh = view.display.refreshRate;
     } catch (_) {}
     return [
-      MapEntry('逻辑分辨率', '${size.width.toStringAsFixed(0)} × ${size.height.toStringAsFixed(0)}'),
-      MapEntry('物理分辨率', '${phys.width.toStringAsFixed(0)} × ${phys.height.toStringAsFixed(0)}'),
+      MapEntry(
+        '逻辑分辨率',
+        '${size.width.toStringAsFixed(0)} × ${size.height.toStringAsFixed(0)}',
+      ),
+      MapEntry(
+        '物理分辨率',
+        '${phys.width.toStringAsFixed(0)} × ${phys.height.toStringAsFixed(0)}',
+      ),
       MapEntry('像素密度', '${dpr.toStringAsFixed(2)}x'),
       if (refresh > 0) MapEntry('刷新率', '${refresh.toStringAsFixed(0)} Hz'),
       MapEntry('文字缩放', mq.textScaler.scale(1).toStringAsFixed(2)),
-      MapEntry('亮度', mq.platformBrightness == Brightness.dark ? 'dark' : 'light'),
-      MapEntry('安全区(上/下)',
-          '${mq.padding.top.toStringAsFixed(0)} / ${mq.padding.bottom.toStringAsFixed(0)}'),
+      MapEntry(
+        '亮度',
+        mq.platformBrightness == Brightness.dark ? 'dark' : 'light',
+      ),
+      MapEntry(
+        '安全区(上/下)',
+        '${mq.padding.top.toStringAsFixed(0)} / ${mq.padding.bottom.toStringAsFixed(0)}',
+      ),
     ];
   }
 
@@ -160,9 +174,7 @@ class _DeviceViewState extends State<_DeviceView> {
   Future<void> _copyAll(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: _lastDeviceExport));
     if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已复制设备信息')));
+      AppToast.success(context, '已复制设备信息');
     }
   }
 }

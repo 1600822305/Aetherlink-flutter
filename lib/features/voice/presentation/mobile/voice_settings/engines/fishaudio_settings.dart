@@ -87,7 +87,8 @@ extension _FishAudioSettings on _TtsProviderDetailPageState {
           '44100': '44100 Hz',
           '48000': '48000 Hz (Opus)',
         },
-        onChanged: (v) => setState(() => _fishSampleRate = int.tryParse(v) ?? 0),
+        onChanged: (v) =>
+            setState(() => _fishSampleRate = int.tryParse(v) ?? 0),
       ),
       if (_fishFormat == 'mp3') ...[
         const SizedBox(height: 12),
@@ -252,9 +253,7 @@ extension _FishAudioSettings on _TtsProviderDetailPageState {
     final bytes = await file.readAsBytes();
     if (bytes.length > 20 * 1024 * 1024) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('音频超过 20 MB，请换更短的样本')));
+        AppToast.warning(context, '音频超过 20 MB，请换更短的样本');
       }
       return;
     }
