@@ -8,5 +8,5 @@ export 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app
     show AppMarkdown;
 export 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart'
     show DeferredContentScheduler;
-export 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart'
+export 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/markdown_body.dart'
     show StreamingMarkdownBody;

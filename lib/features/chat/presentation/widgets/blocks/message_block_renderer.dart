@@ -9,8 +9,10 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/chart_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/data_blocks.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/reference_blocks.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/tool_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/media_blocks.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/summary_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_changeset_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/thinking_block_view.dart';

@@ -12,7 +12,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/too
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/markdown_body.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';

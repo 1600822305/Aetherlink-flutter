@@ -3,32 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/widgets/copy_icon_button.dart';
-
-Widget _card(BuildContext context, {required Widget child}) {
-  final theme = Theme.of(context);
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: theme.dividerColor),
-    ),
-    child: child,
-  );
-}
-
-Future<void> _openUrl(String url) async {
-  final uri = Uri.tryParse(url);
-  if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
-}
 
 const Color _toolSuccessColor = Color(0xFF2E7D32);
 
@@ -148,7 +127,9 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
                     borderRadius: BorderRadius.circular(6),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 2, vertical: 3),
+                        horizontal: 2,
+                        vertical: 3,
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -175,8 +156,9 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
                                 vertical: 1,
                               ),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF59E0B)
-                                    .withValues(alpha: 0.12),
+                                color: const Color(
+                                  0xFFF59E0B,
+                                ).withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: const Text(
@@ -242,8 +224,9 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
       margin: const EdgeInsets.only(top: 2, bottom: 6, right: 2),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest
-            .withValues(alpha: 0.25),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.25,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -260,7 +243,11 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
               request: confirmationRequest,
               onApprove: (grace) => ref
                   .read(toolConfirmationProvider.notifier)
-                  .respond(confirmationRequest.id, approved: true, grace: grace),
+                  .respond(
+                    confirmationRequest.id,
+                    approved: true,
+                    grace: grace,
+                  ),
               onReject: () => ref
                   .read(toolConfirmationProvider.notifier)
                   .respond(confirmationRequest.id, approved: false),
@@ -630,137 +617,3 @@ String _maybePrettyJson(String source) {
 
 /// Renders a `CITATION` block, mirroring `CitationBlock.tsx`: the citation text
 /// plus a numbered list of sources (web search / generic), each opening its URL.
-class CitationBlockView extends StatelessWidget {
-  const CitationBlockView({required this.block, super.key});
-
-  final CitationBlock block;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final entries = <({String title, String? url})>[
-      for (final s in block.webSearch ?? const []) (title: s.title, url: s.url),
-      for (final s in block.sources ?? const [])
-        (title: s.title ?? s.url ?? '', url: s.url),
-    ];
-
-    return _card(
-      context,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                LucideIcons.quote,
-                size: 16,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '引用来源',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          if (block.content.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            AppMarkdown(content: block.content),
-          ],
-          for (var i = 0; i < entries.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: InkWell(
-                onTap: (entries[i].url ?? '').isEmpty
-                    ? null
-                    : () => _openUrl(entries[i].url!),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${i + 1}. ',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        entries[i].title.isEmpty
-                            ? (entries[i].url ?? '')
-                            : entries[i].title,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Renders a legacy `KNOWLEDGE_REFERENCE` block, mirroring
-/// `KnowledgeReferenceBlock.tsx`: the reference content with its source and
-/// similarity score.
-class KnowledgeReferenceBlockView extends StatelessWidget {
-  const KnowledgeReferenceBlockView({required this.block, super.key});
-
-  final KnowledgeReferenceBlock block;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final source = block.source;
-    final similarity = block.similarity;
-    return _card(
-      context,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                LucideIcons.bookOpen,
-                size: 16,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '知识库引用',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              if (similarity != null)
-                Text(
-                  '相似度 ${(similarity * 100).toStringAsFixed(0)}%',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          AppMarkdown(content: block.content),
-          if (source != null && source.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              '来源：$source',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
