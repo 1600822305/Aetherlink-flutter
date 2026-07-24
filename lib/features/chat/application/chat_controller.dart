@@ -7,7 +7,6 @@ import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
-import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
@@ -27,6 +26,7 @@ import 'package:aetherlink_flutter/features/chat/application/modes/debate_send_s
 import 'package:aetherlink_flutter/features/chat/application/modes/media_generation_send_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/modes/multi_model_send_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/modes/translate_send_service.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/turn_finisher.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/turn_stream_binder.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
@@ -39,7 +39,6 @@ import 'package:aetherlink_flutter/features/chat/application/streaming_registry.
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.dart';
-import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
@@ -52,8 +51,6 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/multi_model_mes
 import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
-import 'package:aetherlink_flutter/features/memory/domain/memory_extraction.dart';
-import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
@@ -65,7 +62,6 @@ import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 part 'chat_controller.g.dart';
-part 'chat_controller_post_turn.dart';
 
 /// Orchestrates the chat send/stream loop (application layer).
 ///
@@ -83,12 +79,10 @@ part 'chat_controller_post_turn.dart';
 /// state per chunk → on [LlmDone] finalize and persist the blocks; on a stream
 /// error mark the message errored and persist an `error` block.
 @riverpod
-class ChatController extends _$ChatController with _ChatPostTurn {
+class ChatController extends _$ChatController {
   static const String _defaultAssistantId = 'default-assistant';
 
-  @override
   String? _topicId;
-  @override
   String _assistantId = _defaultAssistantId;
 
   /// The id of the last assistant message that was truncated due to
@@ -96,7 +90,6 @@ class ChatController extends _$ChatController with _ChatPostTurn {
   /// the next send / regenerate. The UI reads this to show a "继续生成" button.
   String? _truncatedMessageId;
 
-  @override
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
 
   /// Message version history operations (manual save / switch / delete /
@@ -187,10 +180,11 @@ class ChatController extends _$ChatController with _ChatPostTurn {
     orderBlocks: _orderBlocks,
     trimViews: _trimViews,
     filterSiblingsForContext: _filterSiblingsForContext,
-    refreshTopicPreview: (topicId) => _refreshTopicPreview(topicId),
-    generateTitle: (topicId) => _generateTitle(topicId),
-    maybeGenerateSuggestions: _maybeGenerateSuggestions,
-    maybeExtractMemory: _maybeExtractMemory,
+    refreshTopicPreview: (topicId) =>
+        _turnFinisher.refreshTopicPreview(topicId),
+    generateTitle: (topicId) => _turnFinisher.generateTitle(topicId),
+    maybeGenerateSuggestions: _turnFinisher.maybeGenerateSuggestions,
+    maybeExtractMemory: _turnFinisher.maybeExtractMemory,
     deleteMessage: deleteMessage,
     regenerate: (messageId) => regenerate(messageId),
   );
@@ -212,6 +206,25 @@ class ChatController extends _$ChatController with _ChatPostTurn {
     _modeContext,
   );
 
+  /// 回合后处理（预览/标题/建议/记忆），服务化到 [TurnFinisher]。
+  late final TurnFinisher _turnFinisher = TurnFinisher(
+    () => ref,
+    repo: () => _repo,
+    assistantId: () => _assistantId,
+    topicId: () => _topicId,
+    emitSuggestions: _emitSuggestions,
+  );
+
+  /// Pushes [suggestions] into the live state, but only when [turnTopicId] is
+  /// still the topic on screen and a new reply hasn't started streaming (which
+  /// would have cleared them). Leaves the messages untouched.
+  void _emitSuggestions(String turnTopicId, List<String> suggestions) {
+    if (turnTopicId != _topicId) return;
+    final current = state.value;
+    if (current == null || current.isStreaming) return;
+    state = AsyncData(current.copyWith(suggestions: suggestions));
+  }
+
   /// Drives the gateway stream + MCP tool-call loop for one assistant reply;
   /// extracted to [TurnStreamBinder]. Same lazy-Ref rationale as
   /// [_toolExecutor]; state mutations and post-turn side effects are injected
@@ -226,10 +239,11 @@ class ChatController extends _$ChatController with _ChatPostTurn {
     persistMessageBlocks: _persistMessageBlocks,
     errorMessage: _errorMessage,
     markTruncated: (messageId) => _truncatedMessageId = messageId,
-    refreshTopicPreview: (topicId) => _refreshTopicPreview(topicId),
-    generateTitle: (topicId) => _generateTitle(topicId),
-    maybeGenerateSuggestions: _maybeGenerateSuggestions,
-    maybeExtractMemory: _maybeExtractMemory,
+    refreshTopicPreview: (topicId) =>
+        _turnFinisher.refreshTopicPreview(topicId),
+    generateTitle: (topicId) => _turnFinisher.generateTitle(topicId),
+    maybeGenerateSuggestions: _turnFinisher.maybeGenerateSuggestions,
+    maybeExtractMemory: _turnFinisher.maybeExtractMemory,
   );
 
   /// Subscribes to the gateway stream for [request] and drives the MCP
@@ -1182,7 +1196,7 @@ class ChatController extends _$ChatController with _ChatPostTurn {
     // (conversation stays connected); cascade removes the whole subtree. The
     // structure can change beyond just this row, so reload from the tree.
     await _repo.deleteMessage(messageId, cascade: cascade);
-    await _refreshTopicPreview();
+    await _turnFinisher.refreshTopicPreview();
     ref.read(chatRefreshProvider.notifier).bump();
   }
 
@@ -1278,7 +1292,7 @@ class ChatController extends _$ChatController with _ChatPostTurn {
       views[index] = reloaded;
       _emit(views, isStreaming: false);
     }
-    unawaited(_refreshTopicPreview());
+    unawaited(_turnFinisher.refreshTopicPreview());
   }
 
   // --- Version history ------------------------------------------------------

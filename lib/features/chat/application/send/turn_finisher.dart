@@ -1,26 +1,64 @@
-// 回合后处理相关的会话操作，从 chat_controller.dart 主体拆出的 part 文件：
+// 回合后处理相关的会话操作，从 ChatController 的 part/mixin 服务化：
 // 话题预览刷新、标题生成、后续问题建议生成、自动记忆提取。
 // 这些操作在每轮回复流结束后以 unawaited 方式调用，均为 best-effort（失败静默吞掉）。
-// 以 part + mixin 的形式与 ChatController 同库拆分（mixin 里声明所依赖的
-// 私有成员抽象签名，由 ChatController 本体提供实现）。
 
-part of 'chat_controller.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-mixin _ChatPostTurn on _$ChatController {
-  // --- 由 ChatController 本体提供的成员 ---
+import 'package:aetherlink_flutter/app/di/memory_access.dart';
+import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/topics_providers.dart';
+import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
+import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_extraction.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 
-  String? get _topicId;
-  String get _assistantId;
-  ChatRepository get _repo;
+/// 回合后处理服务（[ChatController] 的协作对象）：话题预览刷新、标题生成、
+/// 后续问题建议生成、自动记忆提取，均为 best-effort。
+///
+/// [Ref]/仓库/当前话题等经惰性回调显式注入（长回合跨 provider rebuild，
+/// 不能捕获失效实例）；建议写回 live state 经 [_emitSuggestions] 回调交回
+/// ChatController。
+class TurnFinisher {
+  const TurnFinisher(
+    this._refOf, {
+    required ChatRepository Function() repo,
+    required String Function() assistantId,
+    required String? Function() topicId,
+    required void Function(String turnTopicId, List<String> suggestions)
+    emitSuggestions,
+  }) : _repoOf = repo,
+       _assistantIdOf = assistantId,
+       _topicIdOf = topicId,
+       _emitSuggestions = emitSuggestions;
 
-  // --- 搬出的方法 ---
+  final Ref Function() _refOf;
+  final ChatRepository Function() _repoOf;
+  final String Function() _assistantIdOf;
+  final String? Function() _topicIdOf;
+  final void Function(String turnTopicId, List<String> suggestions)
+  _emitSuggestions;
+
+  Ref get ref => _refOf();
+  ChatRepository get _repo => _repoOf();
+  String get _assistantId => _assistantIdOf();
+  String? get _topicId => _topicIdOf();
 
   /// Recomputes and persists the topic's `lastMessagePreview`, `lastMessageTime`
   /// and `messageCount` from the DB — the port of the web's
   /// `TopicPreviewService.refreshTopicPreview`. Failure is logged but never
   /// rethrown (preview is a display enhancement, must not disrupt the message
   /// flow).
-  Future<void> _refreshTopicPreview([String? forTopicId]) async {
+  Future<void> refreshTopicPreview([String? forTopicId]) async {
     final topicId = forTopicId ?? _topicId;
     if (topicId == null) return;
     try {
@@ -75,7 +113,7 @@ mixin _ChatPostTurn on _$ChatController {
   /// builds a summary, sends the title prompt to the title model (falling back
   /// to the current chat model), and saves the result as the topic name.
   /// Non-critical: failures are silently swallowed.
-  Future<void> _generateTitle([String? forTopicId]) async {
+  Future<void> generateTitle([String? forTopicId]) async {
     final topicId = forTopicId ?? _topicId;
     if (topicId == null) return;
     try {
@@ -189,7 +227,7 @@ mixin _ChatPostTurn on _$ChatController {
   /// being viewed. A no-op unless the 建议 feature is enabled and a suggestion
   /// model is configured (footnote: "未设置时不生成后续问题建议"). Best-effort:
   /// any failure is swallowed, like title generation.
-  Future<void> _maybeGenerateSuggestions(
+  Future<void> maybeGenerateSuggestions(
     String turnTopicId,
     List<ChatMessageView> views,
   ) async {
@@ -243,7 +281,7 @@ mixin _ChatPostTurn on _$ChatController {
   /// unless 记忆 is enabled and at least one 自动写入 toggle is on. The extraction
   /// itself runs on the 快速/标题 auxiliary model (falling back to the current
   /// chat model). Best-effort: any failure is swallowed, like title generation.
-  Future<void> _maybeExtractMemory(String turnTopicId) async {
+  Future<void> maybeExtractMemory(String turnTopicId) async {
     try {
       final flags = readMemoryAutoWriteFlags(ref);
       if (!flags.enabled) return;
@@ -267,7 +305,9 @@ mixin _ChatPostTurn on _$ChatController {
             .join('\n')
             .trim();
         if (text.isEmpty) continue;
-        final truncated = text.length > 800 ? '${text.substring(0, 800)}…' : text;
+        final truncated = text.length > 800
+            ? '${text.substring(0, 800)}…'
+            : text;
         final role = msg.role == MessageRole.user ? '用户' : 'AI';
         lines.add('$role: $truncated');
       }
@@ -319,15 +359,5 @@ mixin _ChatPostTurn on _$ChatController {
     } on Object catch (_) {
       // Memory extraction is non-critical; swallow errors.
     }
-  }
-
-  /// Pushes [suggestions] into the live state, but only when [turnTopicId] is
-  /// still the topic on screen and a new reply hasn't started streaming (which
-  /// would have cleared them). Leaves [messages] untouched.
-  void _emitSuggestions(String turnTopicId, List<String> suggestions) {
-    if (turnTopicId != _topicId) return;
-    final current = state.value;
-    if (current == null || current.isStreaming) return;
-    state = AsyncData(current.copyWith(suggestions: suggestions));
   }
 }
