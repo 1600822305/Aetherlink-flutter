@@ -290,6 +290,38 @@ data: {"type":"message_stop"}
       expect(adapter.requestBody, contains('"system":"You are concise."'));
     });
 
+    test('OAuth token（sk-ant-oat…）切 Bearer + beta 头并注入 Claude Code 身份',
+        () async {
+      final adapter = _ReplayAdapter(sse);
+      final gateway = AnthropicAdapter(_dioWith(adapter));
+
+      await gateway
+          .streamChat(
+            _request(
+              _model(
+                provider: 'anthropic',
+                baseUrl: 'https://api.anthropic.test',
+                apiKey: 'sk-ant-oat01-fake-token',
+              ),
+            ),
+          )
+          .toList();
+
+      final headers = adapter.request!.headers;
+      expect(headers['Authorization'], 'Bearer sk-ant-oat01-fake-token');
+      expect(headers['anthropic-beta'], 'oauth-2025-04-20');
+      expect(headers.containsKey('x-api-key'), isFalse);
+
+      final body = jsonDecode(adapter.requestBody) as Map<String, dynamic>;
+      final system = body['system'] as List;
+      expect(
+        (system.first as Map)['text'],
+        AnthropicAdapter.kClaudeCodeSystemText,
+      );
+      // 用户自己的 system 保留在身份声明之后。
+      expect((system[1] as Map)['text'], 'You are concise.');
+    });
+
     test('cacheControl marks system, last tool and user turns', () async {
       final adapter = _ReplayAdapter(sse);
       final gateway = AnthropicAdapter(_dioWith(adapter));

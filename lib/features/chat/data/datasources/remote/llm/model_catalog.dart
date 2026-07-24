@@ -44,7 +44,13 @@ class LlmModelCatalogImpl implements LlmModelCatalog {
     final data = await _get(
       _anthropicModelsUrl(query.baseUrl),
       headers: {
-        'x-api-key': query.apiKey ?? '',
+        // Claude Code OAuth token（sk-ant-oat…）只接受 Bearer + oauth
+        // beta 头；x-api-key 会 401。
+        if (query.apiKey != null && query.apiKey!.startsWith('sk-ant-oat')) ...{
+          'Authorization': 'Bearer ${query.apiKey}',
+          'anthropic-beta': 'oauth-2025-04-20',
+        } else
+          'x-api-key': query.apiKey ?? '',
         'anthropic-version': '2023-06-01',
         'Accept': 'application/json',
         ...?query.extraHeaders,

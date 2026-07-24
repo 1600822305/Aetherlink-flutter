@@ -26,6 +26,18 @@ class AnthropicAdapter implements LlmGateway {
 
   final Dio _dio;
 
+  /// Claude Code OAuth token（`sk-ant-oat…`，订阅账号授权）只允许
+  /// Claude Code 客户端使用：鉴权走 `Authorization: Bearer` +
+  /// oauth beta 头，且首个 system 块必须是 Claude Code 身份声明，
+  /// 否则服务端拒绝（x-api-key 直接 401）。
+  static const String kClaudeCodeSystemText =
+      "You are Claude Code, Anthropic's official CLI for Claude.";
+
+  static const String _kOAuthBeta = 'oauth-2025-04-20';
+
+  static bool _isOAuthToken(String? apiKey) =>
+      apiKey != null && apiKey.startsWith('sk-ant-oat');
+
   @override
   Stream<LlmStreamChunk> streamChat(
     LlmChatRequest request, {
@@ -45,11 +57,24 @@ class AnthropicAdapter implements LlmGateway {
     final hasThinking =
         request.thinkingBudget != null && request.thinkingBudget! > 0;
 
+    final isOAuth = _isOAuthToken(model.apiKey);
+
     final body = <String, dynamic>{
       'model': model.id,
       // Anthropic requires max_tokens; fall back to a sane default.
       'max_tokens': request.maxTokens ?? 4096,
-      if (request.system != null)
+      if (isOAuth)
+        'system': [
+          {'type': 'text', 'text': kClaudeCodeSystemText},
+          if (request.system != null)
+            {
+              'type': 'text',
+              'text': request.system,
+              if (request.cacheControl == true)
+                'cache_control': {'type': 'ephemeral'},
+            },
+        ]
+      else if (request.system != null)
         'system': request.cacheControl == true
             ? [
                 {
@@ -103,8 +128,10 @@ class AnthropicAdapter implements LlmGateway {
     };
 
     final headers = <String, dynamic>{
-      'x-api-key': model.apiKey ?? '',
+      if (isOAuth) 'Authorization': 'Bearer ${model.apiKey}'
+      else 'x-api-key': model.apiKey ?? '',
       'anthropic-version': model.apiVersion ?? '2023-06-01',
+      if (isOAuth) 'anthropic-beta': _kOAuthBeta,
       ...?model.extraHeaders,
       ...?request.extraHeaders,
     };
