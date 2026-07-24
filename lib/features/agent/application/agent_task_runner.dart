@@ -651,18 +651,16 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (state.contains(task.id)) return;
     final token = AgentCancellationToken();
     _tokens[task.id] = token;
-    final wasIdle = state.isEmpty;
     state = {...state, task.id};
     // 前台服务保活（初稿 §5.5 P1）：切后台任务继续跑，常驻通知展示运行中。
-    if (wasIdle) {
-      unawaited(
-        StreamingKeepAliveService.acquire(
-          'agent',
-          title: '智能体任务运行中…',
-          text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
-        ),
-      );
-    }
+    // 每个任务启动都 acquire（幂等）：上次启动失败时这里是重试点。
+    unawaited(
+      StreamingKeepAliveService.acquire(
+        'agent',
+        title: '智能体任务运行中…',
+        text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
+      ),
+    );
 
     // 档案已删的孤儿话题兜底：空专长 + 全工具组，任务仍可继续。
     final profile =
@@ -1066,17 +1064,14 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   }) async {
     final token = AgentCancellationToken();
     _tokens[child.id] = token;
-    final wasIdle = state.isEmpty;
     state = {...state, child.id};
-    if (wasIdle) {
-      unawaited(
-        StreamingKeepAliveService.acquire(
-          'agent',
-          title: '智能体任务运行中…',
-          text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
-        ),
-      );
-    }
+    unawaited(
+      StreamingKeepAliveService.acquire(
+        'agent',
+        title: '智能体任务运行中…',
+        text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
+      ),
+    );
     try {
       final result = await _runChildEngine(
         child: child,
