@@ -136,8 +136,8 @@ class ReasoningTagGateway implements LlmGateway {
         // Native reasoning passes through untouched; it goes to a separate
         // block, so it never needs the held-back text tail flushed first.
         case LlmReasoningDelta():
-        case LlmToolCallDelta():
           yield chunk;
+        case LlmToolCallDelta():
         case LlmToolCallChunk():
         case LlmDone():
           for (final split in parser.flush()) {
