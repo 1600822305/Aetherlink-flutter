@@ -28,6 +28,19 @@ const McpToolDefinition kReadSkillToolDefinition = McpToolDefinition(
   },
 );
 
+/// Matches a skill by name: exact → case-insensitive → substring. Shared by
+/// [executeReadSkill] and the dynamic tool catalog's activation scan so the
+/// skill that was read and the tool group that gets activated never diverge.
+Skill? matchSkillByName(List<Skill> skills, String name) {
+  final lower = name.toLowerCase();
+  Skill? skill = skills.where((s) => s.name == name).firstOrNull;
+  skill ??= skills.where((s) => s.name.toLowerCase() == lower).firstOrNull;
+  skill ??= skills
+      .where((s) => s.name.toLowerCase().contains(lower))
+      .firstOrNull;
+  return skill;
+}
+
 /// Looks up a skill by name in [skills] and returns its full content — the port
 /// of the web `executeReadSkill`. Matching is exact → case-insensitive →
 /// substring, mirroring the source. [skills] is the whole library; the
@@ -38,12 +51,7 @@ McpToolResult executeReadSkill(List<Skill> skills, Map<String, Object?> args) {
     return const McpToolResult('read_skill 需要提供 skill_name 参数', isError: true);
   }
 
-  final lower = skillName.toLowerCase();
-  Skill? skill = skills.where((s) => s.name == skillName).firstOrNull;
-  skill ??= skills.where((s) => s.name.toLowerCase() == lower).firstOrNull;
-  skill ??= skills
-      .where((s) => s.name.toLowerCase().contains(lower))
-      .firstOrNull;
+  final skill = matchSkillByName(skills, skillName);
 
   if (skill == null) {
     final available = skills

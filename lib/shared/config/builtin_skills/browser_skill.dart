@@ -12,10 +12,13 @@ const Skill kBrowserSkill = Skill(
   emoji: '🌏',
   tags: ['浏览器', '网页', '自动化'],
   source: SkillSource.builtin,
-  version: '1.6.0',
+  version: '1.7.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
+> 本技能绑定的浏览器工具已随本次读取装载，下一轮起可直接调用；
+> 重复读取无副作用。
+
 ## 何时用浏览器
 
 - 静态页面/API/文档：优先用 `fetch`——更快更省。
