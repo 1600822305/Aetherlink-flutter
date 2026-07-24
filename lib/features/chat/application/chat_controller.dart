@@ -9,7 +9,6 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
 import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
-import 'package:aetherlink_flutter/features/settings/application/model_combo_providers.dart';
 import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
@@ -23,6 +22,11 @@ import 'package:aetherlink_flutter/features/chat/application/send/llm_history_bu
 import 'package:aetherlink_flutter/features/chat/application/send/llm_request_params.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/message_view_projector.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/system_prompt_builder.dart';
+import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_context.dart';
+import 'package:aetherlink_flutter/features/chat/application/modes/debate_send_service.dart';
+import 'package:aetherlink_flutter/features/chat/application/modes/media_generation_send_service.dart';
+import 'package:aetherlink_flutter/features/chat/application/modes/multi_model_send_service.dart';
+import 'package:aetherlink_flutter/features/chat/application/modes/translate_send_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/turn_stream_binder.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
@@ -36,7 +40,6 @@ import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.dart';
 import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
-import 'package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
@@ -62,11 +65,7 @@ import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 part 'chat_controller.g.dart';
-part 'chat_controller_debate.dart';
-part 'chat_controller_media_generation.dart';
-part 'chat_controller_multi_model.dart';
 part 'chat_controller_post_turn.dart';
-part 'chat_controller_translate.dart';
 
 /// Orchestrates the chat send/stream loop (application layer).
 ///
@@ -84,13 +83,7 @@ part 'chat_controller_translate.dart';
 /// state per chunk → on [LlmDone] finalize and persist the blocks; on a stream
 /// error mark the message errored and persist an `error` block.
 @riverpod
-class ChatController extends _$ChatController
-    with
-        _ChatDebate,
-        _ChatMediaGeneration,
-        _ChatMultiModel,
-        _ChatPostTurn,
-        _ChatTranslate {
+class ChatController extends _$ChatController with _ChatPostTurn {
   static const String _defaultAssistantId = 'default-assistant';
 
   @override
@@ -101,7 +94,6 @@ class ChatController extends _$ChatController
   /// The id of the last assistant message that was truncated due to
   /// `finishReason == 'length'` after exhausting auto-continues. Cleared on
   /// the next send / regenerate. The UI reads this to show a "继续生成" button.
-  @override
   String? _truncatedMessageId;
 
   @override
@@ -145,7 +137,79 @@ class ChatController extends _$ChatController
   late final MessageViewProjector _viewProjector = MessageViewProjector(
     () => ref,
     repo: () => _repo,
-    debatePhaseOf: _debatePhaseOf,
+    debatePhaseOf: debatePhaseOf,
+  );
+
+  /// The explicit dependency bundle the mode send services run against;
+  /// see [ChatModeContext]. Same lazy-Ref rationale as [_toolExecutor].
+  late final ChatModeContext _modeContext = ChatModeContext(
+    () => ref,
+    repo: () => _repo,
+    assistantId: () => _assistantId,
+    topicId: () => _topicId,
+    snapshot: () => state.value,
+    clearTruncated: () => _truncatedMessageId = null,
+    ensureTopic: _ensureTopic,
+    emitTurn: _emitTurn,
+    emit: _emit,
+    mcpSetup: _mcpSetup,
+    contextSettings: _contextSettings,
+    parameterFields: _parameterFields,
+    sendingRegexRules: _sendingRegexRules,
+    buildLlmMessages:
+        (views, {required chatModel, regexRules, required toolMode}) =>
+            _buildLlmMessages(
+              views,
+              chatModel: chatModel,
+              regexRules: regexRules,
+              toolMode: toolMode,
+            ),
+    requestContent: _requestContent,
+    systemFor: _systemFor,
+    buildSystemPrompt: _buildSystemPrompt,
+    buildSystemPromptWith: _buildSystemPromptWith,
+    joinInjectionSections: _joinInjectionSections,
+    knowledgeReferenceBlocks: _knowledgeReferenceBlocks,
+    memoryInjectionBlocks: _memoryInjectionBlocks,
+    attachmentBlock: _attachmentBlock,
+    streamInto: _streamInto,
+    persistMessageBlocks:
+        ({required messageId, required status, required blocks}) =>
+            _persistMessageBlocks(
+              messageId: messageId,
+              status: status,
+              blocks: blocks,
+            ),
+    reloadView: _reloadView,
+    reloadIntoState: _reloadIntoState,
+    replace: _replace,
+    errorMessage: _errorMessage,
+    orderBlocks: _orderBlocks,
+    trimViews: _trimViews,
+    filterSiblingsForContext: _filterSiblingsForContext,
+    refreshTopicPreview: (topicId) => _refreshTopicPreview(topicId),
+    generateTitle: (topicId) => _generateTitle(topicId),
+    maybeGenerateSuggestions: _maybeGenerateSuggestions,
+    maybeExtractMemory: _maybeExtractMemory,
+    deleteMessage: deleteMessage,
+    regenerate: (messageId) => regenerate(messageId),
+  );
+
+  /// 多模型对比 / 模型组合发送，服务化到 [MultiModelSendService]。
+  late final MultiModelSendService _multiModel = MultiModelSendService(
+    _modeContext,
+  );
+
+  /// AI 辩论发送，服务化到 [DebateSendService]。
+  late final DebateSendService _debate = DebateSendService(_modeContext);
+
+  /// 图像/视频生成发送，服务化到 [MediaGenerationSendService]。
+  late final MediaGenerationSendService _mediaGeneration =
+      MediaGenerationSendService(_modeContext);
+
+  /// 消息翻译，服务化到 [TranslateSendService]。
+  late final TranslateSendService _translate = TranslateSendService(
+    _modeContext,
   );
 
   /// Drives the gateway stream + MCP tool-call loop for one assistant reply;
@@ -171,7 +235,6 @@ class ChatController extends _$ChatController
   /// Subscribes to the gateway stream for [request] and drives the MCP
   /// tool-call loop; extracted to [TurnStreamBinder.streamInto]. Shared by
   /// [send], [regenerate], [resend] and the mode mixins.
-  @override
   Future<void> _streamInto({
     required String turnTopicId,
     required LlmChatRequest request,
@@ -215,7 +278,6 @@ class ChatController extends _$ChatController
   /// away); the on-screen [ChatState] is only touched when [turnTopicId] is the
   /// topic currently being displayed. This is what makes switching topics
   /// mid-stream instant while the old topic keeps generating in the background.
-  @override
   void _emitTurn(
     String turnTopicId,
     List<ChatMessageView> views, {
@@ -341,7 +403,7 @@ class ChatController extends _$ChatController
     final inputMode = ref.read(inputModeControllerProvider);
     if (trimmed.isNotEmpty &&
         (inputMode == InputMode.image || inputMode == InputMode.video)) {
-      await _sendMediaGeneration(
+      await _mediaGeneration.sendMediaGeneration(
         inputMode!,
         trimmed,
         attachments: attachments,
@@ -368,7 +430,11 @@ class ChatController extends _$ChatController
       );
       if (resolution != null &&
           resolution.combo.strategy == ModelComboStrategy.sequential) {
-        await _sendCombo(trimmed, resolution, attachments: attachments);
+        await _multiModel.sendCombo(
+          trimmed,
+          resolution,
+          attachments: attachments,
+        );
         return;
       }
     }
@@ -555,7 +621,6 @@ class ChatController extends _$ChatController
   /// The leading [KnowledgeReferenceBlock]s for a turn (empty when no 挂载库
   /// hit), seeded ahead of the assistant content so the chat shows 本轮注入的
   /// 知识库引用块（功能缺口⑫）.
-  @override
   List<MessageBlock> _knowledgeReferenceBlocks({
     required String messageId,
     required DateTime createdAt,
@@ -578,7 +643,6 @@ class ChatController extends _$ChatController
   }
 
   /// Joins two optional prompt sections (记忆 + 知识库引用) with a blank line.
-  @override
   String? _joinInjectionSections(String? a, String? b) {
     if (a == null || a.isEmpty) return b;
     if (b == null || b.isEmpty) return a;
@@ -588,7 +652,6 @@ class ChatController extends _$ChatController
   /// The leading [MemoryInjectionBlock] for a turn (empty when nothing was
   /// injected), seeded into the assistant message ahead of its content so the
   /// chat shows the 对话内「本轮注入 N 条记忆」可展开块.
-  @override
   List<MessageBlock> _memoryInjectionBlocks({
     required String messageId,
     required DateTime createdAt,
@@ -609,7 +672,6 @@ class ChatController extends _$ChatController
     ];
   }
 
-  @override
   Future<void> regenerate(String messageId, {CurrentModel? withModel}) async {
     _truncatedMessageId = null;
     final snapshot = state.value;
@@ -630,7 +692,7 @@ class ChatController extends _$ChatController
     final current =
         withModel ??
         (target.siblingsGroupId != 0
-            ? (await _currentModelForOwnModel(target.model) ??
+            ? (await _multiModel.currentModelForOwnModel(target.model) ??
                   await ref.read(appCurrentModelProvider.future))
             : await ref.read(appCurrentModelProvider.future));
     if (current == null) return;
@@ -920,7 +982,7 @@ class ChatController extends _$ChatController
     // outputs (and mismatch the stored `message.model`). Fall back to the
     // app-level current model only when the own model is gone.
     final current =
-        await _currentModelForOwnModel(message.model) ??
+        await _multiModel.currentModelForOwnModel(message.model) ??
         await ref.read(appCurrentModelProvider.future);
     if (current == null) return;
 
@@ -1046,7 +1108,6 @@ class ChatController extends _$ChatController
   /// Reads the sidebar 上下文设置 and returns the `maxTokens` to set on the
   /// request (`null` when the user disabled the limit) and the `contextCount`
   /// (number of history messages to include).
-  @override
   ({int contextCount, int? maxTokens}) _contextSettings() {
     final s = ref.read(sidebarSettingsControllerProvider);
     // Prefer ParameterSettings maxOutputTokens when enabled (unified parameter
@@ -1066,7 +1127,6 @@ class ChatController extends _$ChatController
   /// spreading into an [LlmChatRequest] constructor. Only enabled parameters
   /// are returned; disabled ones stay `null`. Extracted to
   /// [readLlmParameterFields].
-  @override
   LlmParameterFields _parameterFields() => readLlmParameterFields(ref);
 
   /// Extracted to [trimViewsForContext].
@@ -1085,7 +1145,6 @@ class ChatController extends _$ChatController
   /// message [status]. Deleting first keeps the streaming placeholder and any
   /// stale blocks from leaking into the rendered order ([_orderBlocks] appends
   /// unreferenced blocks), so the persisted set is exactly what was streamed.
-  @override
   Future<void> _persistMessageBlocks({
     required String messageId,
     required MessageStatus status,
@@ -1116,7 +1175,6 @@ class ChatController extends _$ChatController
   /// → `onDelete`). The two-click confirmation lives in the UI; this performs
   /// the actual removal once confirmed. A no-op while a reply is streaming or
   /// when the conversation has not loaded.
-  @override
   Future<void> deleteMessage(String messageId, {bool cascade = false}) async {
     final snapshot = state.value;
     if (snapshot == null || snapshot.isStreaming) return;
@@ -1141,7 +1199,7 @@ class ChatController extends _$ChatController
     if (snapshot == null || snapshot.isStreaming) return;
     final topicId = _topicId;
     if (topicId == null) return;
-    await _syncFoldSelectedForGroup(topicId, nodeId);
+    await _multiModel.syncFoldSelectedForGroup(topicId, nodeId);
     await _repo.setActiveNode(topicId, nodeId);
     ref.read(chatRefreshProvider.notifier).bump();
   }
@@ -1284,7 +1342,6 @@ class ChatController extends _$ChatController
   /// block (raw base64 for inline rendering), a text/file attachment a `FILE`
   /// block (a base64 data URI; text attachments stay `text/plain` so
   /// `decodeFileText` feeds them to the model).
-  @override
   MessageBlock _attachmentBlock({
     required String messageId,
     required DateTime createdAt,
@@ -1346,7 +1403,6 @@ class ChatController extends _$ChatController
   /// [dropEmptyAssistant] mirrors the existing
   /// `role != assistant || text.isNotEmpty` filter; pass `false` for paths that
   /// build raw history (e.g. continue-generating) and append their own turns.
-  @override
   Future<List<LlmMessage>> _buildLlmMessages(
     Iterable<ChatMessageView> views, {
     required Model chatModel,
@@ -1363,20 +1419,17 @@ class ChatController extends _$ChatController
 
   /// The request content for [view] (main text + decoded FILE blocks, 发送期
   /// 正则 applied); extracted to [LlmHistoryBuilder.requestContent].
-  @override
   String _requestContent(
     ChatMessageView view, {
     List<AssistantRegex>? regexRules,
   }) => _historyBuilder.requestContent(view, regexRules: regexRules);
 
   /// The current assistant's 正则规则, used to process outgoing message content.
-  @override
   Future<List<AssistantRegex>?> _sendingRegexRules() async =>
       (await _repo.getAssistant(_assistantId))?.regexRules;
 
   /// Reloads [messageId]'s persisted view into the conversation state without a
   /// full topic reload, after a version mutation.
-  @override
   Future<void> _reloadIntoState(String messageId) async {
     final snapshot = state.value;
     if (snapshot == null) return;
@@ -1392,7 +1445,6 @@ class ChatController extends _$ChatController
 
   /// Reloads the persisted view for [messageId] (real blocks in order) after
   /// finalize; falls back to [fallback] if the message can't be read.
-  @override
   Future<ChatMessageView> _reloadView(
     String messageId,
     ChatMessageView fallback,
@@ -1404,7 +1456,6 @@ class ChatController extends _$ChatController
 
   /// Assembles the system prompt for a conversation turn; extracted to
   /// [SystemPromptBuilder.buildSystemPrompt].
-  @override
   Future<String?> _buildSystemPrompt({
     required String modelName,
     required String modelId,
@@ -1417,7 +1468,6 @@ class ChatController extends _$ChatController
 
   /// Like [_buildSystemPrompt] but reuses a pre-resolved memory section;
   /// extracted to [SystemPromptBuilder.buildSystemPromptWith].
-  @override
   Future<String?> _buildSystemPromptWith(
     String? memorySection, {
     required String modelName,
@@ -1433,7 +1483,6 @@ class ChatController extends _$ChatController
   /// Assembles the [McpSetup] for the current turn (see [buildMcpSetup]);
   /// the bound-skills lookup stays here because it needs the repository and
   /// the controller's active assistant.
-  @override
   Future<McpSetup> _mcpSetup() => buildMcpSetup(
     ref,
     loadBoundSkills: () async {
@@ -1444,11 +1493,9 @@ class ChatController extends _$ChatController
 
   /// The system prompt for a turn (tool catalogue injection + capability
   /// hints); extracted to [SystemPromptBuilder.systemFor].
-  @override
   String? _systemFor(McpSetup mcp, String? base) =>
       _systemPromptBuilder.systemFor(mcp, base);
 
-  @override
   Future<String> _ensureTopic() async {
     final existing = _topicId;
     if (existing != null) return existing;
@@ -1474,13 +1521,11 @@ class ChatController extends _$ChatController
 
   /// Returns [blocks] sorted by the `message.blocks` id order (the canonical
   /// render order); any block not referenced there is appended at the end.
-  @override
   List<MessageBlock> _orderBlocks(
     List<String> order,
     List<MessageBlock> blocks,
   ) => orderMessageBlocks(order, blocks);
 
-  @override
   void _emit(List<ChatMessageView> views, {required bool isStreaming}) {
     state = AsyncData(
       ChatState(
@@ -1493,17 +1538,85 @@ class ChatController extends _$ChatController
     // not here, so a finished current topic doesn't stop a background one.
   }
 
-  @override
   void _replace(List<ChatMessageView> views, ChatMessageView view) {
     final index = views.indexWhere((v) => v.id == view.id);
     if (index != -1) views[index] = view;
   }
 
-  @override
   String _errorMessage(Object error) {
     if (error is Failure) return error.message;
     return error.toString();
   }
+
+  // --- 模式发送服务的公开入口（facade，转发到 application/modes/ 的服务） ---
+
+  /// 多模型对比发送；见 [MultiModelSendService.sendMultiModel]。
+  Future<void> sendMultiModel(
+    String text,
+    List<CurrentModel> models, {
+    List<ComposerAttachment> attachments = const <ComposerAttachment>[],
+  }) => _multiModel.sendMultiModel(text, models, attachments: attachments);
+
+  /// 选中多模型组里的一条 sibling；见 [MultiModelSendService.selectSibling]。
+  Future<void> selectSibling(String messageId) =>
+      _multiModel.selectSibling(messageId);
+
+  /// 切换多模型组的对比布局；见 [MultiModelSendService.setMultiModelStyle]。
+  Future<void> setMultiModelStyle(
+    List<String> memberIds,
+    MultiModelMessageStyle style,
+  ) => _multiModel.setMultiModelStyle(memberIds, style);
+
+  /// 重试多模型组里失败的 sibling；见
+  /// [MultiModelSendService.retryFailedSiblings]。
+  Future<void> retryFailedSiblings(List<String> memberIds) =>
+      _multiModel.retryFailedSiblings(memberIds);
+
+  /// 删除整个多模型对比组；见 [MultiModelSendService.deleteMultiModelGroup]。
+  Future<void> deleteMultiModelGroup(String askId) =>
+      _multiModel.deleteMultiModelGroup(askId);
+
+  /// AI 辩论的一次角色发言；见 [DebateSendService.sendDebateTurn]。
+  Future<({String messageId, String text})?> sendDebateTurn({
+    required CurrentModel current,
+    required String system,
+    required String prompt,
+    String header = '',
+    Map<String, dynamic>? metadata,
+    bool toolsEnabled = false,
+  }) => _debate.sendDebateTurn(
+    current: current,
+    system: system,
+    prompt: prompt,
+    header: header,
+    metadata: metadata,
+    toolsEnabled: toolsEnabled,
+  );
+
+  /// AI 辩论的系统通告；见 [DebateSendService.sendDebateNotice]。
+  Future<void> sendDebateNotice(
+    String content, {
+    Map<String, dynamic>? metadata,
+  }) => _debate.sendDebateNotice(content, metadata: metadata);
+
+  /// AI 辩论的用户插话；见 [DebateSendService.sendDebateInterjection]。
+  Future<void> sendDebateInterjection(String text) =>
+      _debate.sendDebateInterjection(text);
+
+  /// AI 辩论的静默一次性生成；见 [DebateSendService.generateDebateText]。
+  Future<String?> generateDebateText({
+    required CurrentModel current,
+    required String system,
+    required String prompt,
+  }) => _debate.generateDebateText(
+    current: current,
+    system: system,
+    prompt: prompt,
+  );
+
+  /// 翻译一条消息；见 [TranslateSendService.translateMessage]。
+  Future<void> translateMessage(String messageId, TranslateLanguage language) =>
+      _translate.translateMessage(messageId, language);
 }
 
 /// Single-message lookup over the chat controller's async state.
