@@ -110,6 +110,8 @@ class AgentTask {
 
   AgentTask copyWith({
     String? title,
+    String? workspaceId,
+    String? workspaceName,
     AgentTaskStatus? status,
     AgentSessionMode? mode,
     AgentSessionMode? prePlanMode,
@@ -128,8 +130,8 @@ class AgentTask {
       id: id,
       profileId: profileId,
       title: title ?? this.title,
-      workspaceId: workspaceId,
-      workspaceName: workspaceName,
+      workspaceId: workspaceId ?? this.workspaceId,
+      workspaceName: workspaceName ?? this.workspaceName,
       status: status ?? this.status,
       mode: mode ?? this.mode,
       prePlanMode: clearPrePlanMode ? null : (prePlanMode ?? this.prePlanMode),

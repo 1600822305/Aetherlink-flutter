@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/workspace_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/widgets/agent_sidebar_widgets.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/primary_terminal_sheet.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 
 class AgentTopicTab extends ConsumerStatefulWidget {
@@ -175,7 +177,7 @@ class _AgentTopicTabState extends ConsumerState<AgentTopicTab> {
   }
 }
 
-enum _TaskMenu { rename, togglePin, delete }
+enum _TaskMenu { rename, workspace, togglePin, delete }
 
 /// 话题卡：状态色点 + 标题 + 工作区 chip + 活跃时间
 /// （UI 稿 §三）+ 右侧「更多」菜单（重命名/固定/删除）
@@ -207,6 +209,8 @@ class _TaskCard extends ConsumerWidget {
         if (title != null) {
           ref.read(agentTasksProvider.notifier).rename(task.id, title);
         }
+      case _TaskMenu.workspace:
+        await _switchWorkspace(context, ref);
       case _TaskMenu.togglePin:
         ref.read(agentTasksProvider.notifier).togglePin(task.id);
       case _TaskMenu.delete:
@@ -217,6 +221,96 @@ class _TaskCard extends ConsumerWidget {
         );
         if (ok) _delete(ref);
     }
+  }
+
+  /// 切换话题绑定的工作区：活跃任务（运行/等待/暂停）内工具正在
+  /// 该工作区里执行，中途换会错位，先拦下；其余状态下一轮生效。
+  Future<void> _switchWorkspace(BuildContext context, WidgetRef ref) async {
+    if (task.isActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('任务进行中，先暂停/完成后再切换工作区')),
+      );
+      return;
+    }
+    final workspaces = ref.read(recentWorkspacesViewProvider);
+    final picked = await showDialog<(String, String)>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('切换工作区', style: TextStyle(fontSize: 16)),
+        children: [
+          for (final ws in workspaces)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop((ws.id, ws.name)),
+              child: Row(
+                children: [
+                  Icon(
+                    LucideIcons.folderTree,
+                    size: 16,
+                    color: ws.id == task.workspaceId
+                        ? Theme.of(ctx).colorScheme.primary
+                        : kAgentSidebarMutedIcon,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      ws.name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: ws.id == task.workspaceId
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                  if (ws.id == task.workspaceId)
+                    Icon(
+                      LucideIcons.check,
+                      size: 14,
+                      color: Theme.of(ctx).colorScheme.primary,
+                    ),
+                ],
+              ),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop(('', '')),
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.folderPlus,
+                  size: 16,
+                  color: Theme.of(ctx).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '选目录新建绑定…',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Theme.of(ctx).colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    var (id, name) = picked;
+    if (id.isEmpty) {
+      // 用主终端选择器新建一个工作区（不切换当前工作区，
+      // 对齐智能体编辑页的绑定交互）。
+      if (!context.mounted) return;
+      final workspace = await pickFolderWithTerminalPicker(
+        context,
+        ref,
+        switchTo: false,
+      );
+      if (workspace == null) return;
+      id = workspace.id;
+      name = workspace.name;
+    }
+    if (id == task.workspaceId) return;
+    await ref.read(agentTasksProvider.notifier).updateWorkspace(task.id, id, name);
   }
 
   void _delete(WidgetRef ref) {
@@ -298,6 +392,11 @@ class _TaskCard extends ConsumerWidget {
                           _TaskMenu.rename,
                           LucideIcons.edit3,
                           '编辑话题',
+                        ),
+                        const AgentSidebarSheetAction(
+                          _TaskMenu.workspace,
+                          LucideIcons.folderTree,
+                          '切换工作区',
                         ),
                         AgentSidebarSheetAction(
                           _TaskMenu.togglePin,
