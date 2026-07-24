@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/load_mcp_tools_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 
 /// 技能 → 延迟工具组绑定：read_skill 成功读取该技能后，下一轮请求
@@ -15,6 +17,12 @@ const Map<String, String> kSkillToolBindings = {
   'builtin-subagent-dispatch': 'spawn_subagent',
 };
 
+/// 外部 MCP 延迟组的 key 前缀：与技能 id key 同住 [DynamicToolCatalog.deferred]，
+/// 靠前缀区分激活来源（read_skill vs load_mcp_tools）。
+const String kMcpDeferredKeyPrefix = 'mcp:';
+
+String mcpDeferredKey(String serverId) => '$kMcpDeferredKeyPrefix$serverId';
+
 /// 常驻 + 延迟两段式工具目录。routes 永远全量（不发给模型，只用于
 /// 执行分发 / 重放 / 审批判定），只有发给模型的 definitions 按激活
 /// 状态裁剪。
@@ -23,7 +31,8 @@ class DynamicToolCatalog {
     required this.resident,
     required this.deferred,
     required this.routes,
-  });
+    Map<String, String>? deferredMcpLabels,
+  }) : deferredMcpLabels = deferredMcpLabels ?? {};
 
   /// 每轮请求恒定发送的工具定义。
   final List<McpToolDefinition> resident;
@@ -34,7 +43,11 @@ class DynamicToolCatalog {
   /// 全量执行分发表（含延迟组），审批门与重放共用。
   final Map<String, ToolRoute> routes;
 
-  /// 本轮发送给模型的定义：常驻 + 已激活技能的绑定组。
+  /// 外部 MCP 延迟组的展示名：`mcp:<serverId>` → 服务器名称（系统提示
+  /// 「外部 MCP 服务器」清单用）。
+  final Map<String, String> deferredMcpLabels;
+
+  /// 本轮发送给模型的定义：常驻 + 已激活延迟组（技能 id 或 mcp: key）。
   List<McpToolDefinition> definitionsFor(Set<String> activatedSkillIds) => [
     ...resident,
     for (final id in activatedSkillIds) ...?deferred[id],
@@ -70,6 +83,50 @@ Set<String> activatedSkillIdsFromEvents(
     if (kSkillToolBindings.containsKey(skill.id)) activated.add(skill.id);
   }
   return activated;
+}
+
+/// 从原始事件流扫描已装载的外部 MCP 延迟组（load_mcp_tools 成功事件）。
+/// 服务器定位复用 [matchMcpServerByName]（与执行侧同款宽松匹配），
+/// 扫描约束与 [activatedSkillIdsFromEvents] 同：只认成功事件、
+/// 只扫原始事件而非压缩视图、重复装载幂等（集合语义）。
+Set<String> activatedMcpServerKeysFromEvents(
+  List<AgentEvent> events,
+  List<McpServer> servers,
+) {
+  final activated = <String>{};
+  for (final event in events) {
+    if (event is! ToolCallEvent) continue;
+    if (event.toolName != kLoadMcpToolsToolName) continue;
+    if (event.state != AgentToolCallState.success) continue;
+    final requested = _requestedServerName(event);
+    if (requested == null) continue;
+    final server = matchMcpServerByName(servers, requested);
+    if (server == null) continue;
+    activated.add(mcpDeferredKey(server.id));
+  }
+  return activated;
+}
+
+String? _requestedServerName(ToolCallEvent event) {
+  final args = event.argsDetail;
+  if (args != null) {
+    try {
+      final decoded = jsonDecode(args);
+      if (decoded is Map<String, dynamic>) {
+        final name = decoded['server'];
+        if (name is String && name.trim().isNotEmpty) return name.trim();
+      }
+    } catch (_) {}
+  }
+  // 兜底：执行侧成功结果固定以「已装载服务器「<名称>」…」开头。
+  final detail = event.resultDetail;
+  const prefix = '已装载服务器「';
+  if (detail != null && detail.startsWith(prefix)) {
+    final rest = detail.substring(prefix.length);
+    final end = rest.indexOf('」');
+    if (end > 0) return rest.substring(0, end);
+  }
+  return null;
 }
 
 String? _requestedSkillName(ToolCallEvent event) {

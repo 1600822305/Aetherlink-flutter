@@ -2,6 +2,7 @@ import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/load_mcp_tools_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 
@@ -87,6 +88,12 @@ class SkillReadToolRoute extends ToolRoute {
   const SkillReadToolRoute() : super(kReadSkillToolName);
 }
 
+/// The synthetic `load_mcp_tools` tool: activates a deferred external MCP
+/// server's tool group (definitions injected from the next turn on).
+class McpToolsLoadToolRoute extends ToolRoute {
+  const McpToolsLoadToolRoute() : super(kLoadMcpToolsToolName);
+}
+
 /// The synthetic `mcp_bridge` tool, dispatched in-process to the configured
 /// servers (built-in or remote) on demand.
 class BridgeToolRoute extends ToolRoute {
@@ -170,6 +177,7 @@ bool toolRouteIsReadOnly(ToolRoute route) => switch (route) {
       BuiltinToolRoute() =>
         _kReadOnlyBuiltinServerTools.contains(route.toolName),
       SkillReadToolRoute() => true,
+      McpToolsLoadToolRoute() => true,
       WebSearchToolRoute() => true,
       MemorySearchToolRoute() => true,
       BridgeToolRoute() => false,
