@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
+import 'package:aetherlink_ripgrep/aetherlink_ripgrep.dart';
 import 'package:aetherlink_flutter/features/terminal/data/proot_process_runner.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/proot_command_builder.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
@@ -35,11 +36,18 @@ class ProotLocalBackend extends WorkspaceBackend {
   ProotLocalBackend({
     TerminalEngineManager? engineManager,
     ProotProcessRunner? runner,
-  })  : _engine = engineManager ?? TerminalEngineManager.instance,
-        _runner = runner ?? const ProotProcessRunner();
+    AetherlinkRipgrep? ripgrep,
+  }) : _engine = engineManager ?? TerminalEngineManager.instance,
+       _runner = runner ?? const ProotProcessRunner(),
+       _injectedRg = ripgrep;
 
   final TerminalEngineManager _engine;
   final ProotProcessRunner _runner;
+  final AetherlinkRipgrep? _injectedRg;
+
+  AetherlinkRipgrep? get _rg =>
+      _injectedRg ??
+      (AetherlinkRipgrep.isSupported ? const AetherlinkRipgrep() : null);
 
   final StreamController<WorkspaceChangeEvent> _changes =
       StreamController<WorkspaceChangeEvent>.broadcast();
@@ -48,10 +56,10 @@ class ProotLocalBackend extends WorkspaceBackend {
 
   @override
   WorkspaceCapabilities get capabilities => const WorkspaceCapabilities(
-        canExec: true,
-        canWatch: true,
-        isRemote: false,
-      );
+    canExec: true,
+    canWatch: true,
+    isRemote: false,
+  );
 
   // ===== guest / host 路径映射 =====
 
@@ -211,8 +219,7 @@ class ProotLocalBackend extends WorkspaceBackend {
     String path,
     int startLine,
     int endLine,
-  ) async =>
-      text_ops.readFileRange(await _readWhole(path), startLine, endLine);
+  ) async => text_ops.readFileRange(await _readWhole(path), startLine, endLine);
 
   @override
   Future<int> getLineCount(String path) async =>
@@ -271,6 +278,20 @@ class ProotLocalBackend extends WorkspaceBackend {
     );
   }
 
+  /// [_hostPath] 的逆映射：宿主路径 → guest posix 路径。
+  Future<String> _guestPathFromHost(String hostPath) async {
+    final sdcardHost = TerminalEngineManager.sdcardHostPath;
+    if (hostPath == sdcardHost || hostPath.startsWith('$sdcardHost/')) {
+      return '${sdcardGuestPaths.first}${hostPath.substring(sdcardHost.length)}';
+    }
+    final rootfs = await _engine.rootfsPath();
+    if (hostPath == rootfs) return '/';
+    if (hostPath.startsWith('$rootfs/')) {
+      return hostPath.substring(rootfs.length);
+    }
+    throw ProotBackendException('宿主路径不在 rootfs 内: $hostPath');
+  }
+
   static String _joinGuest(String parent, String name) =>
       parent == '/' ? '/$name' : '$parent/$name';
 
@@ -309,7 +330,11 @@ class ProotLocalBackend extends WorkspaceBackend {
   // ===== mutations =====
 
   @override
-  Future<void> writeFile(String path, String content, {bool append = false}) async {
+  Future<void> writeFile(
+    String path,
+    String content, {
+    bool append = false,
+  }) async {
     final file = File(await _hostPath(path));
     await file.writeAsString(
       content,
@@ -395,11 +420,7 @@ class ProotLocalBackend extends WorkspaceBackend {
     _guardProtected(path);
     final newGuest = _joinGuest(_dirnameGuest(path), newName);
     await _rename(path, newGuest);
-    _emit(
-      WorkspaceChangeKind.moved,
-      newGuest,
-      fromPath: _normalizeGuest(path),
-    );
+    _emit(WorkspaceChangeKind.moved, newGuest, fromPath: _normalizeGuest(path));
     return newGuest;
   }
 
@@ -491,7 +512,11 @@ class ProotLocalBackend extends WorkspaceBackend {
 
   @override
   Future<void> insertContent(String path, int line, String content) async {
-    final updated = text_ops.insertContent(await _readWhole(path), line, content);
+    final updated = text_ops.insertContent(
+      await _readWhole(path),
+      line,
+      content,
+    );
     await File(await _hostPath(path)).writeAsString(updated);
     _emit(WorkspaceChangeKind.modified, _normalizeGuest(path));
   }
@@ -565,8 +590,9 @@ class ProotLocalBackend extends WorkspaceBackend {
 
   // ===== search =====
 
-  // 与 SSH 后端同策略：先走 exec 快路径（rootfs 内的 rg / grep / find 一次
-  // 完成递归匹配），不可用时退回宿主目录树的客户端遍历。
+  // 搜索优先级：① 进程内 FFI（libaether_rg.so 直接走宿主路径，零进程
+  // spawn）；② exec 快路径（rootfs 内的 rg / grep / find 一次完成递归
+  // 匹配）；③ 宿主目录树的客户端遍历。
   @override
   Future<List<WorkspaceEntry>> searchFiles(
     String directory,
@@ -578,6 +604,16 @@ class ProotLocalBackend extends WorkspaceBackend {
     bool useRegex = false,
   }) async {
     if (recursive && query.isNotEmpty) {
+      final native = await _searchViaNative(
+        directory,
+        query,
+        searchType: searchType,
+        fileTypes: fileTypes,
+        maxResults: maxResults,
+        useRegex: useRegex,
+        maxMatchesPerFile: 0,
+      );
+      if (native != null) return [for (final h in native) h.entry];
       final fast = await _searchViaExec(
         directory,
         query,
@@ -600,9 +636,9 @@ class ProotLocalBackend extends WorkspaceBackend {
       if (results.length >= maxResults) return;
       final List<FileSystemEntity> entries;
       try {
-        entries = await Directory(await _hostPath(guestDir))
-            .list(followLinks: false)
-            .toList();
+        entries = await Directory(
+          await _hostPath(guestDir),
+        ).list(followLinks: false).toList();
       } catch (_) {
         return; // 目录不可读 — 跳过
       }
@@ -611,7 +647,8 @@ class ProotLocalBackend extends WorkspaceBackend {
         final name = _basename(entity.path);
         final guestPath = _joinGuest(_normalizeGuest(guestDir), name);
         final isDir = entity is Directory;
-        final typeOk = fileTypes.isEmpty ||
+        final typeOk =
+            fileTypes.isEmpty ||
             isDir ||
             fileTypes.any((t) => name.toLowerCase().endsWith(t.toLowerCase()));
 
@@ -640,6 +677,96 @@ class ProotLocalBackend extends WorkspaceBackend {
     return results;
   }
 
+  @override
+  Future<List<WorkspaceSearchHit>?> searchFilesWithMatches(
+    String directory,
+    String query, {
+    WorkspaceSearchType searchType = WorkspaceSearchType.name,
+    List<String> fileTypes = const [],
+    int maxResults = 200,
+    bool useRegex = false,
+    int maxMatchesPerFile = 5,
+  }) {
+    return _searchViaNative(
+      directory,
+      query,
+      searchType: searchType,
+      fileTypes: fileTypes,
+      maxResults: maxResults,
+      useRegex: useRegex,
+      maxMatchesPerFile: maxMatchesPerFile,
+    );
+  }
+
+  /// 进程内 FFI 搜索：把 guest 目录映射成宿主路径后交给
+  /// libaether_rg.so 一次完成递归遍历 + 内容扫描，命中路径再映射回
+  /// guest 侧。返回 null 表示原生库不可用（非 Android 宿主）或调用失败，
+  /// 由调用方改走 exec / 客户端遍历。
+  Future<List<WorkspaceSearchHit>?> _searchViaNative(
+    String directory,
+    String query, {
+    required WorkspaceSearchType searchType,
+    required List<String> fileTypes,
+    required int maxResults,
+    required bool useRegex,
+    required int maxMatchesPerFile,
+  }) async {
+    final rg = _rg;
+    if (rg == null || query.isEmpty) return null;
+    try {
+      final hostDir = await _hostPath(directory);
+      final response = await rg.search(
+        RgSearchRequest(
+          directory: hostDir,
+          query: query,
+          searchNames:
+              searchType == WorkspaceSearchType.name ||
+              searchType == WorkspaceSearchType.both,
+          searchContent:
+              searchType == WorkspaceSearchType.content ||
+              searchType == WorkspaceSearchType.both,
+          fileTypes: fileTypes,
+          skipDirs: kWorkspaceSkippedDirs.toList(),
+          maxResults: maxResults,
+          useRegex: useRegex,
+          maxMatchesPerFile: maxMatchesPerFile,
+          maxFileBytes: kProotReadFileMaxBytes,
+        ),
+      );
+      final hits = <WorkspaceSearchHit>[];
+      for (final h in response.hits) {
+        final guestPath = await _guestPathFromHost(h.path);
+        hits.add(
+          WorkspaceSearchHit(
+            entry: WorkspaceEntry(
+              name: _basename(guestPath),
+              path: guestPath,
+              isDirectory: h.isDir,
+              size: h.size,
+              mtime: h.mtimeMs,
+              isHidden: _basename(guestPath).startsWith('.'),
+            ),
+            matchCount: h.matchCount,
+            matches: [
+              for (final m in h.matches)
+                WorkspaceSearchMatchLine(
+                  lineNumber: m.lineNumber,
+                  line: m.line,
+                ),
+            ],
+          ),
+        );
+      }
+      return hits;
+    } on RipgrepNativeException {
+      return null;
+    } on ProotBackendException {
+      return null;
+    } on TerminalEngineMissingException {
+      return null;
+    }
+  }
+
   /// 容器内命令搜索：文件名走 `find -iname`，内容优先 `rg -il`（并行遍历、
   /// 跳过二进制与 .gitignore），没有 rg 时用 `find -prune | xargs grep -li`
   /// （busybox grep 没有 -r 的 --exclude-dir/-I，靠 find 跳过重型目录）。
@@ -655,9 +782,11 @@ class ProotLocalBackend extends WorkspaceBackend {
     required int maxResults,
     required bool useRegex,
   }) async {
-    final wantsName = searchType == WorkspaceSearchType.name ||
+    final wantsName =
+        searchType == WorkspaceSearchType.name ||
         searchType == WorkspaceSearchType.both;
-    final wantsContent = searchType == WorkspaceSearchType.content ||
+    final wantsContent =
+        searchType == WorkspaceSearchType.content ||
         searchType == WorkspaceSearchType.both;
     if (wantsName && (useRegex || fileTypes.isNotEmpty)) return null;
     const timeout = Duration(seconds: 60);
@@ -682,7 +811,8 @@ class ProotLocalBackend extends WorkspaceBackend {
             for (final t in fileTypes) '--glob ${_shellQuote('*$t')}',
           ].join(' ');
           final mode = useRegex ? '' : '-F ';
-          cmd = 'rg -il --no-messages $mode$globs-e ${_shellQuote(query)} '
+          cmd =
+              'rg -il --no-messages $mode$globs-e ${_shellQuote(query)} '
               '-- ${_shellQuote(guestDir)}';
         } else {
           final prunes = kWorkspaceSkippedDirs
@@ -694,7 +824,8 @@ class ProotLocalBackend extends WorkspaceBackend {
           final mode = useRegex ? '-E' : '-F';
           // 无命中时 grep 退出码经 xargs 变成 123，与真错误难分；输出为空
           // 就当无结果，靠 `|| true` 吃掉退出码。
-          cmd = 'find ${_shellQuote(guestDir)} '
+          cmd =
+              'find ${_shellQuote(guestDir)} '
               '-type d \\( $prunes \\) -prune -o '
               '-type f $nameFilter-print0 '
               '| xargs -0 -r grep -li $mode -e ${_shellQuote(query)} || true';
@@ -713,11 +844,13 @@ class ProotLocalBackend extends WorkspaceBackend {
         if (path.isEmpty || path == guestDir || !seen.add(path)) continue;
         try {
           final guestPath = _normalizeGuest(path);
-          out.add(await _toEntry(
-            guestPath,
-            await _hostPath(guestPath),
-            _basename(guestPath),
-          ));
+          out.add(
+            await _toEntry(
+              guestPath,
+              await _hostPath(guestPath),
+              _basename(guestPath),
+            ),
+          );
         } catch (_) {
           // 命令输出与 stat 之间文件消失 / 路径异常 — 跳过。
         }
@@ -768,8 +901,9 @@ class ProotLocalBackend extends WorkspaceBackend {
 
   Future<ProotCommandBuilder> _commandBuilder() async {
     // 手机存储默认自动挂载（存在即绑）；权限变化后缓存按状态重建。
-    final mountSdcard =
-        Directory(TerminalEngineManager.sdcardHostPath).existsSync();
+    final mountSdcard = Directory(
+      TerminalEngineManager.sdcardHostPath,
+    ).existsSync();
     final cached = _builder;
     if (cached != null && cached.extraBinds.isNotEmpty == mountSdcard) {
       return cached;
@@ -879,12 +1013,14 @@ class ProotLocalBackend extends WorkspaceBackend {
     String? parentPath,
   }) {
     if (_changes.isClosed) return;
-    _changes.add(WorkspaceChangeEvent(
-      kind: kind,
-      path: path,
-      fromPath: fromPath,
-      parentPath: parentPath,
-    ));
+    _changes.add(
+      WorkspaceChangeEvent(
+        kind: kind,
+        path: path,
+        fromPath: fromPath,
+        parentPath: parentPath,
+      ),
+    );
   }
 }
 
