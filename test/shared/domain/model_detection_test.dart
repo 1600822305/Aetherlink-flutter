@@ -147,6 +147,17 @@ void main() {
     });
   });
 
+  group('inference: claude 5+ 代', () {
+    test('opus-5 推断出 reasoning/vision/web-search/function-call', () {
+      for (final id in ['claude-opus-5', 'claude-opus-5-20260724', 'claude-sonnet-5', 'claude-haiku-5-1']) {
+        expect(inferReasoningFromModelId(id), isTrue, reason: id);
+        expect(inferVisionFromModelId(id), isTrue, reason: id);
+        expect(inferWebSearchFromModelId(id), isTrue, reason: id);
+        expect(inferFunctionCallingFromModelId(id), isTrue, reason: id);
+      }
+    });
+  });
+
   group('inferCapabilitiesFromModelId', () {
     test('gpt-4o → vision + function-call + web-search, not embedding', () {
       final c = inferCapabilitiesFromModelId('gpt-4o')!;

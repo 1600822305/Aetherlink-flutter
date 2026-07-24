@@ -290,6 +290,27 @@ data: {"type":"message_stop"}
       expect(adapter.requestBody, contains('"system":"You are concise."'));
     });
 
+    test('baseUrl 已带 /v1 时不重复拼接', () async {
+      final adapter = _ReplayAdapter(sse);
+      final gateway = AnthropicAdapter(_dioWith(adapter));
+
+      await gateway
+          .streamChat(
+            _request(
+              _model(
+                provider: 'anthropic',
+                baseUrl: 'https://api.anthropic.com/v1',
+              ),
+            ),
+          )
+          .toList();
+
+      expect(
+        adapter.request!.uri.toString(),
+        'https://api.anthropic.com/v1/messages',
+      );
+    });
+
     test('OAuth token（sk-ant-oat…）切 Bearer + beta 头并注入 Claude Code 身份',
         () async {
       final adapter = _ReplayAdapter(sse);

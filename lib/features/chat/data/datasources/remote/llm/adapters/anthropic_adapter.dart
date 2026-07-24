@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dar
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 import 'package:dio/dio.dart';
 
 /// Speaks the Anthropic Messages wire protocol: `POST /v1/messages` with
@@ -356,11 +357,12 @@ class AnthropicAdapter implements LlmGateway {
     _ => 'user',
   };
 
+  /// 供应商默认 baseUrl 可能已带 `/v1`（provider_config_utils 预填
+  /// `https://api.anthropic.com/v1`），用 [formatApiHost] 归一，避免拼出
+  /// `/v1/v1/messages`。
   static String _messagesUrl(String? baseUrl) {
-    final base = (baseUrl == null || baseUrl.isEmpty)
-        ? 'https://api.anthropic.com'
-        : baseUrl.replaceAll(RegExp(r'/+$'), '');
-    return '$base/v1/messages';
+    final base = formatApiHost(baseUrl);
+    return '${base.isEmpty ? 'https://api.anthropic.com/v1' : base}/messages';
   }
 }
 

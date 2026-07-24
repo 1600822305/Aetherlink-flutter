@@ -101,9 +101,7 @@ const List<String> _visionAllowedModels = [
   'gemini-(flash|pro|flash-lite)-latest',
   'gemini-exp',
   'claude-3',
-  'claude-haiku-4',
-  'claude-sonnet-4',
-  'claude-opus-4',
+  r'claude-(?:haiku|sonnet|opus)-[4-9]',
   'vision',
   r'glm-4(?:\.\d+)?v(?:-[\w-]+)?',
   'qwen-vl',
@@ -167,7 +165,7 @@ final RegExp _visionRegex = RegExp(
 );
 
 final RegExp _claudeWebSearchRegex = RegExp(
-  r'\b(?:claude-3(-|\.)(7|5)-sonnet(?:-[\w-]+)|claude-3(-|\.)5-haiku(?:-[\w-]+)|claude-(haiku|sonnet|opus)-4(?:-[\w-]+)?)\b',
+  r'\b(?:claude-3(-|\.)(7|5)-sonnet(?:-[\w-]+)|claude-3(-|\.)5-haiku(?:-[\w-]+)|claude-(haiku|sonnet|opus)-[4-9](?:-[\w-]+)?)\b',
   caseSensitive: false,
 );
 
@@ -243,9 +241,7 @@ final RegExp _functionCallingRegex = RegExp(
 bool _inferClaudeReasoning(String id) =>
     id.contains('claude-3-7-sonnet') ||
     id.contains('claude-3.7-sonnet') ||
-    id.contains('claude-sonnet-4') ||
-    id.contains('claude-opus-4') ||
-    id.contains('claude-haiku-4');
+    RegExp(r'claude-(?:haiku|sonnet|opus)-[4-9]').hasMatch(id);
 
 bool _inferGeminiReasoning(String id) {
   if (id.startsWith('gemini') && id.contains('thinking')) return true;
