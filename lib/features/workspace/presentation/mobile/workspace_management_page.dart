@@ -21,7 +21,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_hooks_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/hooks/agent_hooks_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_permission_rules_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -7,37 +6,30 @@ import 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_hooks_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
-import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
-import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_checkpoint_service.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_settings.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_subagent_runner.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_manual_compaction.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
-import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
-import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
 
 export 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart'
     show AgentRollbackResult, RollbackFileChange, RollbackFileKind;
+export 'package:aetherlink_flutter/features/agent/application/agent_checkpoint_service.dart'
+    show AgentRollbackMode;
 
 part 'agent_task_runner.g.dart';
-
-/// 回滚范围：仅对话、仅工作区文件，或两者一起回到检查点。
-enum AgentRollbackMode { messagesOnly, filesOnly, filesAndMessages }
 
 /// 任务执行编排：组装引擎依赖、持有每任务的取消 token、
 /// 把引擎的任务写回同步到 [AgentTasks]。
@@ -49,8 +41,34 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// 共享单例：seq 缓存在 store 内，多入口（引擎/插队消息）必须同一份。
   AgentEventStore? _storeInstance;
 
-  /// 检查点不可用的提示每个任务只出一次（避免每条消息刷屏）。
-  final Set<String> _checkpointHintShown = {};
+  late final AgentCheckpointService _checkpoints = AgentCheckpointService(
+    ref: ref,
+    store: _store,
+    isRunning: (taskId) => state.contains(taskId),
+  );
+
+  late final AgentSubagentRunner _subagents = AgentSubagentRunner(
+    ref: ref,
+    store: _store,
+    gateway: _ProviderTaskGateway(this),
+    budgetFromSettings: _budgetFromSettings,
+    hookTimelineFor: _hookTimelineFor,
+    hookRewakeFor: _hookRewakeFor,
+    onBackgroundChildStarted: (taskId, token) {
+      _tokens[taskId] = token;
+      state = {...state, taskId};
+    },
+    onBackgroundChildFinished: (taskId) {
+      _tokens.remove(taskId);
+      state = {
+        for (final id in state)
+          if (id != taskId) id,
+      };
+      if (state.isEmpty) {
+        unawaited(StreamingKeepAliveService.release('agent'));
+      }
+    },
+  );
 
   /// 手动压缩挂起（升级计划 ⑤/⑦）：运行中任务的手动压缩请求，
   /// taskId → 用户关注点（可为 null），引擎在下一个安全点消费。
@@ -107,8 +125,11 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     );
     await ref.read(agentTasksProvider.notifier).apply(updated);
     await _checkpoint(updated, text);
-    await _store()
-        .appendUserMessage(updated.id, processed, attachments: attachments);
+    await _store().appendUserMessage(
+      updated.id,
+      processed,
+      attachments: attachments,
+    );
     _run(updated);
   }
 
@@ -142,8 +163,11 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       return blocked;
     }
     await _checkpoint(task, text);
-    await _store()
-        .appendUserMessage(task.id, processed, attachments: attachments);
+    await _store().appendUserMessage(
+      task.id,
+      processed,
+      attachments: attachments,
+    );
     _run(task);
     return task;
   }
@@ -246,12 +270,11 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     // waitingApproval 时引擎阻塞在审批挂起，不消费打断标记：
     // 把挂起审批按拒绝回填让循环继续，否则消息会一直排队
     // 等审批卡被处理。
-    ref.read(agentApprovalRegistryProvider.notifier).respond(
+    ref
+        .read(agentApprovalRegistryProvider.notifier)
+        .respond(
           task.id,
-          const AgentApprovalDecision(
-            approved: false,
-            reason: '用户打断并发送了新消息',
-          ),
+          const AgentApprovalDecision(approved: false, reason: '用户打断并发送了新消息'),
         );
   }
 
@@ -286,189 +309,29 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     _run(updated);
   }
 
-  /// 回滚到检查点（初稿 §5.5 P2）：仅限非运行态；按 [mode] 决定回滚
-  /// 文件、对话，还是两者。回滚文件前自动把当前状态落为新检查点
-  ///（可再回滚回来）；回滚对话把检查点之后的事件全部删除。
-  /// 失败抛带可读原因的 [StateError]。返回结果含实际还原的文件清单
-  ///（仅回滚对话时为 null）。
+  /// 回滚到检查点：详见 [AgentCheckpointService.rollbackToCheckpoint]。
   Future<AgentRollbackResult?> rollbackToCheckpoint(
     AgentTask task,
     CheckpointEvent checkpoint, {
     AgentRollbackMode mode = AgentRollbackMode.filesAndMessages,
-  }) async {
-    if (state.contains(task.id)) {
-      throw StateError('任务正在运行，先暂停/终止后再回滚');
-    }
-    // 后台子代理（独立任务 id）仍在跑时一并挡掉：它们完成后会
-    // 回填父任务事件，与截断竞态会把幽灵事件写回被截断区间。
-    final runningChildren = [
-      for (final t in ref.read(agentTasksProvider))
-        if (t.parentTaskId == task.id && state.contains(t.id)) t,
-    ];
-    if (runningChildren.isNotEmpty) {
-      throw StateError('有后台子代理仍在运行，先终止后再回滚');
-    }
-    AgentRollbackResult? result;
-    if (mode != AgentRollbackMode.messagesOnly) {
-      result = await rollbackAgentCheckpoint(
-        ref,
-        task.id,
-        task.workspaceId.isEmpty ? null : task.workspaceId,
-        checkpoint.commits,
-      );
-    }
-    // 文件回滚成功后再截断对话（失败时对话保持原样）；保留检查点
-    // 事件本身作为锚点，之后追加的快照/状态事件从这里续增。
-    if (mode != AgentRollbackMode.filesOnly) {
-      final events = await _store().getEvents(task.id);
-      final removed = [
-        for (final e in events)
-          if (e.seq > checkpoint.seq) e,
-      ];
-      await _store().truncateEventsAfter(task.id, checkpoint.seq);
-      await _cleanupTruncatedEvents(removed);
-    }
-    if (result != null) {
-      await _store().appendCheckpoint(
-        task.id,
-        commits: result.safetyCommits,
-        label: '回滚前自动快照',
-      );
-    }
-    final ckpt = _checkpointSummary(checkpoint.commits);
-    await _store().appendStatusChange(task.id, switch (mode) {
-      AgentRollbackMode.messagesOnly => '已回滚对话到检查点 $ckpt（工作区文件未变）',
-      AgentRollbackMode.filesOnly =>
-        '已回滚工作区到检查点 $ckpt'
-            '${_fileSummary(result!.files)}'
-            '（回滚前状态已保存为新检查点，可再回滚回来）',
-      AgentRollbackMode.filesAndMessages =>
-        '已回滚对话与工作区到检查点 $ckpt'
-            '${_fileSummary(result!.files)}'
-            '（回滚前状态已保存为新检查点，可再回滚回来）',
-    });
-    return result;
-  }
-
-  /// 回滚截断后的级联清理：删除被截断工具事件的大输出落盘文件，
-  /// 以及由被截断 spawn_subagent 派生的隐藏子任务（含其事件流）。
-  Future<void> _cleanupTruncatedEvents(List<AgentEvent> removed) async {
-    final tasks = ref.read(agentTasksProvider);
-    for (final e in removed.whereType<ToolCallEvent>()) {
-      await deleteAgentOverflowFile(e.resultOverflowPath);
-      await deleteAgentOverflowFile(e.imagePath);
-      final childId = subagentTaskIdFor(e.id);
-      if (!tasks.any((t) => t.id == childId)) continue;
-      // 后台子代理仍在跑时不删（其回填会因源事件已删而跳过）。
-      if (state.contains(childId)) continue;
-      await ref.read(agentTasksProvider.notifier).remove(childId);
-    }
-  }
+  }) => _checkpoints.rollbackToCheckpoint(task, checkpoint, mode: mode);
 
   /// 回滚预览：该检查点 vs 当前工作区会触达的文件清单（不改状态）。
   Future<List<RollbackFileChange>> previewRollback(
     AgentTask task,
     CheckpointEvent checkpoint,
-  ) => previewAgentRollback(
-    ref,
-    task.workspaceId.isEmpty ? null : task.workspaceId,
-    checkpoint.commits,
-  );
+  ) => _checkpoints.previewRollback(task, checkpoint);
 
   /// 预览面板里单文件的文本 diff（检查点 vs 当前工作区）。
   Future<String> rollbackFileDiff(
     AgentTask task,
     CheckpointEvent checkpoint,
     RollbackFileChange file,
-  ) => loadRollbackFileDiff(
-    ref,
-    task.workspaceId.isEmpty ? null : task.workspaceId,
-    checkpoint.commits,
-    file,
-  );
+  ) => _checkpoints.rollbackFileDiff(task, checkpoint, file);
 
-  static String _fileSummary(List<RollbackFileChange> files) {
-    if (files.isEmpty) return '';
-    final names = files.take(5).map((f) => f.path.split('/').last).join('、');
-    final more = files.length > 5 ? ' 等' : '';
-    return '，还原 ${files.length} 个文件：$names$more';
-  }
-
-  /// 每条用户消息落地前都落检查点（含 plan/ask 模式，中途切模式后
-  /// 也能回滚到任意一条消息之前）；不可用/失败降级为一次性状态
-  /// 提示，不阻断任务启动。
-  ///
-  /// 先落一个空 commits 的占位检查点（纯 DB 写，毫秒级），让紧随其后
-  /// 的用户消息立即上屏；耗时的 git 快照（可能跨 proot/SSH 跑
-  /// read-tree/commit-tree，秒级）转后台补写 commits。快照失败/不可用
-  /// 时占位事件原位降级为状态行，不留空检查点。
-  Future<void> _checkpoint(AgentTask task, String text) async {
-    final CheckpointEvent placeholder;
-    try {
-      placeholder = await _store().appendCheckpoint(
-        task.id,
-        commits: const {},
-        label: _titleFrom(text),
-      );
-    } catch (e) {
-      if (_checkpointHintShown.add(task.id)) {
-        await _store().appendStatusChange(task.id, '检查点创建失败：$e');
-      }
-      return;
-    }
-    unawaited(_fillCheckpoint(task, placeholder));
-  }
-
-  /// 后台补写占位检查点的 git 快照结果。
-  Future<void> _fillCheckpoint(AgentTask task, CheckpointEvent event) async {
-    try {
-      final result = await createAgentCheckpoint(
-        ref,
-        task.id,
-        task.workspaceId.isEmpty ? null : task.workspaceId,
-      );
-      if (result.commits != null) {
-        await _store().updateCheckpoint(
-          task.id,
-          event,
-          commits: result.commits!,
-        );
-        return;
-      }
-      final hint = _checkpointHintShown.add(task.id)
-          ? '检查点不可用：${result.unavailableReason}'
-          : null;
-      await _degradeCheckpoint(task.id, event, hint);
-    } catch (e) {
-      final hint = _checkpointHintShown.add(task.id) ? '检查点创建失败：$e' : null;
-      await _degradeCheckpoint(task.id, event, hint);
-    }
-  }
-
-  /// 占位检查点降级：首次带原因原位改写为状态行；提示出过后静默移除，
-  /// 不每条消息刷一行。
-  Future<void> _degradeCheckpoint(
-    String taskId,
-    CheckpointEvent event,
-    String? hint,
-  ) async {
-    try {
-      if (hint != null) {
-        await _store().replaceCheckpointWithStatus(taskId, event, hint);
-      } else {
-        await _store().removeEvent(taskId, event);
-      }
-    } catch (_) {
-      // 降级失败只影响这一行的展示（空检查点回滚时会给出可读错误）。
-    }
-  }
-
-  /// 检查点的短摘要：首个 commit 短哈希，多仓库时附仓库数。
-  static String _checkpointSummary(Map<String, String> commits) {
-    final first = commits.values.firstOrNull ?? '';
-    final short = first.length > 8 ? first.substring(0, 8) : first;
-    return commits.length > 1 ? '$short 等 ${commits.length} 个仓库' : short;
-  }
+  /// 每条用户消息落地前都落检查点：详见 [AgentCheckpointService.checkpoint]。
+  Future<void> _checkpoint(AgentTask task, String text) =>
+      _checkpoints.checkpoint(task, _titleFrom(text));
 
   void pause(String taskId) => _tokens[taskId]?.requestPause();
 
@@ -489,15 +352,14 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       _tokens[task.id]?.requestPause();
       return;
     }
-    await ref
-        .read(agentTasksProvider.notifier)
-        .apply(_withMode(task, newMode));
+    await ref.read(agentTasksProvider.notifier).apply(_withMode(task, newMode));
   }
 
   /// 切模式的字段变更：切入 Plan 记 prePlanMode（方案批准退出时恢复），
   /// 切出 Plan 清标记。
   static AgentTask _withMode(AgentTask task, AgentSessionMode newMode) {
-    final enteringPlan = newMode == AgentSessionMode.plan &&
+    final enteringPlan =
+        newMode == AgentSessionMode.plan &&
         (task.mode == AgentSessionMode.code ||
             task.mode == AgentSessionMode.auto);
     return task.copyWith(
@@ -512,7 +374,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// 安全点由引擎强制压缩（忽略触发阈值，仍走 keep 规则）；空闲任务
   /// （暂停/完成/失败）直接调共享的 [runManualCompaction] 落
   /// CompactionEvent。返回给 UI 的提示文案；摘要失败时抛错由调用方提示。
-  Future<String> compactNow(AgentTask task, {String? customInstructions}) async {
+  Future<String> compactNow(
+    AgentTask task, {
+    String? customInstructions,
+  }) async {
     final progress = ref.read(agentCompactionProgressProvider.notifier);
     if (state.contains(task.id)) {
       _pendingManualCompact[task.id] = customInstructions;
@@ -598,8 +463,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     return AgentBudget(
       maxRounds: maxRounds ?? 0,
       maxTokens: maxTokens ?? 0,
-      contextLimitTokens:
-          ref.read(agentUiSettingsControllerProvider).contextLimit,
+      contextLimitTokens: ref
+          .read(agentUiSettingsControllerProvider)
+          .contextLimit,
       autoCompactEnabled: compaction.autoCompactEnabled,
       microCompactEnabled: compaction.microCompactEnabled,
       compactionTriggerRatio: compaction.triggerRatio,
@@ -701,7 +567,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       // 回退字符估算）；压缩设置页的开关/阈值在任务启动时一次性填入
       // budget（本次运行内不变）。
       budget: _budgetFromSettings(),
-      subagents: _RunnerSubagentLauncher(this),
+      subagents: _subagents,
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.stopGuard,
       hookStopSignal: runtime.hookStopSignal,
@@ -711,11 +577,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           unawaited(runtime.lifecycleHooks(AgentHookEvent.turnEnd)),
       onTaskEnd: () =>
           unawaited(runtime.lifecycleHooks(AgentHookEvent.taskEnd)),
-      onNotification: (message, type) => unawaited(
-          runtime.notificationHooks(message, notificationType: type)),
+      onNotification: (message, type) =>
+          unawaited(runtime.notificationHooks(message, notificationType: type)),
       onPreCompact: () {
         // 事件流实况行：安全点压缩开始（LLM 摘要中不可取消）。
-        ref.read(agentCompactionProgressProvider.notifier).start(
+        ref
+            .read(agentCompactionProgressProvider.notifier)
+            .start(
               task.id,
               phase: AgentCompactionPhase.summarizing,
               cancellable: false,
@@ -724,8 +592,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       },
       onPostCompact: (summary) {
         ref.read(agentCompactionProgressProvider.notifier).finish(task.id);
-        unawaited(runtime.compactionHooks(AgentHookEvent.postCompact,
-            summary: summary));
+        unawaited(
+          runtime.compactionHooks(AgentHookEvent.postCompact, summary: summary),
+        );
       },
       onCompactionFailed: () =>
           ref.read(agentCompactionProgressProvider.notifier).finish(task.id),
@@ -768,15 +637,15 @@ class AgentTaskRunner extends _$AgentTaskRunner {
             .firstOrNull;
         if (latest != null) {
           final resume = latest.status == AgentTaskStatus.paused;
-          final switched = _withMode(latest, userSwitch).copyWith(
-            status: resume ? AgentTaskStatus.running : null,
+          final switched = _withMode(
+            latest,
+            userSwitch,
+          ).copyWith(status: resume ? AgentTaskStatus.running : null);
+          unawaited(
+            ref.read(agentTasksProvider.notifier).apply(switched).then((_) {
+              if (resume) _run(switched);
+            }),
           );
-          unawaited(ref
-              .read(agentTasksProvider.notifier)
-              .apply(switched)
-              .then((_) {
-            if (resume) _run(switched);
-          }));
         }
       }
     });
@@ -784,441 +653,19 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   /// 某个任务的 hooks 时间线通道：运行中文案落一条状态事件，
   /// 返回的更新函数在 hooks 完成后原位改写为结果（id/seq 不变）。
-  AgentHookTimelineSink _hookTimelineFor(String taskId) =>
-      (String line) async {
-        final event = await _store().appendStatusChange(taskId, line);
-        return (String updated) =>
-            unawaited(_store().updateStatusChange(taskId, event, updated));
-      };
+  AgentHookTimelineSink _hookTimelineFor(String taskId) => (String line) async {
+    final event = await _store().appendStatusChange(taskId, line);
+    return (String updated) =>
+        unawaited(_store().updateStatusChange(taskId, event, updated));
+  };
 
   /// asyncRewake 反馈注入通道：反馈作为排队消息落库，引擎在安全点
   /// 消费叫醒模型；任务已结束时留待续跑进上下文。
-  AgentHookRewakeSink _hookRewakeFor(String taskId) =>
-      (String feedback) async {
-        await _store().appendUserMessage(taskId, feedback, queued: true);
-      };
+  AgentHookRewakeSink _hookRewakeFor(String taskId) => (String feedback) async {
+    await _store().appendUserMessage(taskId, feedback, queued: true);
+  };
 
-  /// 子代理专属提示（系统提示第 3 层）：强调独立上下文 + 结论自包含。
-  static const String _kExploreSubagentPrompt =
-      '你是一个探索子代理：在独立上下文里完成父任务派发的只读调研/搜索子任务。'
-      '你看不到父任务的对话，指令里的信息就是全部上下文。完成时先把结论作为'
-      '正文完整输出再调用 finish_task：结论是父任务唯一能看到的内容，必须自包含'
-      '（关键发现、文件路径、结论依据），不要只说“已完成”。不要用 ask_user 提问。';
-
-  static const String _kBashSubagentPrompt =
-      '你是一个终端子代理：在独立上下文里执行父任务派发的命令型子任务。'
-      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task '
-      '返回结论：提炼关键输出和结论，不要长篇粘贴原始输出。不要用 ask_user 提问。';
-
-  /// 自定义档案子代理的通用后缀（拼在档案正文之后）。
-  static const String _kCustomSubagentSuffix =
-      '你是一个子代理，在独立上下文里完成父任务派发的子任务：'
-      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task '
-      '返回自包含的结论（父任务只能看到结论）。不要用 ask_user 提问。';
-
-  /// fork 分身子代理（对标 Claude Code fork）：首条消息带父对话摘录。
-  static const String _kForkSubagentPrompt =
-      '你是主任务的一个分身子代理：首条消息里的「父任务对话摘录」是你与'
-      '主任务共享的背景，指令在摘录之后——直接按指令干活，不要重新调研背景。'
-      '完成时先把结论作为正文完整输出再调用 finish_task：结论是父任务唯一'
-      '能看到的内容，必须自包含。不要用 ask_user 提问。';
-
-  /// 派生一个子代理（初稿 §5.5 P2，对标 Cursor）：独立事件流/预算，
-  /// 只把最终结论回填父任务；bash / 非只读档案的工具调用仍走现有
-  /// 审批链（auto 模式工作区内照常免审）。type 为内置 explore/bash
-  /// 或自定义档案名（工作区 .aetherlink/agents、.cursor/agents 的
-  /// markdown 定义）。background=true 时立即返回不阻塞父循环，完成后
-  /// 结论回填原工具事件并以排队消息注入父对话。
-  Future<AgentToolResult> _launchSubagent({
-    required AgentTask parent,
-    required AgentToolCallRequest call,
-    required String toolEventId,
-    required AgentCancellationToken cancel,
-  }) async {
-    Map<String, dynamic> args;
-    try {
-      args = jsonDecode(call.argsJson) as Map<String, dynamic>;
-    } catch (_) {
-      return const AgentToolResult(ok: false, summary: '参数解析失败 ✗');
-    }
-    final typeName = (args['type'] as String? ?? '').trim();
-    final prompt = (args['prompt'] as String? ?? '').trim();
-    final description = (args['description'] as String? ?? '').trim();
-    final background = args['background'] as bool? ?? false;
-    if (prompt.isEmpty) {
-      return const AgentToolResult(ok: false, summary: '缺少 prompt ✗');
-    }
-    final parentReadOnly =
-        parent.mode == AgentSessionMode.ask ||
-        parent.mode == AgentSessionMode.plan;
-    final baseProfile = ref
-        .read(agentProfilesProvider)
-        .where((p) => p.id == parent.profileId)
-        .firstOrNull;
-
-    final builtin = AgentSubagentType.values
-        .where((t) => t.name == typeName)
-        .firstOrNull;
-    final AgentSessionMode childMode;
-    final AgentProfile childProfile;
-    Model? childModel;
-    int? childMaxTurns;
-    var childPrompt = prompt;
-    if (builtin != null) {
-      if (builtin == AgentSubagentType.bash && parentReadOnly) {
-        return const AgentToolResult(
-          ok: false,
-          summary: 'bash 子代理不可用 ✗',
-          detail: '当前为只读模式（Ask/Plan），只能派 explore 子代理',
-        );
-      }
-      childMode = builtin == AgentSubagentType.explore
-          ? AgentSessionMode.ask
-          : parent.mode;
-      childProfile = AgentProfile(
-        id: parent.profileId,
-        name: switch (builtin) {
-          AgentSubagentType.explore => '探索子代理',
-          AgentSubagentType.bash => '终端子代理',
-          AgentSubagentType.fork => '分身子代理',
-        },
-        emoji: '🤖',
-        systemPrompt: switch (builtin) {
-          AgentSubagentType.explore => _kExploreSubagentPrompt,
-          AgentSubagentType.bash => _kBashSubagentPrompt,
-          AgentSubagentType.fork => _kForkSubagentPrompt,
-        },
-        tools: builtin == AgentSubagentType.bash
-            ? {AgentToolGroup.terminal}
-            : (baseProfile?.tools ?? AgentToolGroup.values.toSet()),
-        workspaceId: baseProfile?.workspaceId,
-        workspaceName: baseProfile?.workspaceName,
-      );
-      // fork 继承父对话：把父事件流摘录拼在指令前，prompt 只需指令。
-      if (builtin == AgentSubagentType.fork) {
-        final parentEvents = await _store().getEvents(parent.id);
-        final context = buildSubagentForkContext(parentEvents);
-        if (context.isNotEmpty) {
-          childPrompt = '[父任务对话摘录]\n$context\n\n[指令]\n$prompt';
-        }
-      }
-    } else {
-      List<AgentSubagentProfile> customs;
-      try {
-        customs = await loadCustomSubagentProfiles(
-          ref,
-          parent.workspaceId.isEmpty ? null : parent.workspaceId,
-        );
-      } catch (_) {
-        customs = const [];
-      }
-      final custom = customs.where((p) => p.name == typeName).firstOrNull;
-      if (custom == null) {
-        final names = [
-          for (final t in AgentSubagentType.values) t.name,
-          for (final p in customs) p.name,
-        ].join('、');
-        return AgentToolResult(
-          ok: false,
-          summary: '未知子代理类型 ✗',
-          detail: 'type 必须是以下之一：$names',
-        );
-      }
-      if (!custom.readonly && parentReadOnly) {
-        return AgentToolResult(
-          ok: false,
-          summary: '子代理「${custom.name}」不可用 ✗',
-          detail: '当前为只读模式（Ask/Plan），只能派只读子代理',
-        );
-      }
-      // 工作区内的自定义档案属外来内容（提示注入面）：非只读档案
-      // 不继承父任务的 auto 免审，降为 Code 模式走完整审批链。
-      childMode = custom.readonly
-          ? AgentSessionMode.ask
-          : parent.mode == AgentSessionMode.auto
-              ? AgentSessionMode.code
-              : parent.mode;
-      // frontmatter tools 白名单：限定工具分组（无效名字忽略，
-      // 全部无效/未声明时继承父档案）。
-      final whitelisted = {
-        for (final g in AgentToolGroup.values)
-          if (custom.tools.contains(g.name)) g,
-      };
-      // frontmatter memory：注入持久记忆文件内容；非只读档案可用
-      // 文件工具回写记忆（路径已给出）。
-      var memorySection = '';
-      if (custom.memory) {
-        try {
-          final mem = await readSubagentMemory(
-            ref,
-            parent.workspaceId.isEmpty ? null : parent.workspaceId,
-            custom.name,
-          );
-          if (mem != null) {
-            memorySection = '\n\n[持久记忆]（文件：${mem.path}）\n'
-                '${mem.content?.trim().isNotEmpty == true ? mem.content!.trim() : '（暂无记忆，首次运行）'}'
-                '${custom.readonly ? '' : '\n任务中学到的可复用经验（坑、约定、关键路径）请用文件工具更新到上述记忆文件，保持精炼。'}';
-          }
-        } catch (_) {}
-      }
-      childProfile = AgentProfile(
-        id: parent.profileId,
-        name: custom.name,
-        emoji: '🤖',
-        systemPrompt: (custom.systemPrompt.isEmpty
-                ? _kCustomSubagentSuffix
-                : '${custom.systemPrompt}\n\n$_kCustomSubagentSuffix') +
-            memorySection,
-        tools: whitelisted.isNotEmpty
-            ? whitelisted
-            : (baseProfile?.tools ?? AgentToolGroup.values.toSet()),
-        workspaceId: baseProfile?.workspaceId,
-        workspaceName: baseProfile?.workspaceName,
-      );
-      childMaxTurns = custom.maxTurns;
-      // frontmatter model：按 id/显示名匹配已配置模型；匹不上时
-      // 静默回退父任务当前模型（不阻断派发）。
-      if (custom.model.isNotEmpty) {
-        try {
-          final providers =
-              await ref.read(appModelProvidersProvider.future);
-          final found = findModelNamed(providers, custom.model);
-          if (found != null) childModel = effectiveModelFor(found);
-        } catch (_) {}
-      }
-    }
-
-    final now = DateTime.now();
-    final childId = subagentTaskIdFor(toolEventId);
-    final child = AgentTask(
-      id: childId,
-      profileId: parent.profileId,
-      title: description.isNotEmpty ? description : _titleFrom(prompt),
-      workspaceId: parent.workspaceId,
-      workspaceName: parent.workspaceName,
-      status: AgentTaskStatus.running,
-      mode: childMode,
-      createdAt: now,
-      updatedAt: now,
-      modelLabel: childModel?.name ?? parent.modelLabel,
-      lastEventSummary: prompt,
-      parentTaskId: parent.id,
-    );
-    await ref.read(agentTasksProvider.notifier).apply(child);
-    await _store().appendUserMessage(childId, childPrompt);
-
-    if (background) {
-      unawaited(
-        _runBackgroundSubagent(
-          parent: parent,
-          child: child,
-          childProfile: childProfile,
-          childMode: childMode,
-          toolEventId: toolEventId,
-          childModel: childModel,
-          childMaxTurns: childMaxTurns,
-        ),
-      );
-      return AgentToolResult(
-        ok: true,
-        summary: '后台子代理已启动',
-        detail:
-            '子代理「${child.title}」已在后台运行；完成后结论会更新到'
-            '本工具结果，并以消息注入对话。',
-      );
-    }
-
-    // 取消桥接：父任务暂停/终止 → 子代理在下个安全点终止。
-    final childToken = AgentCancellationToken();
-    void bridge() {
-      if (cancel.stopRequested) childToken.requestCancel();
-    }
-
-    cancel.addListener(bridge);
-    bridge();
-    try {
-      return await _runChildEngine(
-        child: child,
-        childProfile: childProfile,
-        childMode: childMode,
-        childToken: childToken,
-        childModel: childModel,
-        childMaxTurns: childMaxTurns,
-      );
-    } finally {
-      cancel.removeListener(bridge);
-    }
-  }
-
-  /// 后台子代理：不桥接父取消（父暂停/终止后照常跑完），token 挂
-  /// [_tokens] 可单独停；完成后结论回填父工具事件 + 排队消息在父
-  /// 任务下个安全点注入（父已收尾则等用户续跑时消费）。
-  Future<void> _runBackgroundSubagent({
-    required AgentTask parent,
-    required AgentTask child,
-    required AgentProfile childProfile,
-    required AgentSessionMode childMode,
-    required String toolEventId,
-    Model? childModel,
-    int? childMaxTurns,
-  }) async {
-    final token = AgentCancellationToken();
-    _tokens[child.id] = token;
-    state = {...state, child.id};
-    unawaited(
-      StreamingKeepAliveService.acquire(
-        'agent',
-        title: '智能体任务运行中…',
-        text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
-      ),
-    );
-    try {
-      final result = await _runChildEngine(
-        child: child,
-        childProfile: childProfile,
-        childMode: childMode,
-        childToken: token,
-        childModel: childModel,
-        childMaxTurns: childMaxTurns,
-      );
-      final events = await _store().getEvents(parent.id);
-      final event = events
-          .whereType<ToolCallEvent>()
-          .where((e) => e.id == toolEventId)
-          .firstOrNull;
-      // 原工具事件已被回滚对话截断删除时跳过回填/注入，
-      // 避免把"幽灵"事件按旧 seq 重新插回被截断区间。
-      if (event != null) {
-        await _store().updateToolCall(
-          parent.id,
-          event,
-          state: result.ok
-              ? AgentToolCallState.success
-              : AgentToolCallState.failure,
-          resultSummary: result.summary,
-          resultDetail: result.detail,
-        );
-        await _store().appendUserMessage(
-          parent.id,
-          '[后台子代理「${child.title}」${result.ok ? '已完成' : '已结束'}：'
-          '${result.summary}]（完整结论已回填到对应工具结果）',
-          queued: true,
-        );
-      }
-    } catch (e) {
-      // 异常也要回填父工具事件并通知，否则事件永久停在 running。
-      try {
-        await ref.read(agentTasksProvider.notifier).apply(child.copyWith(
-              status: AgentTaskStatus.failed,
-              updatedAt: DateTime.now(),
-              lastEventSummary: '执行出错：$e',
-            ));
-        final events = await _store().getEvents(parent.id);
-        final event = events
-            .whereType<ToolCallEvent>()
-            .where((e) => e.id == toolEventId)
-            .firstOrNull;
-        if (event != null) {
-          await _store().updateToolCall(
-            parent.id,
-            event,
-            state: AgentToolCallState.failure,
-            resultSummary: '子代理执行出错 ✗',
-            resultDetail: '$e',
-          );
-          await _store().appendUserMessage(
-            parent.id,
-            '[后台子代理「${child.title}」执行出错：$e]',
-            queued: true,
-          );
-        }
-      } catch (_) {}
-    } finally {
-      _tokens.remove(child.id);
-      state = {
-        for (final id in state)
-          if (id != child.id) id,
-      };
-      if (state.isEmpty) {
-        unawaited(StreamingKeepAliveService.release('agent'));
-      }
-    }
-  }
-
-  /// 跑子引擎（独立运行时/预算，不再暴露 spawn_subagent 防嵌套），
-  /// 从子任务终态提取结论组装父工具结果。
-  Future<AgentToolResult> _runChildEngine({
-    required AgentTask child,
-    required AgentProfile childProfile,
-    required AgentSessionMode childMode,
-    required AgentCancellationToken childToken,
-    Model? childModel,
-    int? childMaxTurns,
-  }) async {
-    final runtime = await ref
-        .read(agentRuntimeProvider)
-        .forProfile(
-          childProfile,
-          mode: childMode,
-          enableSubagents: false,
-          boundWorkspaceId: child.workspaceId,
-          modelOverride: childModel,
-        );
-    runtime.setHookTimeline(_hookTimelineFor(child.id));
-    runtime.setHookRewake(_hookRewakeFor(child.id));
-    // subagentStart hooks：子智能体启动时触发，fire-and-forget 不阻断；
-    // 收尾校验用 subagentStop hooks（而非主任务的 stop）。
-    unawaited(runtime.lifecycleHooks(AgentHookEvent.subagentStart));
-    final engine = AgentEngine(
-      llm: runtime.llm,
-      tools: runtime.tools,
-      approval: runtime.approval,
-      store: _store(),
-      gateway: _ProviderTaskGateway(this),
-      // 档案 maxTurns 覆盖默认轮数预算（限 1~100 防失控）。
-      budget: _budgetFromSettings(
-        maxRounds: childMaxTurns?.clamp(1, 100) ?? 15,
-        maxTokens: 200000,
-      ),
-      toolStream: ref.read(agentToolStreamProvider.notifier),
-      stopGuard: runtime.subagentStopGuard,
-      hookStopSignal: runtime.hookStopSignal,
-    );
-    await engine.run(child, childToken);
-
-    final finalChild =
-        ref
-            .read(agentTasksProvider)
-            .where((t) => t.id == child.id)
-            .firstOrNull ??
-        child;
-    final events = await _store().getEvents(child.id);
-    final finalText =
-        events.whereType<AssistantTextEvent>().lastOrNull?.text.trim() ?? '';
-    final ok = finalChild.status == AgentTaskStatus.done;
-    final statusLabel = switch (finalChild.status) {
-      AgentTaskStatus.done => '完成',
-      AgentTaskStatus.cancelled => '已终止',
-      AgentTaskStatus.failed => '失败',
-      AgentTaskStatus.paused => '已暂停（预算耗尽或被暂停）',
-      _ => finalChild.status.name,
-    };
-    // finish_task 的总结落在 lastEventSummary；正文取最后一段助手文本。
-    final finishSummary = ok ? finalChild.lastEventSummary.trim() : '';
-    final detail = [
-      if (finalText.isNotEmpty) finalText,
-      if (finishSummary.isNotEmpty && finishSummary != finalText)
-        '结论：$finishSummary',
-    ].join('\n\n');
-    return AgentToolResult(
-      ok: ok,
-      summary: ok ? '子代理完成 · ${finalChild.rounds} 轮' : '子代理$statusLabel ✗',
-      detail: detail.isNotEmpty ? detail : '（子代理未返回结论，状态：$statusLabel）',
-    );
-  }
-
-  static String _titleFrom(String text) =>
-      text.length > 24 ? '${text.substring(0, 24)}…' : text;
+  static String _titleFrom(String text) => agentTaskTitleFrom(text);
 
   AgentEventStore _store() =>
       _storeInstance ??= DriftAgentEventStore(ref.read(agentDaoProvider));
@@ -1226,8 +673,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// 任务进终态后清掉运行级审批宽限（「随任务结束失效」）；
   /// 暂停/等待输入等可续跑状态保留宽限。
   void _clearGraceIfFinished(String taskId) {
-    final task =
-        ref.read(agentTasksProvider).where((t) => t.id == taskId).firstOrNull;
+    final task = ref
+        .read(agentTasksProvider)
+        .where((t) => t.id == taskId)
+        .firstOrNull;
     const finished = {
       AgentTaskStatus.done,
       AgentTaskStatus.cancelled,
@@ -1240,25 +689,6 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   Future<void> _applyTask(AgentTask task) =>
       ref.read(agentTasksProvider.notifier).apply(task);
-}
-
-class _RunnerSubagentLauncher implements AgentSubagentLauncher {
-  _RunnerSubagentLauncher(this._runner);
-
-  final AgentTaskRunner _runner;
-
-  @override
-  Future<AgentToolResult> launch({
-    required AgentTask parent,
-    required AgentToolCallRequest call,
-    required String toolEventId,
-    required AgentCancellationToken cancel,
-  }) => _runner._launchSubagent(
-    parent: parent,
-    call: call,
-    toolEventId: toolEventId,
-    cancel: cancel,
-  );
 }
 
 class _ProviderTaskGateway implements AgentTaskGateway {

@@ -45,6 +45,9 @@ flutter test packages/aetherlink_browser
 
 改完代码后**必须**至少对改动到的文件跑一次 `flutter analyze`。
 
+**禁止全量跑测试**（裸 `flutter test`）：全量非常慢。只按改动对应的
+目录/文件跑（如 `flutter test test/features/agent`），没让你测就别测。
+
 - 已知存量告警：`lib/features/chat/application/chat_controller.dart:3513` 的
   `curly_braces_in_flow_control_structures`，与新改动无关，不要顺手改它。
 - 改到哪跑哪：
