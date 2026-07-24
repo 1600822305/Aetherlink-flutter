@@ -641,7 +641,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
             final turnWorkspaces =
                 ref.read(workspaceStoreProvider).value ?? const <Workspace>[];
             // 用户白名单（工作区管理页 → 工具授权）里的工具跳过审批；
-            // 越出项目工作区 root 的终端命令不受白名单覆盖。
+            // 高危终端命令不受白名单覆盖。
             final needsConfirm = toolNeedsConfirmation(
                   route,
                   call.name,
@@ -716,20 +716,14 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
             if (needsConfirm) {
               final confirm = ref.read(toolConfirmationProvider.notifier);
               // A 免确认 window opened earlier for this same tool lets it run
-              // without prompting again (per-tool, per-conversation)。越出项目
-              // 工作区 root 的终端命令不受免确认窗口覆盖，必须逐条审批
-              // （双作用域设计稿 §4.1 硬要求）。
+              // without prompting again (per-tool, per-conversation)。高危
+              // 终端命令不受免确认窗口覆盖，必须逐条审批。
               final graceUsable = confirm.isGraceActive(
                     turnTopicId,
                     call.name,
                   ) &&
                   !(route is TerminalToolRoute &&
-                      terminalCommandEscapesRoot(
-                        call.name,
-                        args,
-                        workspaces:
-                            ref.read(workspaceStoreProvider).value ?? const [],
-                      ));
+                      terminalCommandIsHighRisk(call.name, args));
               final approved = graceUsable
                   ? true
                   : await confirm.request(

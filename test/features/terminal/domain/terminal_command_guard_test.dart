@@ -42,6 +42,27 @@ void main() {
     expect(blockedCommandReason('chmod 755 script.sh'), isNull);
   });
 
+  group('isHighRiskCommand（预授权不可覆盖的高危档）', () {
+    test('提权/换根、黑名单命中、递归强删 → true', () {
+      expect(isHighRiskCommand('sudo apk add curl'), isTrue);
+      expect(isHighRiskCommand('su -'), isTrue);
+      expect(isHighRiskCommand('proot -0 sh'), isTrue);
+      expect(isHighRiskCommand('rm -rf /'), isTrue);
+      expect(isHighRiskCommand('rm -rf build'), isTrue);
+      expect(isHighRiskCommand('rm --recursive --force node_modules'), isTrue);
+      expect(isHighRiskCommand('dd if=/dev/zero of=/dev/sda'), isTrue);
+    });
+
+    test('普通写/执行命令与越界路径 → false', () {
+      expect(isHighRiskCommand('npm install'), isFalse);
+      expect(isHighRiskCommand('git commit -m x'), isFalse);
+      expect(isHighRiskCommand('cat /etc/passwd'), isFalse);
+      expect(isHighRiskCommand('cd ..'), isFalse);
+      expect(isHighRiskCommand('rm file.txt'), isFalse);
+      expect(isHighRiskCommand('echo hi > a.txt'), isFalse);
+    });
+  });
+
   group('evaluateCommandRisk（双作用域设计稿 §3.2）', () {
     const root = '/root/projects/demo';
     CommandRisk risk(String cmd) => evaluateCommandRisk(cmd, root: root);

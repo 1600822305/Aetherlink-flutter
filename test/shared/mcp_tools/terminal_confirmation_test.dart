@@ -148,114 +148,67 @@ void main() {
     });
   });
 
-  group('terminalCommandStaysInBoundRoot（auto 模式免审边界）', () {
-    test('指向绑定工作区且命令不越界 → true', () {
+  group('terminalCommandIsHighRisk（白名单/免确认窗口/auto 模式不覆盖）', () {
+    test('提权/换根、递归强删、黑名单 → true', () {
       expect(
-        terminalCommandStaysInBoundRoot(
-          'terminal_execute',
-          const {'command': 'npm install', 'workspace': 'ws-proj'},
-          boundWorkspace: projectWs,
-          workspaces: workspaces,
-        ),
+        terminalCommandIsHighRisk('terminal_execute', const {
+          'command': 'sudo apk add curl',
+        }),
+        isTrue,
+      );
+      expect(
+        terminalCommandIsHighRisk('terminal_execute', const {
+          'command': 'rm -rf build',
+        }),
+        isTrue,
+      );
+      expect(
+        terminalCommandIsHighRisk('terminal_execute', const {
+          'command': 'mkfs.ext4 /dev/sda1',
+        }),
         isTrue,
       );
     });
 
-    test('越界命令 → false', () {
+    test('普通写/执行命令、越界路径 → false（可被预授权覆盖）', () {
       expect(
-        terminalCommandStaysInBoundRoot(
-          'terminal_execute',
-          const {'command': 'cat /etc/passwd', 'workspace': 'ws-proj'},
-          boundWorkspace: projectWs,
-          workspaces: workspaces,
-        ),
-        isFalse,
-      );
-    });
-
-    test('未指定工作区 / 指向其它工作区 / full 模式 → false', () {
-      expect(
-        terminalCommandStaysInBoundRoot(
-          'terminal_execute',
-          const {'command': 'ls'},
-          boundWorkspace: projectWs,
-          workspaces: workspaces,
-        ),
+        terminalCommandIsHighRisk('terminal_execute', const {
+          'command': 'npm install',
+        }),
         isFalse,
       );
       expect(
-        terminalCommandStaysInBoundRoot(
-          'terminal_execute',
-          const {'command': 'ls', 'workspace': 'ws-full'},
-          boundWorkspace: projectWs,
-          workspaces: workspaces,
-        ),
-        isFalse,
-      );
-      expect(
-        terminalCommandStaysInBoundRoot(
-          'terminal_execute',
-          const {'command': 'ls', 'workspace': 'ws-full'},
-          boundWorkspace: fullWs,
-          workspaces: workspaces,
-        ),
-        isFalse,
-      );
-    });
-
-    test('非执行类工具 → false', () {
-      expect(
-        terminalCommandStaysInBoundRoot(
-          'terminal_session',
-          const {'action': 'write', 'workspace': 'ws-proj'},
-          boundWorkspace: projectWs,
-          workspaces: workspaces,
-        ),
-        isFalse,
-      );
-    });
-  });
-
-  group('terminalCommandEscapesRoot（免确认窗口不覆盖越界，§4.1）', () {
-    test('project 模式越界命令 → true', () {
-      expect(
-        terminalCommandEscapesRoot(
-          'terminal_execute',
-          const {'command': 'cat /etc/passwd', 'workspace': 'ws-proj'},
-          workspaces: workspaces,
-        ),
-        isTrue,
-      );
-      expect(
-        terminalCommandEscapesRoot(
-          'terminal_execute',
-          const {'command': 'cd ..', 'workspace': 'ws-proj'},
-          workspaces: workspaces,
-        ),
-        isTrue,
-      );
-    });
-
-    test('root 内命令 / full 模式 / 未指定工作区 → false', () {
-      expect(
-        terminalCommandEscapesRoot(
-          'terminal_execute',
-          const {'command': 'npm install', 'workspace': 'ws-proj'},
-          workspaces: workspaces,
-        ),
-        isFalse,
-      );
-      expect(
-        terminalCommandEscapesRoot(
-          'terminal_execute',
-          const {'command': 'cat /etc/passwd', 'workspace': 'ws-full'},
-          workspaces: workspaces,
-        ),
-        isFalse,
-      );
-      expect(
-        terminalCommandEscapesRoot('terminal_execute', const {
+        terminalCommandIsHighRisk('terminal_execute', const {
           'command': 'cat /etc/passwd',
+        }),
+        isFalse,
+      );
+      expect(
+        terminalCommandIsHighRisk('terminal_execute', const {
+          'command': 'cd ..',
+        }),
+        isFalse,
+      );
+    });
+
+    test('terminal_session：仅 write 且输入高危 → true', () {
+      expect(
+        terminalCommandIsHighRisk('terminal_session', const {
+          'action': 'write',
+          'input': 'sudo su -',
+        }),
+        isTrue,
+      );
+      expect(
+        terminalCommandIsHighRisk('terminal_session', const {
+          'action': 'write',
+          'input': 'y',
+        }),
+        isFalse,
+      );
+      expect(
+        terminalCommandIsHighRisk('terminal_session', const {
+          'action': 'list',
         }),
         isFalse,
       );

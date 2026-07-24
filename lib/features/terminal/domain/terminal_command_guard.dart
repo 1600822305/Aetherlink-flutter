@@ -51,12 +51,25 @@ String? blockedCommandReason(String command) {
   return null;
 }
 
+/// 递归强制删除（rm -rf / rm -fr / --recursive --force），不限目标。
+final RegExp _kRecursiveForceDeletePattern = RegExp(
+  r'\brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*|--recursive\s+--force|--force\s+--recursive)\b',
+);
+
+/// 高危命令：提权/换根（su/sudo/chroot/proot）、命中命令黑名单、
+/// 递归强制删除。这类命令强制逐条 HITL 审批，白名单/免确认窗口/
+/// auto 模式均不覆盖。
+bool isHighRiskCommand(String command) =>
+    blockedCommandReason(command) != null ||
+    _kScopeEscapePattern.hasMatch(command) ||
+    _kRecursiveForceDeletePattern.hasMatch(command);
+
 /// 项目模式下一条命令的风险评级（双作用域设计稿 §3.2）。
 ///
 /// - [safeInRoot]   : root 内的低危只读命令，免 HITL 审批直接放行。
 /// - [needsApproval]: 默认档，走标准 HITL 审批。
-/// - [escapesRoot]  : 疑似越出工作区 root，强制 HITL（硬要求，任何预授权
-///                    都不覆盖，§4 需求方结论）。
+/// - [escapesRoot]  : 疑似越出工作区 root，默认走 HITL 审批（可被白名单/
+///                    auto 模式覆盖；仅 [isHighRiskCommand] 不可覆盖）。
 enum CommandRisk { safeInRoot, needsApproval, escapesRoot }
 
 /// root 内免审批的只读命令白名单（首个词条匹配；管道/连接的每一段都要命中）。

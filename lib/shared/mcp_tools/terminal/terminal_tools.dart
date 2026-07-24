@@ -78,43 +78,19 @@ bool terminalToolNeedsConfirmation(
       CommandRisk.safeInRoot;
 }
 
-/// Whether this terminal call escapes its project workspace root and must
-/// therefore always prompt — 免确认窗口（任务级预授权）不覆盖越界命令
-/// （双作用域设计稿 §4.1 硬要求）。
-bool terminalCommandEscapesRoot(
-  String toolName,
-  Map<String, Object?> args, {
-  List<Workspace> workspaces = const [],
-}) {
-  if (toolName != 'terminal_execute') return false;
-  final workspace = _matchWorkspaceArg(args, workspaces);
-  if (workspace == null || workspace.scope != WorkspaceScope.project) {
-    return false;
+/// 高危终端调用（提权/换根、命中黑名单、递归强删，见
+/// [isHighRiskCommand]）必须逐条审批 —— 白名单/免确认窗口/auto 模式
+/// 均不覆盖；其余命令可被预授权放行。
+bool terminalCommandIsHighRisk(String toolName, Map<String, Object?> args) {
+  switch (toolName) {
+    case 'terminal_execute':
+      return isHighRiskCommand(args['command']?.toString() ?? '');
+    // stdin 写入可驱动会话里的任意程序，按命令同标准评级。
+    case 'terminal_session':
+      if (args['action']?.toString() != 'write') return false;
+      return isHighRiskCommand(args['input']?.toString() ?? '');
   }
-  final command = args['command']?.toString() ?? '';
-  return evaluateCommandRisk(command, root: workspace.root) ==
-      CommandRisk.escapesRoot;
-}
-
-/// auto 模式免审判定：terminal_execute 是否明确指向 [boundWorkspace]
-/// （任务绑定的项目工作区）且命令未越出其 root。未带 `workspace` 参数
-/// （落内置终端默认目标）或指向其它工作区时不免审。
-bool terminalCommandStaysInBoundRoot(
-  String toolName,
-  Map<String, Object?> args, {
-  required Workspace boundWorkspace,
-  List<Workspace> workspaces = const [],
-}) {
-  if (toolName != 'terminal_execute') return false;
-  final target = _matchWorkspaceArg(args, workspaces);
-  if (target == null ||
-      target.id != boundWorkspace.id ||
-      target.scope != WorkspaceScope.project) {
-    return false;
-  }
-  final command = args['command']?.toString() ?? '';
-  return evaluateCommandRisk(command, root: target.root) !=
-      CommandRisk.escapesRoot;
+  return false;
 }
 
 /// 同步版的 `workspace` 参数解析（编号 / ID / 名称），解析不到返回 null。
