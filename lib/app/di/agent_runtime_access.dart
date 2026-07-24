@@ -1369,6 +1369,10 @@ class _PolicyApprovalGate implements ApprovalGate {
     AgentTask task,
     List<Workspace> workspaces,
   ) async {
+    // 白名单与用户全局规则是启动后异步从库加载的：判定前先等加载
+    // 完成，否则重启后立刻续跑的任务会拿到空规则层，永久授权失效。
+    await ref.read(toolAuthPolicyProvider.notifier).ensureLoaded();
+    await ref.read(agentPermissionRulesProvider.notifier).ensureLoaded();
     final whitelist = ref.read(toolAuthPolicyProvider).autoApproved;
     return [
       [

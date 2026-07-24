@@ -154,15 +154,21 @@ final toolAuthPolicyProvider =
 );
 
 class ToolAuthPolicyNotifier extends Notifier<ToolAuthPolicy> {
+  late Future<void> _ready;
+
+  /// 白名单加载完成的信号：审批门判定前 await，否则重启后紧接的
+  /// 首次审批会读到空白名单，永久授权看似失效。
+  Future<void> ensureLoaded() => _ready;
+
   @override
   ToolAuthPolicy build() {
-    ref
+    _ready = ref
         .read(appSettingsStoreProvider)
         .getSetting(kToolAuthPolicyKey)
         .then((raw) {
       final policy = ToolAuthPolicy.decode(raw);
       if (policy != null) state = policy;
-    });
+    }).catchError((_) {});
     return const ToolAuthPolicy();
   }
 
