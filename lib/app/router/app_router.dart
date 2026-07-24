@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_home_page.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page/chat_page.dart';
 import 'package:aetherlink_flutter/features/buddy/presentation/buddy_page.dart';
 import 'package:aetherlink_flutter/features/buddy/presentation/buddy_settings_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
