@@ -1,4 +1,5 @@
 import 'package:aetherlink_flutter/shared/config/builtin_skills/browser_skill.dart';
+import 'package:aetherlink_flutter/shared/config/builtin_skills/mcp_manage_skill.dart';
 import 'package:aetherlink_flutter/shared/config/builtin_skills/subagent_dispatch_skill.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 
@@ -12,6 +13,7 @@ import 'package:aetherlink_flutter/shared/domain/skill.dart';
 const List<Skill> kBuiltinSkills = [
   kSubagentDispatchSkill,
   kBrowserSkill,
+  kMcpManageSkill,
 ];
 
 /// 曾随旧版本种子写入持久层、现已下架的内置 skill id。
