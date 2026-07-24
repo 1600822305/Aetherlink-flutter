@@ -88,6 +88,10 @@ dependencies:
   # 只有 lib/features/terminal/ 的 data 层允许 import 它。见 docs/内置终端PRoot-设计文档.md。
   aetherlink_terminal:
     path: packages/aetherlink_terminal
+  # 进程内 ripgrep 式搜索（Rust cdylib + dart:ffi，jniLibs 预编译）。
+  # 只有 ProotLocalBackend 允许 import 它。见 packages/aetherlink_ripgrep/README.md。
+  aetherlink_ripgrep:
+    path: packages/aetherlink_ripgrep
   # In-app performance monitor (外观设置→开发者工具→显示性能监控). Pure-Dart,
   # zero extra deps; per-thread frame timing + AI-friendly JSON export.
   aetherlink_perf:

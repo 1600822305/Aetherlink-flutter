@@ -1,0 +1,25 @@
+name: aetherlink_ripgrep
+description: "In-process ripgrep-style file search via dart:ffi: a Rust cdylib (native/) walks the host filesystem and returns name/content hits with matched lines in one call. Used by the PRoot workspace backend; see README.md."
+version: 0.0.1
+homepage:
+publish_to: none
+
+environment:
+  sdk: ^3.9.2
+  flutter: '>=3.3.0'
+
+dependencies:
+  ffi: ^2.1.0
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
