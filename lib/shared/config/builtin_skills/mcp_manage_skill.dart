@@ -12,7 +12,7 @@ const Skill kMcpManageSkill = Skill(
   emoji: '🧩',
   tags: ['MCP', '工具', '配置'],
   source: SkillSource.builtin,
-  version: '1.1.0',
+  version: '1.2.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -21,7 +21,9 @@ const Skill kMcpManageSkill = Skill(
 `mcp_manage` 管理全局 MCP 服务器配置（与设置页同一份，所有对话/任务共用，
 持久保存）。五个 action：
 
-- `list`：列出已配置的服务器（id、名称、类型、启用状态）。
+- `list`：列出已配置的**外部**服务器（id、名称、类型、启用状态）；
+  内置工具（@aether/…）不在本工具管辖范围，不会出现在列表里，
+  也无法 remove/toggle。
 - `add`：添加服务器（name + config），默认添加后立即启用。
 - `remove`：删除服务器（按 name 或 id）。
 - `toggle`：启用/停用（name/id + enabled）。
