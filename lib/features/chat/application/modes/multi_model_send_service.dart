@@ -1,11 +1,36 @@
-// 多模型 sibling 组相关的会话操作，从 chat_controller.dart 主体拆出的 part 文件：
+// 多模型 sibling 组相关的会话操作，从 ChatController 的 part/mixin 服务化：
 // 多模型对比发送、sibling 选择/折叠同步、布局切换、失败重试、整组删除、
 // 模型组合（combo）顺序执行、以及根据消息自身模型解析 CurrentModel。
-// 与 _streamInto / _ensureTopic / _emitTurn 等私有成员强耦合，因此以
-// part + mixin 的形式与 ChatController 同库拆分（mixin 里声明所依赖的
-// 私有成员抽象签名，由 ChatController 本体提供实现）。
+// 依赖经 [ChatModeContext] 显式注入，不再靠 mixin 的 this 共享私有成员。
 
-part of 'chat_controller.dart';
+import 'dart:async';
+
+import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/app/di/memory_access.dart';
+import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/core/error/failure.dart';
+import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_selection_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
+import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_context.dart';
+import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/llm_request_params.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/multi_model_message_style.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/features/settings/application/model_combo_providers.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
 
 /// One assistant sibling of a multi-model turn: the chosen model and the
 /// streaming message/block/view created for it. Used by [sendMultiModel] to
@@ -19,128 +44,11 @@ typedef _MultiModelSibling = ({
   ChatMessageView assistantView,
 });
 
-mixin _ChatMultiModel on _$ChatController {
-  // --- 由 ChatController 本体提供的成员 ---
+/// 多模型对比 / 模型组合模式的发送链路（[ChatController] 的协作对象）。
+class MultiModelSendService {
+  const MultiModelSendService(this._ctx);
 
-  set _truncatedMessageId(String? value);
-  String get _assistantId;
-  String? get _topicId;
-  ChatRepository get _repo;
-
-  Future<String> _ensureTopic();
-  void _emitTurn(
-    String turnTopicId,
-    List<ChatMessageView> views, {
-    required bool streaming,
-  });
-  Future<McpSetup> _mcpSetup();
-  ({int contextCount, int? maxTokens}) _contextSettings();
-
-  ({
-    double? temperature,
-    double? topP,
-    int? topK,
-    double? frequencyPenalty,
-    double? presencePenalty,
-    int? seed,
-    List<String>? stopSequences,
-    String? responseFormat,
-    bool? parallelToolCalls,
-    bool? logprobs,
-    String? user,
-    String? reasoningEffort,
-    int? thinkingBudget,
-    bool? includeThoughts,
-    bool? cacheControl,
-    String? structuredOutputMode,
-    bool? webSearchEnabled,
-    bool? codeExecutionEnabled,
-    bool? useSearchGrounding,
-    String? safetyLevel,
-    bool streamOutput,
-    Map<String, dynamic>? customParameters,
-  })
-  _parameterFields();
-
-  Future<List<AssistantRegex>?> _sendingRegexRules();
-  Future<List<LlmMessage>> _buildLlmMessages(
-    Iterable<ChatMessageView> views, {
-    required Model chatModel,
-    List<AssistantRegex>? regexRules,
-    required McpMode toolMode,
-  });
-  String _requestContent(
-    ChatMessageView view, {
-    List<AssistantRegex>? regexRules,
-  });
-  String? _systemFor(McpSetup mcp, String? base);
-  Future<String?> _buildSystemPrompt({
-    required String modelName,
-    required String modelId,
-    required String providerName,
-  });
-  Future<String?> _buildSystemPromptWith(
-    String? memorySection, {
-    required String modelName,
-    required String modelId,
-    required String providerName,
-  });
-  String? _joinInjectionSections(String? a, String? b);
-  List<MessageBlock> _knowledgeReferenceBlocks({
-    required String messageId,
-    required DateTime createdAt,
-    required ChatKnowledgeInjection injection,
-  });
-  List<MessageBlock> _memoryInjectionBlocks({
-    required String messageId,
-    required DateTime createdAt,
-    required ChatMemoryInjection injection,
-  });
-  MessageBlock _attachmentBlock({
-    required String messageId,
-    required DateTime createdAt,
-    required ComposerAttachment attachment,
-  });
-
-  Future<void> _streamInto({
-    required String turnTopicId,
-    required LlmChatRequest request,
-    required Model effective,
-    required ModelProvider provider,
-    required String assistantMessageId,
-    required String assistantBlockId,
-    required DateTime assistantTime,
-    required List<ChatMessageView> views,
-    required ChatMessageView assistantView,
-    required McpSetup mcp,
-    List<MessageBlock> leadingBlocks,
-    bool finalizeTurn,
-  });
-
-  Future<void> _persistMessageBlocks({
-    required String messageId,
-    required MessageStatus status,
-    required List<MessageBlock> blocks,
-  });
-  Future<ChatMessageView> _reloadView(
-    String messageId,
-    ChatMessageView fallback,
-  );
-  void _replace(List<ChatMessageView> views, ChatMessageView view);
-  String _errorMessage(Object error);
-
-  Future<void> _refreshTopicPreview([String? forTopicId]);
-  Future<void> _generateTitle([String? forTopicId]);
-  Future<void> _maybeGenerateSuggestions(
-    String turnTopicId,
-    List<ChatMessageView> views,
-  );
-  Future<void> _maybeExtractMemory(String turnTopicId);
-
-  Future<void> deleteMessage(String messageId, {bool cascade = false});
-  Future<void> regenerate(String messageId, {CurrentModel? withModel});
-
-  // --- 搬出的方法 ---
+  final ChatModeContext _ctx;
 
   /// Sends a user message and streams a parallel multi-model reply: one
   /// assistant sibling per [models], all sharing the same parent (the user
@@ -155,11 +63,11 @@ mixin _ChatMultiModel on _$ChatController {
   }) async {
     final trimmed = text.trim();
     if ((trimmed.isEmpty && attachments.isEmpty) || models.isEmpty) return;
-    final snapshot = state.value ?? ChatState.initial();
+    final snapshot = _ctx.snapshot ?? ChatState.initial();
     if (snapshot.isStreaming) return;
 
-    _truncatedMessageId = null;
-    final topicId = await _ensureTopic();
+    _ctx.clearTruncated();
+    final topicId = await _ctx.ensureTopic();
     final now = DateTime.now();
 
     // 1. User message (records the chosen models in `mentions`), persisted and
@@ -176,7 +84,7 @@ mixin _ChatMultiModel on _$ChatController {
           content: trimmed,
         ),
       for (final attachment in attachments)
-        _attachmentBlock(
+        _ctx.attachmentBlock(
           messageId: userMessageId,
           createdAt: now,
           attachment: attachment,
@@ -185,16 +93,16 @@ mixin _ChatMultiModel on _$ChatController {
     final userMessage = Message(
       id: userMessageId,
       role: MessageRole.user,
-      assistantId: _assistantId,
+      assistantId: _ctx.assistantId,
       topicId: topicId,
       createdAt: now,
       status: MessageStatus.success,
       mentions: <Model>[for (final m in models) m.model],
       blocks: <String>[for (final block in userBlocks) block.id],
     );
-    await _repo.saveMessage(userMessage);
+    await _ctx.repo.saveMessage(userMessage);
     for (final block in userBlocks) {
-      await _repo.saveMessageBlock(block);
+      await _ctx.repo.saveMessageBlock(block);
     }
 
     // 2. One sibling-group id for this turn — unique within the topic so the
@@ -231,7 +139,7 @@ mixin _ChatMultiModel on _$ChatController {
       final assistantMessage = Message(
         id: assistantMessageId,
         role: MessageRole.assistant,
-        assistantId: _assistantId,
+        assistantId: _ctx.assistantId,
         topicId: topicId,
         createdAt: assistantTime,
         status: MessageStatus.streaming,
@@ -242,8 +150,8 @@ mixin _ChatMultiModel on _$ChatController {
         foldSelected: i == 0,
         blocks: <String>[assistantBlockId],
       );
-      await _repo.saveMessage(assistantMessage);
-      await _repo.saveMessageBlock(
+      await _ctx.repo.saveMessage(assistantMessage);
+      await _ctx.repo.saveMessageBlock(
         MessageBlock.mainText(
           id: assistantBlockId,
           messageId: assistantMessageId,
@@ -282,7 +190,7 @@ mixin _ChatMultiModel on _$ChatController {
       userView,
       ...assistantViews,
     ];
-    _emitTurn(topicId, views, streaming: true);
+    _ctx.emitTurn(topicId, views, streaming: true);
 
     // 4/5. Everything after the streaming:true emit runs inside try/finally:
     //    an escaped exception anywhere here would skip step 6 and leave the
@@ -292,23 +200,23 @@ mixin _ChatMultiModel on _$ChatController {
       // 4. Shared request context: the history up to and including the user
       //    turn. The sibling placeholders are excluded so every model answers
       //    the same conversation independently.
-      final mcp = await _mcpSetup();
-      final ctx = _contextSettings();
-      final params = _parameterFields();
-      final regexRules = await _sendingRegexRules();
+      final mcp = await _ctx.mcpSetup();
+      final ctx = _ctx.contextSettings();
+      final params = _ctx.parameterFields();
+      final regexRules = await _ctx.sendingRegexRules();
       final baseViews = <ChatMessageView>[...snapshot.messages, userView];
-      final contextViews = ChatController._trimViews(
-        ChatController._filterSiblingsForContext(baseViews),
+      final contextViews = _ctx.trimViews(
+        _ctx.filterSiblingsForContext(baseViews),
         ctx.contextCount,
       );
       final memInjection = await collectChatMemoryInjection(
-        ref,
-        assistantId: _assistantId,
+        _ctx.ref,
+        assistantId: _ctx.assistantId,
         query: trimmed,
       );
       final kbInjection = await collectChatKnowledgeInjection(
-        ref,
-        baseIds: ref.read(mountedKnowledgeBasesProvider),
+        _ctx.ref,
+        baseIds: _ctx.ref.read(mountedKnowledgeBasesProvider),
         query: trimmed,
       );
 
@@ -345,12 +253,12 @@ mixin _ChatMultiModel on _$ChatController {
     } finally {
       // 6. Whole turn done: end streaming and run the once-per-turn side
       //    effects.
-      _emitTurn(topicId, views, streaming: false);
+      _ctx.emitTurn(topicId, views, streaming: false);
     }
-    unawaited(_refreshTopicPreview(topicId));
-    unawaited(_generateTitle(topicId));
-    unawaited(_maybeGenerateSuggestions(topicId, List.of(views)));
-    unawaited(_maybeExtractMemory(topicId));
+    unawaited(_ctx.refreshTopicPreview(topicId));
+    unawaited(_ctx.generateTitle(topicId));
+    unawaited(_ctx.maybeGenerateSuggestions(topicId, List.of(views)));
+    unawaited(_ctx.maybeExtractMemory(topicId));
   }
 
   /// Builds and streams one multi-model sibling, converting any failure into
@@ -366,36 +274,12 @@ mixin _ChatMultiModel on _$ChatController {
     required List<ChatMessageView> contextViews,
     required ChatMemoryInjection memInjection,
     required ChatKnowledgeInjection kbInjection,
-    required ({
-      double? temperature,
-      double? topP,
-      int? topK,
-      double? frequencyPenalty,
-      double? presencePenalty,
-      int? seed,
-      List<String>? stopSequences,
-      String? responseFormat,
-      bool? parallelToolCalls,
-      bool? logprobs,
-      String? user,
-      String? reasoningEffort,
-      int? thinkingBudget,
-      bool? includeThoughts,
-      bool? cacheControl,
-      String? structuredOutputMode,
-      bool? webSearchEnabled,
-      bool? codeExecutionEnabled,
-      bool? useSearchGrounding,
-      String? safetyLevel,
-      bool streamOutput,
-      Map<String, dynamic>? customParameters,
-    })
-    params,
+    required LlmParameterFields params,
   }) async {
     try {
       final effective = sibling.effective;
       final provider = sibling.current.provider;
-      final messages = await _buildLlmMessages(
+      final messages = await _ctx.buildLlmMessages(
         contextViews,
         chatModel: effective,
         regexRules: regexRules,
@@ -403,10 +287,13 @@ mixin _ChatMultiModel on _$ChatController {
       );
       final request = LlmChatRequest(
         model: effective,
-        system: _systemFor(
+        system: _ctx.systemFor(
           mcp,
-          await _buildSystemPromptWith(
-            _joinInjectionSections(memInjection.section, kbInjection.section),
+          await _ctx.buildSystemPromptWith(
+            _ctx.joinInjectionSections(
+              memInjection.section,
+              kbInjection.section,
+            ),
             modelName: effective.name,
             modelId: effective.id,
             providerName: provider.name,
@@ -441,7 +328,7 @@ mixin _ChatMultiModel on _$ChatController {
         extraHeaders: effective.providerExtraHeaders,
         extraBody: effective.providerExtraBody,
       );
-      await _streamInto(
+      await _ctx.streamInto(
         request: request,
         effective: effective,
         provider: provider,
@@ -453,12 +340,12 @@ mixin _ChatMultiModel on _$ChatController {
         assistantView: sibling.assistantView,
         mcp: mcp,
         leadingBlocks: [
-          ..._memoryInjectionBlocks(
+          ..._ctx.memoryInjectionBlocks(
             messageId: sibling.assistantMessageId,
             createdAt: sibling.assistantTime,
             injection: memInjection,
           ),
-          ..._knowledgeReferenceBlocks(
+          ..._ctx.knowledgeReferenceBlocks(
             messageId: sibling.assistantMessageId,
             createdAt: sibling.assistantTime,
             injection: kbInjection,
@@ -467,7 +354,7 @@ mixin _ChatMultiModel on _$ChatController {
         finalizeTurn: false,
       );
     } on Object catch (error) {
-      // Anything that slipped past _streamInto's own handling (request
+      // Anything that slipped past streamInto's own handling (request
       // building, gateway construction, terminal persistence): mark this
       // sibling errored so the group renders the failure and 重试失败 can
       // re-run it.
@@ -489,9 +376,9 @@ mixin _ChatMultiModel on _$ChatController {
     required List<ChatMessageView> views,
     required Object error,
   }) async {
-    final messageText = _errorMessage(error);
+    final messageText = _ctx.errorMessage(error);
     try {
-      await _persistMessageBlocks(
+      await _ctx.persistMessageBlocks(
         messageId: sibling.assistantMessageId,
         status: MessageStatus.error,
         blocks: <MessageBlock>[
@@ -509,22 +396,22 @@ mixin _ChatMultiModel on _$ChatController {
     } on Object catch (_) {
       // Best-effort persistence — the in-memory view below still shows it.
     }
-    final errored = await _reloadView(
+    final errored = await _ctx.reloadView(
       sibling.assistantMessageId,
       sibling.assistantView.copyWith(
         status: MessageStatus.error,
         errorText: messageText,
       ),
     );
-    _replace(views, errored);
-    _emitTurn(topicId, views, streaming: true);
+    _ctx.replace(views, errored);
+    _ctx.emitTurn(topicId, views, streaming: true);
   }
 
   /// The next free sibling-group id for [topicId]: one past the largest existing
   /// `siblingsGroupId`, so a fresh multi-model group never collides with prior
   /// groups in the same topic.
   Future<int> _nextSiblingsGroupId(String topicId) async {
-    final messages = await _repo.getMessagesByTopicId(topicId);
+    final messages = await _ctx.repo.getMessagesByTopicId(topicId);
     var max = 0;
     for (final m in messages) {
       if (m.siblingsGroupId > max) max = m.siblingsGroupId;
@@ -537,35 +424,35 @@ mixin _ChatMultiModel on _$ChatController {
   /// the flag on its group peers). The next user message will hang off it. A
   /// no-op while streaming or when the message isn't a grouped sibling.
   Future<void> selectSibling(String messageId) async {
-    final snapshot = state.value;
+    final snapshot = _ctx.snapshot;
     if (snapshot == null || snapshot.isStreaming) return;
-    final topicId = _topicId;
+    final topicId = _ctx.topicId;
     if (topicId == null) return;
-    final message = await _repo.getMessage(messageId);
+    final message = await _ctx.repo.getMessage(messageId);
     if (message == null || message.siblingsGroupId <= 0) return;
     if (message.foldSelected == true) return;
 
-    await _syncFoldSelectedForGroup(topicId, messageId);
-    await _repo.setActiveNode(topicId, messageId);
-    ref.read(chatRefreshProvider.notifier).bump();
+    await syncFoldSelectedForGroup(topicId, messageId);
+    await _ctx.repo.setActiveNode(topicId, messageId);
+    _ctx.ref.read(chatRefreshProvider.notifier).bump();
   }
 
   /// Makes [nodeId] the `foldSelected` member of its multi-model group (clearing
   /// the flag on its peers), so the 对比 group's 折叠 selection stays in sync with
   /// whatever made [nodeId] the active branch — whether that was the in-group
-  /// model chip ([selectSibling]) or the 分支管理 canvas ([switchToBranch]). A
+  /// model chip ([selectSibling]) or the 分支管理 canvas (`switchToBranch`). A
   /// no-op when [nodeId] isn't a grouped sibling or is already selected.
-  Future<void> _syncFoldSelectedForGroup(String topicId, String nodeId) async {
-    final message = await _repo.getMessage(nodeId);
+  Future<void> syncFoldSelectedForGroup(String topicId, String nodeId) async {
+    final message = await _ctx.repo.getMessage(nodeId);
     if (message == null || message.siblingsGroupId <= 0) return;
     if (message.foldSelected == true) return;
-    final all = await _repo.getMessagesByTopicId(topicId);
+    final all = await _ctx.repo.getMessagesByTopicId(topicId);
     for (final m in all) {
       if (m.parentId == message.parentId &&
           m.siblingsGroupId == message.siblingsGroupId) {
         final selected = m.id == nodeId;
         if ((m.foldSelected ?? false) != selected) {
-          await _repo.saveMessage(m.copyWith(foldSelected: selected));
+          await _ctx.repo.saveMessage(m.copyWith(foldSelected: selected));
         }
       }
     }
@@ -581,9 +468,11 @@ mixin _ChatMultiModel on _$ChatController {
     MultiModelMessageStyle style,
   ) async {
     for (final id in memberIds) {
-      final message = await _repo.getMessage(id);
+      final message = await _ctx.repo.getMessage(id);
       if (message == null || message.multiModelMessageStyle == style) continue;
-      await _repo.saveMessage(message.copyWith(multiModelMessageStyle: style));
+      await _ctx.repo.saveMessage(
+        message.copyWith(multiModelMessageStyle: style),
+      );
     }
   }
 
@@ -591,13 +480,13 @@ mixin _ChatMultiModel on _$ChatController {
   /// `handleRetryFailed`, which calls `onRegenerate` for each failed message).
   /// No-op while streaming.
   Future<void> retryFailedSiblings(List<String> memberIds) async {
-    final snapshot = state.value;
+    final snapshot = _ctx.snapshot;
     if (snapshot == null || snapshot.isStreaming) return;
     for (final id in memberIds) {
       final failed = snapshot.messages.any(
         (v) => v.id == id && v.status == MessageStatus.error,
       );
-      if (failed) await regenerate(id);
+      if (failed) await _ctx.regenerate(id);
     }
   }
 
@@ -605,21 +494,21 @@ mixin _ChatMultiModel on _$ChatController {
   /// sibling replies — by cascade-removing the subtree rooted at [askId] (port
   /// of the web `handleDeleteGroup`). No-op while streaming.
   Future<void> deleteMultiModelGroup(String askId) async {
-    final snapshot = state.value;
+    final snapshot = _ctx.snapshot;
     if (snapshot == null || snapshot.isStreaming) return;
-    await deleteMessage(askId, cascade: true);
+    await _ctx.deleteMessage(askId, cascade: true);
   }
 
   /// Sends a user message and streams the combo (sequential) response.
   /// Phase 1: streams the thinking model's reasoning into a thinking block.
   /// Phase 2: streams the generating model's answer into the main text block.
-  Future<void> _sendCombo(
+  Future<void> sendCombo(
     String text,
     ComboResolution resolution, {
     List<ComposerAttachment> attachments = const <ComposerAttachment>[],
   }) async {
-    final snapshot = state.value ?? ChatState.initial();
-    final topicId = await _ensureTopic();
+    final snapshot = _ctx.snapshot ?? ChatState.initial();
+    final topicId = await _ctx.ensureTopic();
     final now = DateTime.now();
     final thinking = resolution.thinkingModel;
     final generating = resolution.generatingModel;
@@ -638,7 +527,7 @@ mixin _ChatMultiModel on _$ChatController {
           content: text,
         ),
       for (final attachment in attachments)
-        _attachmentBlock(
+        _ctx.attachmentBlock(
           messageId: userMessageId,
           createdAt: now,
           attachment: attachment,
@@ -647,15 +536,15 @@ mixin _ChatMultiModel on _$ChatController {
     final userMessage = Message(
       id: userMessageId,
       role: MessageRole.user,
-      assistantId: _assistantId,
+      assistantId: _ctx.assistantId,
       topicId: topicId,
       createdAt: now,
       status: MessageStatus.success,
       blocks: <String>[for (final block in userBlocks) block.id],
     );
-    await _repo.saveMessage(userMessage);
+    await _ctx.repo.saveMessage(userMessage);
     for (final block in userBlocks) {
-      await _repo.saveMessageBlock(block);
+      await _ctx.repo.saveMessageBlock(block);
     }
 
     // 2. Assistant message with a thinking block + main text block.
@@ -664,7 +553,7 @@ mixin _ChatMultiModel on _$ChatController {
     final thinkingBlockId = generateId('block');
     final mainBlockId = generateId('block');
 
-    // Synthetic model carrying the combo display label so _viewOf reads the
+    // Synthetic model carrying the combo display label so `viewOf` reads the
     // correct name when reconstructing from DB.
     final comboLabel = '${thinking.model.name} → ${generating.model.name}';
     final comboModel = Model(
@@ -676,7 +565,7 @@ mixin _ChatMultiModel on _$ChatController {
     final assistantMessage = Message(
       id: assistantMessageId,
       role: MessageRole.assistant,
-      assistantId: _assistantId,
+      assistantId: _ctx.assistantId,
       topicId: topicId,
       createdAt: assistantTime,
       status: MessageStatus.streaming,
@@ -684,8 +573,8 @@ mixin _ChatMultiModel on _$ChatController {
       askId: userMessageId,
       blocks: <String>[thinkingBlockId, mainBlockId],
     );
-    await _repo.saveMessage(assistantMessage);
-    await _repo.saveMessageBlock(
+    await _ctx.repo.saveMessage(assistantMessage);
+    await _ctx.repo.saveMessageBlock(
       MessageBlock.thinking(
         id: thinkingBlockId,
         messageId: assistantMessageId,
@@ -694,7 +583,7 @@ mixin _ChatMultiModel on _$ChatController {
         content: '',
       ),
     );
-    await _repo.saveMessageBlock(
+    await _ctx.repo.saveMessageBlock(
       MessageBlock.mainText(
         id: mainBlockId,
         messageId: assistantMessageId,
@@ -721,31 +610,31 @@ mixin _ChatMultiModel on _$ChatController {
       providerName: '模型组合',
     );
     var views = [...snapshot.messages, userView, assistantView];
-    _emitTurn(topicId, views, streaming: true);
+    _ctx.emitTurn(topicId, views, streaming: true);
 
     // 3. Build messages for the thinking model request.
-    final ctx = _contextSettings();
-    final contextViews = ChatController._trimViews(
-      ChatController._filterSiblingsForContext(views),
+    final ctx = _ctx.contextSettings();
+    final contextViews = _ctx.trimViews(
+      _ctx.filterSiblingsForContext(views),
       ctx.contextCount,
     );
-    final regexRules = await _sendingRegexRules();
+    final regexRules = await _ctx.sendingRegexRules();
     final llmMessages = [
       for (final view in contextViews)
         if (view.role != MessageRole.assistant || view.text.isNotEmpty)
           LlmMessage(
             role: view.role,
-            content: _requestContent(view, regexRules: regexRules),
+            content: _ctx.requestContent(view, regexRules: regexRules),
           ),
     ];
 
-    final gatewayFactory = ref.read(llmGatewayFactoryProvider);
+    final gatewayFactory = _ctx.ref.read(llmGatewayFactoryProvider);
     final thinkingGateway = gatewayFactory.forModel(thinking.model);
     final generatingGateway = gatewayFactory.forModel(generating.model);
 
-    final system = _systemFor(
-      await _mcpSetup(),
-      await _buildSystemPrompt(
+    final system = _ctx.systemFor(
+      await _ctx.mcpSetup(),
+      await _ctx.buildSystemPrompt(
         modelName: comboLabel,
         modelId: comboModel.id,
         providerName: '模型组合',
@@ -793,7 +682,7 @@ mixin _ChatMultiModel on _$ChatController {
               blocks: liveBlocks(),
             );
             views = [...views.take(views.length - 1), assistantView];
-            _emitTurn(topicId, views, streaming: true);
+            _ctx.emitTurn(topicId, views, streaming: true);
           case ComboTextDelta(:final text):
             mainBuf.write(text);
             assistantView = assistantView.copyWith(
@@ -801,7 +690,7 @@ mixin _ChatMultiModel on _$ChatController {
               blocks: liveBlocks(),
             );
             views = [...views.take(views.length - 1), assistantView];
-            _emitTurn(topicId, views, streaming: true);
+            _ctx.emitTurn(topicId, views, streaming: true);
           case ComboPhaseStart() || ComboPhaseDone() || ComboDone():
             break;
         }
@@ -829,9 +718,9 @@ mixin _ChatMultiModel on _$ChatController {
         blocks: finalBlocks,
       );
       views = [...views.take(views.length - 1), assistantView];
-      _emitTurn(topicId, views, streaming: false);
+      _ctx.emitTurn(topicId, views, streaming: false);
 
-      await _repo.saveMessageBlock(
+      await _ctx.repo.saveMessageBlock(
         MessageBlock.thinking(
           id: thinkingBlockId,
           messageId: assistantMessageId,
@@ -840,7 +729,7 @@ mixin _ChatMultiModel on _$ChatController {
           content: reasoningBuf.toString(),
         ),
       );
-      await _repo.saveMessageBlock(
+      await _ctx.repo.saveMessageBlock(
         MessageBlock.mainText(
           id: mainBlockId,
           messageId: assistantMessageId,
@@ -849,7 +738,7 @@ mixin _ChatMultiModel on _$ChatController {
           content: mainBuf.toString(),
         ),
       );
-      await _repo.saveMessage(
+      await _ctx.repo.saveMessage(
         assistantMessage.copyWith(status: MessageStatus.success),
       );
     } on Object catch (e) {
@@ -859,9 +748,9 @@ mixin _ChatMultiModel on _$ChatController {
         text: errorText,
       );
       views = [...views.take(views.length - 1), assistantView];
-      _emitTurn(topicId, views, streaming: false);
+      _ctx.emitTurn(topicId, views, streaming: false);
 
-      await _repo.saveMessageBlock(
+      await _ctx.repo.saveMessageBlock(
         MessageBlock.mainText(
           id: mainBlockId,
           messageId: assistantMessageId,
@@ -870,7 +759,7 @@ mixin _ChatMultiModel on _$ChatController {
           content: errorText,
         ),
       );
-      await _repo.saveMessage(
+      await _ctx.repo.saveMessage(
         assistantMessage.copyWith(status: MessageStatus.error),
       );
     }
@@ -881,9 +770,9 @@ mixin _ChatMultiModel on _$ChatController {
   /// the model (so fresh apiKey/baseUrl apply), falling back to the stored model
   /// when it is no longer listed. Returns null when [model] is null or its
   /// provider is gone, so callers can fall back to the current model.
-  Future<CurrentModel?> _currentModelForOwnModel(Model? model) async {
+  Future<CurrentModel?> currentModelForOwnModel(Model? model) async {
     if (model == null) return null;
-    final providers = await ref.read(appModelProvidersProvider.future);
+    final providers = await _ctx.ref.read(appModelProvidersProvider.future);
     for (final provider in providers) {
       if (provider.id != model.provider) continue;
       final live = provider.models.firstWhere(

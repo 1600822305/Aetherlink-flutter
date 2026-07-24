@@ -111,7 +111,7 @@ const _knownAcceptedViolations = <String>{
   'lib/features/backup/application/backup_controller.dart -> package:aetherlink_flutter/features/chat/application/chat_providers.dart',
   'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
   'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
-  'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/settings/application/model_combo_providers.dart',
+  'lib/features/chat/application/modes/multi_model_send_service.dart -> package:aetherlink_flutter/features/settings/application/model_combo_providers.dart',
   'lib/features/chat/application/combo_executor.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
   'lib/features/chat/application/context_condense_service.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
   'lib/features/chat/application/translate/translate_controller.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
