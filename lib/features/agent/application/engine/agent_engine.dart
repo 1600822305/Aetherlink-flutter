@@ -441,7 +441,10 @@ class AgentEngine {
             await binder.failUnreturned({for (final c in turn.toolCalls) c.id});
         Future<void> failPendingToolEvents() => binder.failAllPending();
 
-        budget.recordTokens(turn.tokensUsed);
+        budget.recordTurnUsage(
+          totalTokens: turn.tokensUsed,
+          contextTokens: turn.contextTokens,
+        );
         current = await save(
           current.copyWith(
             tokenCount: current.tokenCount + turn.tokensUsed,

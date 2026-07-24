@@ -58,10 +58,25 @@ class AgentBudget {
   int _rounds = 0;
   int _consecutiveFailures = 0;
   int _tokens = 0;
+  int _lastContextTokens = 0;
 
   void recordRound() => _rounds++;
 
-  void recordTokens(int tokens) => _tokens += tokens;
+  /// 按增量记账：本轮新产出（completion）全额 + 上下文相对上轮的
+  /// 增量。若每轮把完整 prompt 重复计入，预算会随轮数平方级消耗
+  /// （第 n 轮把前 n-1 轮的上下文再记一遍），子代理的有限 token
+  /// 预算几轮就被耗尽。供应商不回上下文用量时按总量计。
+  void recordTurnUsage({required int totalTokens, required int contextTokens}) {
+    if (totalTokens <= 0) return;
+    final completion = contextTokens > 0
+        ? (totalTokens - contextTokens).clamp(0, totalTokens)
+        : totalTokens;
+    final growth = contextTokens > _lastContextTokens
+        ? contextTokens - _lastContextTokens
+        : 0;
+    _tokens += completion + growth;
+    if (contextTokens > 0) _lastContextTokens = contextTokens;
+  }
 
   void recordToolResult({required bool ok}) {
     if (ok) {

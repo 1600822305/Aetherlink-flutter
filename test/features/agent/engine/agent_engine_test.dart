@@ -973,6 +973,60 @@ class UnreturnedToolThenFinishLlm implements AgentLlmClient {
       '摘要：覆盖 ${events.length} 条';
 }
 
+/// 每轮回报固定上下文用量的多轮工具循环（测 token 预算增量记账）。
+class ConstantContextLlm implements AgentLlmClient {
+  ConstantContextLlm({this.toolRounds = 3});
+
+  final int toolRounds;
+  int calls = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    calls++;
+    if (calls <= toolRounds) {
+      return AgentLlmTurn(
+        text: '继续读文件…',
+        tokensUsed: 10000,
+        contextTokens: 9500,
+        toolCalls: [
+          AgentToolCallRequest(
+            id: 'call-read-$calls',
+            name: 'read_file',
+            argsJson: jsonEncode({'path': 'lib/main.dart'}),
+            argSummary: 'lib/main.dart',
+          ),
+        ],
+      );
+    }
+    return const AgentLlmTurn(
+      text: '完成。',
+      tokensUsed: 10000,
+      contextTokens: 9500,
+      finishReason: 'stop',
+    );
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
+      '摘要：覆盖 ${events.length} 条';
+}
+
 AgentTask newTask() {
   final now = DateTime.now();
   return AgentTask(
@@ -1532,6 +1586,27 @@ void main() {
     await buildEngine(
       AgentBudget(),
     ).run(gateway.last, AgentCancellationToken());
+    expect(gateway.last.status, AgentTaskStatus.done);
+  });
+
+  test('token 预算按增量记账：上下文不被逐轮重复计入', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    // 4 轮，每轮 usage 总量 10000（其中上下文 9500）。按总量累加会
+    // 记 40000 踩爆 15000 预算；按增量只记 9500+500×4=11500，应完成。
+    final engine = AgentEngine(
+      llm: ConstantContextLlm(toolRounds: 3),
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(maxTokens: 15000),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '多轮读文件');
+
+    await engine.run(task, AgentCancellationToken());
+
     expect(gateway.last.status, AgentTaskStatus.done);
   });
 
