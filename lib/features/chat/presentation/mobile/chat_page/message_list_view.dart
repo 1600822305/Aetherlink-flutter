@@ -18,7 +18,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/def
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_navigation.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/multi_model_message_group.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/multi_model/multi_model_message_group.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/plain_style_message.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
 import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';

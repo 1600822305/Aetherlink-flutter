@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:native_keyboard_height/native_keyboard_height.dart';
 
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page/message_list_view.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_navigation.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_selection_bar.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/widgets/tts_floating_player.dart';

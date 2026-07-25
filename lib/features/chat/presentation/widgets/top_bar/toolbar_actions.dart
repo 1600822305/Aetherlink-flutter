@@ -11,7 +11,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_nav_providers.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_search_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_search/chat_search_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/context_condense_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/branch_manager_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mini_map_sheet.dart';

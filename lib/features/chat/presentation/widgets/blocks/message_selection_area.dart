@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/selection_menu_panel.dart';
 import 'package:aetherlink_flutter/features/settings/application/selection_menu_settings_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/selection_menu_settings.dart';
