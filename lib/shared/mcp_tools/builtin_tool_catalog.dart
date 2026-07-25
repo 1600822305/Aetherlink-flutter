@@ -1372,8 +1372,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '默认目标是内置终端（应用内 Alpine Linux 沙箱）；传 workspace 参数可在'
           ' SSH / Termux 工作区的远端 shell 里执行。'
           '超时不杀命令——命令继续在会话里跑，可用 terminal_session action=output 回看。'
-          '不要用本工具启动 vim / top 等全屏交互程序；命令需要交互输入（如 [y/n]）时用 '
-          'terminal_session action=write 写 stdin，优先用非交互参数（--yes 等）。'
+          '不要用本工具启动 vim / top 等全屏交互程序；优先用非交互参数'
+          '（-y / --yes / --no-edit / git -c core.pager=cat 等），避免命令停下来等输入。'
+          '结果 waitingInput=true 表示命令疑似在等交互输入（未结束）：看 stdout 尾部'
+          '的提示，用 terminal_session action=write 写 stdin 回答（回车确认在末尾带 \\n）。'
           '不要执行裸 exit（会结束长驻会话）。执行前会请用户确认。',
       inputSchema: {
         'type': 'object',

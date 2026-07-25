@@ -213,6 +213,9 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
           ? buildProotGreeting(name: workspace.name, root: workspace.root)
           : null,
       environment: {
+        // 非交互环境兜底（只注 AI 会话）：git 要凭据/编辑器快速失败、
+        // pager 不分页，apt 非交互，避免没必要的交互挂住。
+        ...kAgentNonInteractiveEnv,
         if (workspace.scope == WorkspaceScope.project) ...{
           'WORKSPACE_ROOT': workspace.root,
           'WORKSPACE_NAME': workspace.name,
@@ -232,6 +235,7 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
     target = _ExecTarget(
       backend: ref.read(prootLocalBackendProvider),
       label: '内置终端',
+      environment: kAgentNonInteractiveEnv,
       greeting: buildProotGreeting(name: '内置终端', root: '/root'),
     );
   }
@@ -319,7 +323,14 @@ Future<McpToolResult> _execute(
     'exitCode': result.exitCode,
     'timedOut': result.timedOut,
     'canceled': result.canceled,
-    if (result.timedOut)
+    'waitingInput': result.waitingInput,
+    if (result.waitingInput)
+      'hint':
+          '命令疑似在等交互输入（未结束，仍在会话里跑，会话保持占用）：'
+          '看 stdout 尾部的提示，用 terminal_session action=write 往 stdin '
+          '写入回答（需要回车确认就在末尾带 \n）；action=output 可回看'
+          '后续输出。如果判断不需要交互，可继续用 action=output 等它跑完。'
+    else if (result.timedOut)
       'hint':
           '命令超时未结束，仍在会话里继续跑（该会话在其结束前保持占用）；'
           '可用 terminal_session action=output 回看进度，若它在等交互输入可用 '

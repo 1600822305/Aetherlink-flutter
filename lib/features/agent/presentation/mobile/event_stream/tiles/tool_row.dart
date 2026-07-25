@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tool_detail_sheet.dart';
 
@@ -79,9 +81,49 @@ class ToolRow extends StatelessWidget {
                         : muted,
                   ),
                 ),
+              // 自动检测漏网时的手动兜底：用户看到命令在等交互输入，
+              // 点一下让正在等结果的 exec 提前把控制权和已有输出还给模型。
+              if (event.state == AgentToolCallState.running &&
+                  event.toolName == 'terminal_execute')
+                const _WaitingInputButton(),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 「在等交互输入」手动标记按钮：把所有正在等命令结果的会话标记为
+/// 等交互，对应 exec 带已有输出提前返回，模型随即可写 stdin 回答。
+class _WaitingInputButton extends ConsumerWidget {
+  const _WaitingInputButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size(0, 28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        icon: const Icon(LucideIcons.keyboard, size: 13),
+        label: Text('在等交互输入？点此告知 AI', style: theme.textTheme.labelSmall),
+        onPressed: () {
+          final count = ref
+              .read(workspaceSessionPoolManagerProvider)
+              .markWaitingInputAll();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(count > 0 ? '已告知 AI：命令在等交互输入' : '当前没有正在等结果的命令'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        },
       ),
     );
   }

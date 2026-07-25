@@ -117,6 +117,40 @@ void main() {
     expect(session.busy, isFalse);
   });
 
+  test('手动标记等交互：exec 带已有输出提前返回，busy 保持，哨兵回来才释放', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    final future = session.exec('npx create-app');
+    await Future<void>.delayed(Duration.zero);
+    shell.emit('Ok to proceed? (y)');
+    await Future<void>.delayed(Duration.zero);
+    // 用户在工具卡片点了「在等交互输入」。
+    expect(session.markWaitingInput(), isTrue);
+    final result = await future;
+    expect(result.waitingInput, isTrue);
+    expect(result.timedOut, isFalse);
+    expect(result.exitCode, isNull);
+    expect(result.output, contains('Ok to proceed?'));
+    // 命令还在前台等输入：busy 不释放，新命令不能抢占该会话。
+    expect(session.busy, isTrue);
+    expect(
+      () => session.exec('echo hi'),
+      throwsA(isA<WorkspaceSessionException>()),
+    );
+    // 写 stdin 回答后命令跑完，哨兵回来释放会话。
+    session.writeInput('y\n');
+    final nonce = _nonceOf(shell);
+    shell.emit('done\n__AETHER_DONE_${nonce}_0__\n');
+    await Future<void>.delayed(Duration.zero);
+    expect(session.busy, isFalse);
+  });
+
+  test('没有正在等结果的 exec 时手动标记返回 false', () async {
+    final session = await pool.create();
+    expect(session.markWaitingInput(), isFalse);
+    expect(WorkspaceSessionPoolManager().markWaitingInputAll(), 0);
+  });
+
   test('超时占用中的会话拒绝新 exec', () async {
     final session = await pool.create();
     await session.exec('sleep 999', timeout: const Duration(milliseconds: 20));

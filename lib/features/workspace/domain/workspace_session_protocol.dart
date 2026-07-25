@@ -27,10 +27,7 @@ SentinelMatch? matchSentinel(String output, String nonce, {String? command}) {
   if (command != null) head = stripSessionEcho(head, command, nonce);
   // 去掉哨兵行行首残留（printf 输出前置的 \n 已计入 head 尾部）。
   head = head.trimRight();
-  return SentinelMatch(
-    output: head,
-    exitCode: int.parse(match.group(1)!),
-  );
+  return SentinelMatch(output: head, exitCode: int.parse(match.group(1)!));
 }
 
 /// 提示符前缀：busybox 默认 `# ` / `$ `，或注入 PS1 后的
@@ -53,7 +50,8 @@ String stripSessionEcho(String head, String command, String nonce) {
     final noPrompt = t.replaceFirst(_promptPrefix, '').trimRight();
     // 提示符行尾的空格可能已被 trimRight 掉，补一个再探测。
     final probe = '$t ';
-    final promptOnly = t.isNotEmpty &&
+    final promptOnly =
+        t.isNotEmpty &&
         _promptPrefix.hasMatch(probe) &&
         probe.replaceFirst(_promptPrefix, '').trim().isEmpty;
     if (echoes.contains(t) || echoes.contains(noPrompt) || promptOnly) {
@@ -147,6 +145,58 @@ String buildSessionEnvSetup(Map<String, String> environment) {
       ? ''
       : "mkdir -p '${home.replaceAll("'", r"'\''")}'\n";
   return '$mkdir${buildExportCommand(environment)}';
+}
+
+/// AI 长驻会话的非交互环境（对标 CC：GIT_TERMINAL_PROMPT=0 / GIT_ASKPASS=''
+/// / GIT_EDITOR=true 让 git 要凭据、要编辑器时快速失败而不是挂住等输入；
+/// pager 全部走 cat 防分页卡住；apt/dpkg 走非交互前端）。
+/// 只注给 AI 工具的会话，用户自己的终端 tab 不受影响。
+const Map<String, String> kAgentNonInteractiveEnv = {
+  'GIT_TERMINAL_PROMPT': '0',
+  'GIT_ASKPASS': '',
+  'SSH_ASKPASS': '',
+  'GIT_EDITOR': 'true',
+  'GIT_PAGER': 'cat',
+  'PAGER': 'cat',
+  'SYSTEMD_PAGER': 'cat',
+  'LESS': 'FRX',
+  'DEBIAN_FRONTEND': 'noninteractive',
+};
+
+/// ANSI CSI/OSC 序列（剥掉后再做交互提示匹配，PTY 输出常带颜色/光标控制）。
+final RegExp _ansiSeq = RegExp(r'\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07');
+
+/// 常见交互提示模式（保守白名单，配合「输出静默」双条件判定，误报代价是
+/// 提前把控制权还给模型——模型看输出不像在等输入可以继续等）：
+/// y/n 确认、密码/用户名/token 输入、continue 确认、行尾问号、
+/// 中文的「是否/请输入/请选择」、交互式选择器（❯）。
+final List<RegExp> _interactivePromptPatterns = [
+  RegExp(r'\[[yY]/[nN]\]|\((?:y/n|yes/no)\)', caseSensitive: false),
+  RegExp(
+    r"(password|passphrase|username|login|token|passcode)[^\n]*[:：]\s*$",
+    caseSensitive: false,
+  ),
+  RegExp(r'(continue|proceed|overwrite|confirm)\?\s*$', caseSensitive: false),
+  RegExp(r'(是否|请输入|请选择|请确认)'),
+  RegExp(r'[?？]\s*$'),
+  RegExp(r'^\s*❯', multiLine: true),
+];
+
+/// [tail]（输出尾部）看起来是否停在一个交互提示上：剥 ANSI 后取最后
+/// 一个非空行做模式匹配。空输出不算（静默但无提示，可能只是慢命令）。
+bool looksLikeInteractivePrompt(String tail) {
+  final clean = tail.replaceAll(_ansiSeq, '');
+  final lines = clean.split('\n');
+  String lastLine = '';
+  for (var i = lines.length - 1; i >= 0; i--) {
+    final t = lines[i].trimRight();
+    if (t.trim().isNotEmpty) {
+      lastLine = t;
+      break;
+    }
+  }
+  if (lastLine.isEmpty) return false;
+  return _interactivePromptPatterns.any((p) => p.hasMatch(lastLine));
 }
 
 class SentinelMatch {

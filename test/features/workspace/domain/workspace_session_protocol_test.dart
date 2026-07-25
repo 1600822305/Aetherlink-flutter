@@ -49,7 +49,8 @@ void main() {
     });
 
     test('with command strips echoed input / sentinel / prompt lines', () {
-      const raw = 'echo "set OK"\r\n'
+      const raw =
+          'echo "set OK"\r\n'
           "printf '\\n__AETHER_DONE_abc_%s__\\n' \"\$?\"\r\n"
           'set OK\r\n'
           '# \r\n'
@@ -60,7 +61,8 @@ void main() {
     });
 
     test('strips echoed lines even with a colored PS1 prompt prefix', () {
-      const raw = '\x1b[1;32m[demo]\x1b[0m:\x1b[1;34m/root\x1b[0m # ls\r\n'
+      const raw =
+          '\x1b[1;32m[demo]\x1b[0m:\x1b[1;34m/root\x1b[0m # ls\r\n'
           'a.txt\r\n'
           '\x1b[1;32m[demo]\x1b[0m:\x1b[1;34m/root\x1b[0m # \r\n'
           '__AETHER_DONE_n1_0__\r\n';
@@ -86,12 +88,14 @@ void main() {
   group('SentinelDisplayFilter', () {
     test('drops sentinel result and echoed printf lines, keeps output', () {
       final filter = SentinelDisplayFilter();
-      final visible = filter.feed('# echo hi\r\n'
-          "printf '\\n__AETHER_DONE_abc_%s__\\n' \"\$?\"\r\n"
-          'hi\r\n'
-          '\r\n'
-          '__AETHER_DONE_abc_0__\r\n'
-          '# ');
+      final visible = filter.feed(
+        '# echo hi\r\n'
+        "printf '\\n__AETHER_DONE_abc_%s__\\n' \"\$?\"\r\n"
+        'hi\r\n'
+        '\r\n'
+        '__AETHER_DONE_abc_0__\r\n'
+        '# ',
+      );
       expect(visible, '# echo hi\r\nhi\r\n\r\n# ');
     });
 
@@ -160,6 +164,71 @@ void main() {
         "mkdir -p '/root/projects/demo/.home'\n"
         "export HOME='/root/projects/demo/.home' WORKSPACE_NAME='demo'\n",
       );
+    });
+  });
+
+  group('looksLikeInteractivePrompt（卡交互检测）', () {
+    test('y/n 确认与 yes/no 提示命中', () {
+      expect(
+        looksLikeInteractivePrompt('Do you want to continue? [Y/n]'),
+        isTrue,
+      );
+      expect(looksLikeInteractivePrompt('Overwrite file? (y/n)'), isTrue);
+      expect(
+        looksLikeInteractivePrompt(
+          'Are you sure you want to continue connecting (yes/no)',
+        ),
+        isTrue,
+      );
+    });
+
+    test('密码 / 用户名 / token 输入提示命中', () {
+      expect(
+        looksLikeInteractivePrompt("Password for 'https://github.com':"),
+        isTrue,
+      );
+      expect(looksLikeInteractivePrompt('Enter passphrase for key: '), isTrue);
+      expect(looksLikeInteractivePrompt('Username:'), isTrue);
+    });
+
+    test('中文交互提示与行尾问号命中', () {
+      expect(looksLikeInteractivePrompt('请输入要删除的分支名'), isTrue);
+      expect(looksLikeInteractivePrompt('是否继续安装？'), isTrue);
+      expect(
+        looksLikeInteractivePrompt('Which package manager do you use?'),
+        isTrue,
+      );
+    });
+
+    test('带 ANSI 颜色的提示剥掉后命中', () {
+      expect(
+        looksLikeInteractivePrompt('\x1b[1;32mproceed?\x1b[0m [y/N]'),
+        isTrue,
+      );
+    });
+
+    test('普通输出 / 空输出不命中', () {
+      expect(looksLikeInteractivePrompt('Compiling core module...'), isFalse);
+      expect(looksLikeInteractivePrompt('Downloaded 42 packages'), isFalse);
+      expect(looksLikeInteractivePrompt(''), isFalse);
+      expect(looksLikeInteractivePrompt('\n\n  \n'), isFalse);
+    });
+
+    test('取最后一个非空行判定（前面的历史问句不算数）', () {
+      expect(
+        looksLikeInteractivePrompt('continue? [y/N]\ny\ninstalling deps...'),
+        isFalse,
+      );
+    });
+  });
+
+  group('kAgentNonInteractiveEnv（非交互环境兜底）', () {
+    test('覆盖 git 凭据/编辑器、pager 与 apt 前端', () {
+      expect(kAgentNonInteractiveEnv['GIT_TERMINAL_PROMPT'], '0');
+      expect(kAgentNonInteractiveEnv['GIT_EDITOR'], 'true');
+      expect(kAgentNonInteractiveEnv['GIT_PAGER'], 'cat');
+      expect(kAgentNonInteractiveEnv['PAGER'], 'cat');
+      expect(kAgentNonInteractiveEnv['DEBIAN_FRONTEND'], 'noninteractive');
     });
   });
 }

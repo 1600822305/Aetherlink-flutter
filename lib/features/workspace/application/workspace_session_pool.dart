@@ -25,6 +25,13 @@ const int kMaxPooledSessions = 4;
 /// 单个会话保留的输出回看缓冲上限（字符）。
 const int kSessionBufferLimit = 200 * 1024;
 
+/// exec 期间输出静默多久后才尝试判定「在等交互输入」：静默 +
+/// 尾部像交互提示双条件同时满足才提前返回，避免把慢命令误判。
+const Duration kInteractiveSilenceThreshold = Duration(seconds: 10);
+
+/// 静默检测的轮询周期。
+const Duration kInteractiveCheckInterval = Duration(seconds: 2);
+
 /// Thrown by session operations with a user-facing message.
 class WorkspaceSessionException implements Exception {
   const WorkspaceSessionException(this.message);
@@ -40,6 +47,7 @@ class WorkspaceSessionExecResult {
     required this.exitCode,
     this.timedOut = false,
     this.canceled = false,
+    this.waitingInput = false,
   });
 
   final String output;
@@ -50,11 +58,21 @@ class WorkspaceSessionExecResult {
 
   /// 用户点了中断：已向会话发 Ctrl-C（SIGINT），会话本身仍存活。
   final bool canceled;
+
+  /// 命令疑似在等交互输入（自动检测或用户手动标记）：命令未结束、
+  /// 仍在前台跑，可用 [PooledWorkspaceSession.writeInput] 写 stdin 回答。
+  final bool waitingInput;
 }
 
 /// exec 被用户中断（Ctrl-C 已发出）时的内部信号，用于跳出等哨兵的 await。
 class _SessionExecCanceled implements Exception {
   const _SessionExecCanceled();
+}
+
+/// exec 被判定为在等交互输入（自动检测 / 用户手动标记）时的内部信号：
+/// 提前把已有输出还给调用方，命令继续在前台跑。
+class _SessionExecWaitingInput implements Exception {
+  const _SessionExecWaitingInput();
 }
 
 /// 池内一个长驻 shell 会话。
@@ -65,9 +83,9 @@ class PooledWorkspaceSession {
     required this.workspaceLabel,
     required this.workspaceId,
     required WorkspaceShellSession shell,
-  })  : _shell = shell,
-        createdAt = DateTime.now(),
-        lastUsedAt = DateTime.now() {
+  }) : _shell = shell,
+       createdAt = DateTime.now(),
+       lastUsedAt = DateTime.now() {
     // cast 到 List<int>：Utf8Decoder 的 StreamTransformer 反化是
     // <List<int>, String>，Stream<Uint8List>.transform 在运行时泛型检查下
     // 会直接抛 type error。
@@ -106,6 +124,19 @@ class PooledWorkspaceSession {
 
   bool get alive => _alive;
   bool get busy => _busy;
+
+  /// 当前 exec 的「标记为等交互」触发器；无 exec 在等时为 null。
+  void Function()? _flagWaitingInput;
+
+  /// 手动标记当前前台命令在等交互输入（自动检测漏网时的用户兜底）：
+  /// 正在等哨兵的 exec 立即带已有输出提前返回（waitingInput = true），
+  /// 命令继续在会话里跑。没有正在等的 exec 时返回 false。
+  bool markWaitingInput() {
+    final flag = _flagWaitingInput;
+    if (flag == null) return false;
+    flag();
+    return true;
+  }
 
   /// 实时输出流（PTY 合并流，含 ANSI 序列，已滤掉哨兵行），供终端页联动渲染。
   Stream<String> get chunks => _chunks.stream;
@@ -147,9 +178,7 @@ class PooledWorkspaceSession {
       throw const WorkspaceSessionException('会话已结束，请新建会话');
     }
     if (_busy) {
-      throw const WorkspaceSessionException(
-        '会话正忙（上一条命令还没结束），可换一个会话或稍后再试',
-      );
+      throw const WorkspaceSessionException('会话正忙（上一条命令还没结束），可换一个会话或稍后再试');
     }
     _busy = true;
     lastUsedAt = DateTime.now();
@@ -162,27 +191,55 @@ class PooledWorkspaceSession {
     var settled = false;
     var canceled = false;
     var releaseInFinally = true;
+    var lastChunkAt = DateTime.now();
+    _flagWaitingInput = () {
+      if (settled || done.isCompleted) return;
+      done.completeError(const _SessionExecWaitingInput());
+    };
+    // 自动判定：输出静默超阈 + 尾部像交互提示 → 不等满超时，提前把
+    // 控制权和已有输出还给调用方（模型可立刻写 stdin 回答）。
+    final silenceTimer = Timer.periodic(kInteractiveCheckInterval, (_) {
+      if (settled || done.isCompleted) return;
+      if (DateTime.now().difference(lastChunkAt) <
+          kInteractiveSilenceThreshold) {
+        return;
+      }
+      final text = collected.toString();
+      final tail = text.length <= 800
+          ? text
+          : text.substring(text.length - 800);
+      if (looksLikeInteractivePrompt(stripSessionEcho(tail, command, nonce))) {
+        _flagWaitingInput?.call();
+      }
+    });
     if (cancelSignal != null) {
-      unawaited(cancelSignal.then((_) {
-        if (settled) return;
-        canceled = true;
-        // Ctrl-C 中断前台命令；shell 回到提示符后哨兵行不会再来，
-        // 直接以当前已收集的输出收尾。
-        _shell.write(utf8.encode('\x03'));
-        if (!done.isCompleted) {
-          done.completeError(const _SessionExecCanceled());
-        }
-      }));
+      unawaited(
+        cancelSignal.then((_) {
+          if (settled) return;
+          canceled = true;
+          // Ctrl-C 中断前台命令；shell 回到提示符后哨兵行不会再来，
+          // 直接以当前已收集的输出收尾。
+          _shell.write(utf8.encode('\x03'));
+          if (!done.isCompleted) {
+            done.completeError(const _SessionExecCanceled());
+          }
+        }),
+      );
     }
     final sub = _raw.stream.listen((chunk) {
       collected.write(chunk);
+      lastChunkAt = DateTime.now();
       onOutput?.call(chunk);
       final window = windowTail + chunk;
       windowTail = window.length <= 96
           ? window
           : window.substring(window.length - 96);
       if (!window.contains('__AETHER_DONE_$nonce')) return;
-      final match = matchSentinel(collected.toString(), nonce, command: command);
+      final match = matchSentinel(
+        collected.toString(),
+        nonce,
+        command: command,
+      );
       if (match != null && !done.isCompleted) done.complete(match);
     });
     try {
@@ -215,8 +272,25 @@ class PooledWorkspaceSession {
         exitCode: null,
         canceled: true,
       );
+    } on _SessionExecWaitingInput {
+      // 命令还在前台等输入：与超时同样保持 busy，后台等哨兵回来才释放。
+      releaseInFinally = false;
+      unawaited(
+        done.future.then<void>((_) {}, onError: (_) {}).whenComplete(() {
+          _busy = false;
+          lastUsedAt = DateTime.now();
+          sub.cancel();
+        }),
+      );
+      return WorkspaceSessionExecResult(
+        output: stripSessionEcho(collected.toString(), command, nonce),
+        exitCode: null,
+        waitingInput: true,
+      );
     } finally {
       settled = true;
+      silenceTimer.cancel();
+      _flagWaitingInput = null;
       if (releaseInFinally) {
         _busy = false;
         lastUsedAt = DateTime.now();
@@ -253,8 +327,8 @@ class WorkspaceSessionPool {
     this.workspaceLabel = '',
     this.workspaceId,
     void Function()? onChanged,
-  })  : _nextId = nextId,
-        _onChanged = onChanged;
+  }) : _nextId = nextId,
+       _onChanged = onChanged;
 
   final WorkspaceBackend _backend;
   final String Function() _nextId;
@@ -371,8 +445,10 @@ class WorkspaceSessionPool {
     _reaper ??= Timer.periodic(const Duration(minutes: 1), (_) {
       final now = DateTime.now();
       final expired = _sessions.values
-          .where((s) =>
-              !s.busy && now.difference(s.lastUsedAt) > kSessionIdleTimeout)
+          .where(
+            (s) =>
+                !s.busy && now.difference(s.lastUsedAt) > kSessionIdleTimeout,
+          )
           .map((s) => s.id)
           .toList();
       for (final id in expired) {
@@ -402,22 +478,21 @@ class WorkspaceSessionPoolManager extends ChangeNotifier {
     WorkspaceBackend backend, {
     String workspaceLabel = '',
     String? workspaceId,
-  }) =>
-      _pools.putIfAbsent(
-        workspaceId ?? backend,
-        () => WorkspaceSessionPool(
-          backend,
-          nextId: () => 's${_nextId++}',
-          workspaceLabel: workspaceLabel,
-          workspaceId: workspaceId,
-          onChanged: notifyListeners,
-        ),
-      );
+  }) => _pools.putIfAbsent(
+    workspaceId ?? backend,
+    () => WorkspaceSessionPool(
+      backend,
+      nextId: () => 's${_nextId++}',
+      workspaceLabel: workspaceLabel,
+      workspaceId: workspaceId,
+      onChanged: notifyListeners,
+    ),
+  );
 
   /// 所有池里的所有会话。
   List<PooledWorkspaceSession> allSessions() => [
-        for (final pool in _pools.values) ...pool.list(),
-      ];
+    for (final pool in _pools.values) ...pool.list(),
+  ];
 
   /// 跨池按 ID 查会话。
   PooledWorkspaceSession? find(String id) {
@@ -435,6 +510,16 @@ class WorkspaceSessionPoolManager extends ChangeNotifier {
       if (test(pool.backend)) await pool.closeAll();
     }
     notifyListeners();
+  }
+
+  /// 把所有正在等命令结果的会话标记为「在等交互输入」（工具卡片上用户
+  /// 手动兜底的入口，Agent 通常同时只占一个会话），返回命中数。
+  int markWaitingInputAll() {
+    var count = 0;
+    for (final session in allSessions()) {
+      if (session.markWaitingInput()) count++;
+    }
+    return count;
   }
 
   /// 跨池按 ID 关会话；找不到返回 false。
