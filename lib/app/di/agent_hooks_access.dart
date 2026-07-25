@@ -706,9 +706,13 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   /// 任务收尾前跑 stop hooks（引擎 stopGuard）：任一 hook 阻断则返回
   /// 阻断原因（收尾被阻止，原因回填继续跑），全部放行/失败返回 null。
   /// stop hook 不按工具匹配，matcher/pattern 忽略。
-  /// 生命周期事件 hooks（taskStart / turnStart / turnEnd）：
-  /// fire-and-forget，不阻断任务。
-  Future<void> runLifecycleHooks(AgentHookEvent event) async {
+  /// 生命周期事件 hooks（taskStart / turnStart / turnEnd / taskFailed）：
+  /// fire-and-forget，不阻断任务；[message] 为事件附带信息
+  /// （如 taskFailed 的错误文本），经 `message` 传给 hook。
+  Future<void> runLifecycleHooks(
+    AgentHookEvent event, {
+    String? message,
+  }) async {
     try {
       final config = await _hooks();
       if (config == null) return;
@@ -719,6 +723,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
           eventName: event.name,
           toolName: event.name,
           argsJson: '{}',
+          message: message,
         ),
         label: event.name,
       );

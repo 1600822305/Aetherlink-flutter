@@ -101,7 +101,8 @@ class AgentRuntime {
       Future<String?> Function() stopGuard,
       Future<String?> Function() subagentStopGuard,
       String? Function() hookStopSignal,
-      Future<void> Function(AgentHookEvent event) lifecycleHooks,
+      Future<void> Function(AgentHookEvent event, {String? message})
+      lifecycleHooks,
       Future<void> Function(String message, {String notificationType})
       notificationHooks,
       Future<void> Function(AgentHookEvent event, {String summary})
@@ -533,6 +534,16 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// 计划提醒的节流状态：taskId → 上次注入提醒时的轮次。
   final Map<String, int> _planReminderRound = {};
 
+  /// system prompt 前缀缓存友好：环境上下文（含工作区摘要/repo map，
+  /// 每轮重算会随文件改动抵消供应商 prompt cache）与项目指令按运行
+  /// 缓存，仅模式或工具清单变化（延迟组激活/模式切换）时重算；
+  /// 文件变动本身模型在事件流里看得到，不依赖摘要实时性。
+  AgentSessionMode? _envCacheMode;
+  int _envCacheToolCount = -1;
+  String? _envContextCache;
+  String? _projectInstructionsCache;
+  bool _projectInstructionsLoaded = false;
+
   Future<Model> _resolveModel(Ref ref) async {
     final locked = _lockedModel;
     if (locked != null) return locked;
@@ -572,16 +583,27 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       await _activatedDeferredKeys(ref, catalog, context.events),
     );
 
+    if (_envContextCache == null ||
+        _envCacheMode != context.task.mode ||
+        _envCacheToolCount != definitions.length) {
+      _envContextCache = await _environmentContext(
+        ref,
+        context.task,
+        definitions,
+      );
+      _envCacheMode = context.task.mode;
+      _envCacheToolCount = definitions.length;
+    }
+    if (!_projectInstructionsLoaded) {
+      _projectInstructionsCache = await _projectInstructions(ref, context.task);
+      _projectInstructionsLoaded = true;
+    }
     final system = buildAgentSystemPrompt(
       task: context.task,
       profile: _profile,
       events: context.events,
-      environmentContext: await _environmentContext(
-        ref,
-        context.task,
-        definitions,
-      ),
-      projectInstructions: await _projectInstructions(ref, context.task),
+      environmentContext: _envContextCache,
+      projectInstructions: _projectInstructionsCache,
     );
 
     final thinkParams = _reasoningParams(ref);
@@ -616,6 +638,11 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       messages: messages,
       system: system,
       tools: definitions,
+      // 截断升配：本次运行发生过输出截断后显式抬高 max_tokens
+      // （否则不设，由供应商/适配器默认）。
+      maxTokens: context.escalateOutputTokens
+          ? kAgentEscalatedMaxOutputTokens
+          : null,
       reasoningEffort: thinkParams.effort,
       thinkingBudget: thinkParams.budget,
       includeThoughts: thinkParams.includeThoughts,

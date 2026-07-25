@@ -901,6 +901,9 @@ class TruncatedThenFinishLlm implements AgentLlmClient {
   final int truncatedTurns;
   int calls = 0;
 
+  /// 逐轮记录请求是否携带输出升配标记（测截断后 max_tokens 升配）。
+  final List<bool> escalations = [];
+
   @override
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
@@ -917,10 +920,49 @@ class TruncatedThenFinishLlm implements AgentLlmClient {
     AgentCancellationToken? cancel,
   }) async {
     calls++;
+    escalations.add(context.escalateOutputTokens);
     if (calls <= truncatedTurns) {
       return const AgentLlmTurn(text: '写到一半的报告…', finishReason: 'length');
     }
     return const AgentLlmTurn(text: '报告已补全，任务完成。', finishReason: 'stop');
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async => '摘要：覆盖 ${events.length} 条';
+}
+
+/// 前 [emptyTurns] 轮返回全空 turn（无正文无工具调用，模拟供应商
+/// withheld/丢块），之后正常收尾（测空回复重试）。
+class EmptyThenFinishLlm implements AgentLlmClient {
+  EmptyThenFinishLlm({this.emptyTurns = 1});
+
+  final int emptyTurns;
+  int calls = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )?
+    onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+    onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    calls++;
+    if (calls <= emptyTurns) {
+      return const AgentLlmTurn(text: '', finishReason: 'stop');
+    }
+    return const AgentLlmTurn(text: '总结写好了，任务完成。', finishReason: 'stop');
   }
 
   @override
@@ -1440,6 +1482,58 @@ void main() {
       isTrue,
       reason: '注入了续跑指令',
     );
+    expect(llm.escalations, [
+      false,
+      true,
+    ], reason: '首次截断后后续轮次请求带 max_tokens 升配标记');
+  });
+
+  test('空回复（无正文无工具调用）→ 注入提示重试而非判收尾', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final llm = EmptyThenFinishLlm(emptyTurns: 1);
+    final engine = AgentEngine(
+      llm: llm,
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '帮我写个总结');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    expect(llm.calls, 2, reason: '空回复轮不判收尾，重试一轮后完成');
+    final events = await store.getEvents(task.id);
+    expect(
+      events.whereType<UserMessageEvent>().any((e) => e.text.contains('空')),
+      isTrue,
+      reason: '注入了空回复重试提示',
+    );
+  });
+
+  test('持续空回复 → 重试有界，耗尽后正常收尾不死循环', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final llm = EmptyThenFinishLlm(emptyTurns: 99);
+    final engine = AgentEngine(
+      llm: llm,
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '帮我写个总结');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    expect(llm.calls, 4, reason: '最多重试 2 次，之后正文缺失拦截再续一轮后收尾');
   });
 
   test('每轮都截断 → 自动续跑有界，耗尽后正常收尾不死循环', () async {
