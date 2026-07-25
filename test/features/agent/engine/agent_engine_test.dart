@@ -2275,6 +2275,65 @@ void main() {
       expect(toolEvent.resultDetail, contains('不在计划模式'));
     });
   });
+
+  group('流式工具执行（边流边跑）', () {
+    test('只读免审工具在 LLM 流结束前就开始执行，且不重复执行', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final executor = EagerRecordingExecutor();
+      final llm = EagerStreamLlm(executor);
+      executor.isStreamOpen = () => llm.streamOpen;
+      final engine = AgentEngine(
+        llm: llm,
+        tools: executor,
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+      );
+      final task = newTask();
+      await store.appendUserMessage(task.id, '读文件');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.status, AgentTaskStatus.done);
+      // 只执行了一次，且执行开始时 LLM 流尚未结束。
+      expect(executor.streamOpenAtExecute, [true]);
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().single;
+      expect(toolEvent.state, AgentToolCallState.success);
+    });
+
+    test('提前执行但未随 turn 返回的调用被兄弟中止并按失败回填', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final executor = HangUntilInterruptExecutor();
+      final cancel = AgentCancellationToken();
+      final engine = AgentEngine(
+        llm: EagerUnreturnedLlm(),
+        tools: executor,
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+      );
+      final task = newTask();
+      await store.appendUserMessage(task.id, '读文件');
+
+      await engine.run(task, cancel);
+
+      // 在跑的兄弟被定向中断，且中断标记定向回收不外泄。
+      expect(executor.interrupted, isTrue);
+      expect(cancel.toolInterruptRequested, isFalse);
+      // 未随 turn 返回算非收尾轮，下一轮正常收尾。
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().single;
+      expect(toolEvent.state, AgentToolCallState.failure);
+    });
+  });
 }
 
 /// 按脚本逐轮返回 turn 的 LLM（计划模式流程测试用）。
@@ -2333,6 +2392,140 @@ class VerdictApprovalGate implements ApprovalGate {
     AgentTask task,
     AgentCancellationToken cancel,
   ) async => verdict;
+}
+
+/// 记录执行开始时 LLM 流是否仍在进行（测边流边跑）。
+class EagerRecordingExecutor implements AgentToolExecutor {
+  bool Function() isStreamOpen = () => false;
+  final started = Completer<void>();
+  final List<bool> streamOpenAtExecute = [];
+
+  @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => true;
+
+  @override
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  ) async {
+    streamOpenAtExecute.add(isStreamOpen());
+    if (!started.isCompleted) started.complete();
+    return const AgentToolResult(ok: true, summary: 'ok ✓');
+  }
+}
+
+/// 第一轮流内发一个只读调用，等它真正开始执行后才结束流
+///（验证提前执行发生在流内）；第二轮收尾。
+class EagerStreamLlm implements AgentLlmClient {
+  EagerStreamLlm(this.executor);
+
+  final EagerRecordingExecutor executor;
+  bool streamOpen = false;
+  int _round = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )?
+    onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+    onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    _round++;
+    if (_round > 1) {
+      return const AgentLlmTurn(text: '完成。', finishReason: 'stop');
+    }
+    final call = AgentToolCallRequest(
+      id: 'read-eager',
+      name: 'read_file',
+      argsJson: jsonEncode({'path': 'a.txt'}),
+      argSummary: 'a.txt',
+    );
+    streamOpen = true;
+    await onToolCall?.call(call, null);
+    await executor.started.future.timeout(const Duration(seconds: 5));
+    streamOpen = false;
+    return AgentLlmTurn(toolCalls: [call]);
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async => '摘要';
+}
+
+/// 一直挂起直到收到工具中断信号的只读执行器（测兄弟中止）。
+class HangUntilInterruptExecutor implements AgentToolExecutor {
+  var interrupted = false;
+
+  @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => true;
+
+  @override
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  ) async {
+    while (!cancel.toolInterruptRequested && !cancel.stopRequested) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    interrupted = true;
+    return const AgentToolResult(ok: false, summary: '已中断 ✗');
+  }
+}
+
+/// 第一轮流内发一个只读调用但最终 turn 没带回（丢块），
+/// 第二轮收尾（测提前执行调用的兄弟中止善后）。
+class EagerUnreturnedLlm implements AgentLlmClient {
+  int _round = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )?
+    onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+    onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    _round++;
+    if (_round > 1) {
+      return const AgentLlmTurn(text: '完成。', finishReason: 'stop');
+    }
+    await onToolCall?.call(
+      AgentToolCallRequest(
+        id: 'read-lost',
+        name: 'read_file',
+        argsJson: jsonEncode({'path': 'a.txt'}),
+        argSummary: 'a.txt',
+      ),
+      null,
+    );
+    // 最终 turn 没把该调用带回（丢块）。
+    return const AgentLlmTurn(text: '我先读一下文件…');
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async => '摘要';
 }
 
 /// 一律要求审批且裁决为拒绝（测方案被拒流程）。
