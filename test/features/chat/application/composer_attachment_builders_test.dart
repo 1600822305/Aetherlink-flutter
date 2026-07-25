@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:aetherlink_flutter/features/chat/application/composer_attachment_builders.dart';
+import 'package:aetherlink_flutter/features/chat/application/composer/composer_attachment_builders.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:flutter_test/flutter_test.dart';
 

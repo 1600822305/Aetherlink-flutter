@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
-import 'package:aetherlink_flutter/features/chat/application/composer_attachments_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/composer/composer_attachments_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/notes/application/notes_controller.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_picker.dart';
