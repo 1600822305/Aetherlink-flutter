@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
-import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
+import 'package:aetherlink_flutter/app/di/web_search_access.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_catalog.dart';

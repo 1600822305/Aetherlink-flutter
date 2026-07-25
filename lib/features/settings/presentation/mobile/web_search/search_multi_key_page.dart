@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
+import 'package:aetherlink_flutter/app/di/web_search_access.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/multi_key_management_page.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';

@@ -5,7 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/top_toolbar_access.dart';
-import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
+import 'package:aetherlink_flutter/app/di/model_combo_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';

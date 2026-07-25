@@ -9,7 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_reposi
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_history.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
-import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
+import 'package:aetherlink_flutter/app/di/auxiliary_model_access.dart';
 
 part 'translate_controller.g.dart';
 

@@ -23,7 +23,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_reques
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+import 'package:aetherlink_flutter/app/di/workspace_access.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';

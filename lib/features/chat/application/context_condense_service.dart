@@ -20,7 +20,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dar
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
-import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
+import 'package:aetherlink_flutter/app/di/auxiliary_model_access.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 part 'context_condense_service.g.dart';

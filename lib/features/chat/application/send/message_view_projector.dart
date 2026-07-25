@@ -6,7 +6,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
-import 'package:aetherlink_flutter/features/settings/application/model_combo_providers.dart';
+import 'package:aetherlink_flutter/app/di/model_combo_access.dart';
 
 /// Returns [blocks] sorted by the `message.blocks` id order (the canonical
 /// render order); any block not referenced there is appended at the end.

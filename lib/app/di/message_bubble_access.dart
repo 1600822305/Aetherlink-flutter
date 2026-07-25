@@ -3,6 +3,9 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 
+export 'package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart'
+    show messageBubbleSettingsControllerProvider;
+
 part 'message_bubble_access.g.dart';
 
 /// App-level composition seam exposing the 信息气泡管理 ([MessageBubbleSettings])
