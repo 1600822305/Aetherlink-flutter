@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/interrupted_backfill.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/plan_approval_flow.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/streaming_event_writer.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/streaming_tool_runner.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/task_transition.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/turn_stream_binder.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
@@ -284,6 +285,78 @@ class AgentEngine {
           isInternalTool: internalTool,
           toolStream: toolStream,
         );
+        final eager = StreamingToolRunner(
+          cancel: cancel,
+          maxConcurrent: kMaxConcurrentReadTools,
+        );
+
+        // 单个工具的执行 + 结果落库（串行 / 只读并发段 / 流内提前执行
+        // 共用）：带超时，超时自己发出的中断信号按代号定向回收，
+        // 不影响同轮其他工具，也不吞窗口内用户的新打断。
+        Future<void> runToolCall(
+          AgentToolCallRequest call,
+          ToolCallEvent event,
+        ) async {
+          final stopwatch = Stopwatch()..start();
+          var timeoutInterruptGen = 0;
+          final result = await tools
+              .execute(call, cancel)
+              .timeout(
+                budget.toolTimeout,
+                onTimeout: () {
+                  // 同时中止仍在运行的底层工具，避免模型重发同一命令时
+                  // 与旧命令并发（双重执行）。
+                  timeoutInterruptGen = cancel.requestToolInterrupt();
+                  return const AgentToolResult(ok: false, summary: '超时 ✗');
+                },
+              );
+          stopwatch.stop();
+          if (timeoutInterruptGen > 0) {
+            cancel.consumeToolInterruptOf(timeoutInterruptGen);
+          }
+          await store.updateToolCall(
+            current.id,
+            event,
+            state: result.ok
+                ? AgentToolCallState.success
+                : AgentToolCallState.failure,
+            resultSummary: result.summary,
+            resultDetail: result.detail,
+            resultOverflowPath: result.overflowPath,
+            imagePath: result.imagePath,
+            imageMimeType: result.imageMimeType,
+            elapsed: stopwatch.elapsed,
+          );
+          budget.recordToolResult(ok: result.ok);
+        }
+
+        // 边流边跑（对标 CC StreamingToolExecutor）：参数一流完，
+        // 只读（并发安全）且审批直通（allow）的调用立即开始执行，
+        // 不等整轮流完；不满足条件（写类/需审批/控制工具）回退
+        // 正常执行循环。evaluate 失败也回退，不中断 LLM 流。
+        Future<void> maybeStartEager(AgentToolCallRequest call) async {
+          if (!eager.canStart || internalTool(call.name)) return;
+          if (cancel.stopRequested || cancel.toolInterruptRequested) return;
+          try {
+            if (!tools.isConcurrencySafe(call)) return;
+            if (await approval.evaluate(call, current) !=
+                ApprovalRequirement.allow) {
+              return;
+            }
+          } catch (_) {
+            return;
+          }
+          final event = await binder.claimEvent(call);
+          eager.start(call.id, () => runToolCall(call, event));
+        }
+
+        // 本轮中止善后：先兄弟中止仍在跑的提前执行调用，再把
+        // 尚未执行的预建事件按中断回填。
+        Future<void> failPendingToolEvents() async {
+          await eager.abortAndDrain();
+          await binder.failAllPending();
+        }
+
         Future<AgentLlmTurn> callTurn() => llm.completeTurn(
           AgentLlmContext(
             task: current,
@@ -309,6 +382,7 @@ class AgentEngine {
           onToolCall: (call, streamKey) async {
             await writer.sealSegments();
             await binder.onToolCall(call, streamKey);
+            await maybeStartEager(call);
           },
         );
         final AgentLlmTurn turn;
@@ -320,10 +394,11 @@ class AgentEngine {
           // 反应式 LLM 压缩；两级各只尝试一次，再超限报错（防死循环）。
           if (!isContextOverflowError(e)) rethrow;
           // 半途流出的思考/正文定格落库，避免流式事件永久 streaming；
-          // 本轮已流式预建的工具事件按中断回填，避免永久 running。
+          // 本轮已流式预建/已提前执行的工具按中断回填收敛，
+          // 避免永久 running。
           await writer.finish('');
           await binder.failStreaming();
-          await binder.failAllPending();
+          await failPendingToolEvents();
           if (!_overflowDrainAttempted) {
             _overflowDrainAttempted = true;
             await store.appendStatusChange(
@@ -341,11 +416,13 @@ class AgentEngine {
           continue;
         }
         await writer.finish(turn.text);
-        // 流中断时未闭合/未回到 turn 的预建事件按失败回填，避免永久 running。
+        // 流中断时未闭合/未回到 turn 的预建事件按失败回填；已提前
+        // 执行但未回到 turn 的调用按兄弟中止收敛，避免永久 running。
+        final returnedIds = {for (final c in turn.toolCalls) c.id};
         final interruptedToolAttempts =
             await binder.failStreaming() +
-            await binder.failUnreturned({for (final c in turn.toolCalls) c.id});
-        Future<void> failPendingToolEvents() => binder.failAllPending();
+            await binder.failUnreturned(returnedIds) +
+            await eager.drainUnreturned(returnedIds);
 
         budget.recordTurnUsage(
           totalTokens: turn.tokensUsed,
@@ -444,46 +521,6 @@ class AgentEngine {
           return;
         }
 
-        // 单个工具的执行 + 结果落库（串行与只读并发段共用）：
-        // 带超时，超时自己发出的中断信号按代号定向回收，
-        // 不影响同轮其他工具，也不吞窗口内用户的新打断。
-        Future<void> runToolCall(
-          AgentToolCallRequest call,
-          ToolCallEvent event,
-        ) async {
-          final stopwatch = Stopwatch()..start();
-          var timeoutInterruptGen = 0;
-          final result = await tools
-              .execute(call, cancel)
-              .timeout(
-                budget.toolTimeout,
-                onTimeout: () {
-                  // 同时中止仍在运行的底层工具，避免模型重发同一命令时
-                  // 与旧命令并发（双重执行）。
-                  timeoutInterruptGen = cancel.requestToolInterrupt();
-                  return const AgentToolResult(ok: false, summary: '超时 ✗');
-                },
-              );
-          stopwatch.stop();
-          if (timeoutInterruptGen > 0) {
-            cancel.consumeToolInterruptOf(timeoutInterruptGen);
-          }
-          await store.updateToolCall(
-            current.id,
-            event,
-            state: result.ok
-                ? AgentToolCallState.success
-                : AgentToolCallState.failure,
-            resultSummary: result.summary,
-            resultDetail: result.detail,
-            resultOverflowPath: result.overflowPath,
-            imagePath: result.imagePath,
-            imageMimeType: result.imageMimeType,
-            elapsed: stopwatch.elapsed,
-          );
-          budget.recordToolResult(ok: result.ok);
-        }
-
         // ⑥ 逐个执行工具调用；同一轮连续的 spawn_subagent 成批并行，
         // 连续的只读（并发安全）调用成批并发（对标 CC
         // runToolsConcurrently），写/执行类保持串行。
@@ -524,6 +561,28 @@ class AgentEngine {
             }
           }
 
+          // 流内已提前执行：等它跑完即可，不重复执行；后置的
+          // 停止/hook/打断检查与串行路径同款。
+          final eagerRun = eager.take(call.id);
+          if (eagerRun != null) {
+            await eagerRun;
+            if (cancel.stopRequested) break;
+            final eagerHookStop = hookStopSignal?.call();
+            if (eagerHookStop != null) {
+              await failPendingToolEvents();
+              current = await transition(
+                AgentTaskStatus.cancelled,
+                'hook 终止任务：$eagerHookStop',
+              );
+              return;
+            }
+            if (cancel.consumeToolInterrupt()) {
+              await failPendingToolEvents();
+              break;
+            }
+            continue;
+          }
+
           // 只读并发段：连续≥ 2 个并发安全且审批直通（allow）的调用
           // 成批 Future.wait 并行；遇到需要审批/禁止/不安全的调用在
           // 其前截断，剩余的回到串行路径逐个处理（evaluate 有缓存，
@@ -542,14 +601,17 @@ class AgentEngine {
             }
             if (batch.length >= 2) {
               i = j - 1;
-              final batchEvents = <ToolCallEvent>[];
+              // 批内已提前执行的直接接管在跑的 future，不重复执行。
+              final futures = <Future<void>>[];
               for (final c in batch) {
-                batchEvents.add(await binder.claimEvent(c));
+                final running = eager.take(c.id);
+                if (running != null) {
+                  futures.add(running);
+                  continue;
+                }
+                futures.add(runToolCall(c, await binder.claimEvent(c)));
               }
-              await Future.wait([
-                for (var k = 0; k < batch.length; k++)
-                  runToolCall(batch[k], batchEvents[k]),
-              ]);
+              await Future.wait(futures);
               if (cancel.stopRequested) break;
               final batchHookStop = hookStopSignal?.call();
               if (batchHookStop != null) {
@@ -644,6 +706,10 @@ class AgentEngine {
             break;
           }
         }
+
+        // 兄弟中止：本轮中途退出（暂停/打断/break）时，仍在跑的
+        // 提前执行调用定向中断并等待收敛，不把 future 泄出本轮。
+        await eager.abortAndDrain();
 
         onTurnEnd?.call();
 
