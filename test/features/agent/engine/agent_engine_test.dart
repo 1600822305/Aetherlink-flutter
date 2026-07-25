@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_context_overflow.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
@@ -398,9 +399,10 @@ class AlwaysFailingToolLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     return AgentLlmTurn(
@@ -420,8 +422,7 @@ class AlwaysFailingToolLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要：覆盖 ${events.length} 条';
+  }) async => '摘要：覆盖 ${events.length} 条';
 }
 
 /// 每轮产出一个大输出工具调用，直到某轮后 finish（测 compaction）。
@@ -440,9 +441,10 @@ class BigOutputLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     _round++;
@@ -475,8 +477,7 @@ class BigOutputLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要：覆盖 ${events.length} 条';
+  }) async => '摘要：覆盖 ${events.length} 条';
 }
 
 /// 记录每轮 AgentLlmContext 的 microcompact 生效值后直接 finish
@@ -494,9 +495,10 @@ class ContextCapturingLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     capturedMicroEnabled.add(context.microCompactEnabled);
@@ -518,8 +520,7 @@ class ContextCapturingLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要';
+  }) async => '摘要';
 }
 
 class BigOutputToolExecutor implements AgentToolExecutor {
@@ -530,8 +531,7 @@ class BigOutputToolExecutor implements AgentToolExecutor {
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
     AgentCancellationToken cancel,
-  ) async =>
-      AgentToolResult(ok: true, summary: 'ok', detail: 'x' * 500);
+  ) async => AgentToolResult(ok: true, summary: 'ok', detail: 'x' * 500);
 }
 
 class FailingToolExecutor implements AgentToolExecutor {
@@ -542,8 +542,7 @@ class FailingToolExecutor implements AgentToolExecutor {
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
     AgentCancellationToken cancel,
-  ) async =>
-      const AgentToolResult(ok: false, summary: '失败 ✗');
+  ) async => const AgentToolResult(ok: false, summary: '失败 ✗');
 }
 
 class StructuredAskUserLlm implements AgentLlmClient {
@@ -556,14 +555,15 @@ class StructuredAskUserLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     final answered = context.events.whereType<UserMessageEvent>().any(
-          (event) => event.replyToQuestionId != null,
-        );
+      (event) => event.replyToQuestionId != null,
+    );
     if (answered) {
       return AgentLlmTurn(
         toolCalls: [
@@ -596,8 +596,7 @@ class StructuredAskUserLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要';
+  }) async => '摘要';
 }
 
 /// 发一次工具调用，下一轮 finish_task 收尾。
@@ -613,9 +612,10 @@ class OneToolThenFinishLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     _round++;
@@ -649,8 +649,7 @@ class OneToolThenFinishLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要';
+  }) async => '摘要';
 }
 
 /// 同一轮先 finish_task 再跟一个普通工具，且普通工具经 onToolCall
@@ -665,9 +664,10 @@ class FinishWithTrailingToolLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     final trailing = AgentToolCallRequest(
@@ -696,8 +696,7 @@ class FinishWithTrailingToolLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要';
+  }) async => '摘要';
 }
 
 /// 一轮发两个只读工具调用，下一轮 finish_task 收尾（测只读并发段）。
@@ -713,9 +712,10 @@ class TwoReadToolsThenFinishLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     _round++;
@@ -755,8 +755,7 @@ class TwoReadToolsThenFinishLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要';
+  }) async => '摘要';
 }
 
 /// 记录并发度的只读执行器：两个调用都开始后才放行
@@ -794,8 +793,7 @@ class EmptySummaryBigOutputLlm extends BigOutputLlm {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '';
+  }) async => '';
 }
 
 /// 前 [overflowTurns] 轮抛「上下文超限」错误，之后 finish
@@ -806,6 +804,9 @@ class OverflowThenFinishLlm implements AgentLlmClient {
   final int overflowTurns;
   int _turn = 0;
 
+  final List<bool> capturedMicroEnabled = [];
+  final List<int> capturedMicroTriggerChars = [];
+
   @override
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
@@ -815,11 +816,14 @@ class OverflowThenFinishLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
+    capturedMicroEnabled.add(context.microCompactEnabled);
+    capturedMicroTriggerChars.add(context.microCompactTriggerChars);
     _turn++;
     if (_turn <= overflowTurns) {
       throw Exception('prompt is too long: 137500 tokens > 135000 maximum');
@@ -841,8 +845,7 @@ class OverflowThenFinishLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要：覆盖 ${events.length} 条';
+  }) async => '摘要：覆盖 ${events.length} 条';
 }
 
 /// 需要审批的门：模拟审批等待期间有陈旧的工具打断标记（如用户
@@ -907,9 +910,10 @@ class TruncatedThenFinishLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     calls++;
@@ -924,8 +928,7 @@ class TruncatedThenFinishLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要：覆盖 ${events.length} 条';
+  }) async => '摘要：覆盖 ${events.length} 条';
 }
 
 /// 第一轮流式预建了工具调用但最终 turn 没带回（模拟截断/网关
@@ -942,9 +945,10 @@ class UnreturnedToolThenFinishLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     calls++;
@@ -969,8 +973,7 @@ class UnreturnedToolThenFinishLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要：覆盖 ${events.length} 条';
+  }) async => '摘要：覆盖 ${events.length} 条';
 }
 
 /// 每轮回报固定上下文用量的多轮工具循环（测 token 预算增量记账）。
@@ -989,9 +992,10 @@ class ConstantContextLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     calls++;
@@ -1023,8 +1027,7 @@ class ConstantContextLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要：覆盖 ${events.length} 条';
+  }) async => '摘要：覆盖 ${events.length} 条';
 }
 
 AgentTask newTask() {
@@ -1063,9 +1066,9 @@ void main() {
     expect(gateway.last.status, AgentTaskStatus.done);
     // 批准后的这一次调用必须执行，且执行时刻打断标记已被消费。
     expect(executor.interruptFlagsAtExecute, [false]);
-    final toolEvent = (await store.getEvents(task.id))
-        .whereType<ToolCallEvent>()
-        .single;
+    final toolEvent = (await store.getEvents(
+      task.id,
+    )).whereType<ToolCallEvent>().single;
     expect(toolEvent.state, AgentToolCallState.success);
   });
 
@@ -1088,11 +1091,14 @@ void main() {
 
     expect(gateway.last.status, AgentTaskStatus.done);
     expect(executor.maxConcurrent, 2);
-    final toolEvents =
-        (await store.getEvents(task.id)).whereType<ToolCallEvent>().toList();
+    final toolEvents = (await store.getEvents(
+      task.id,
+    )).whereType<ToolCallEvent>().toList();
     expect(toolEvents, hasLength(2));
-    expect(toolEvents.map((e) => e.state),
-        everyElement(AgentToolCallState.success));
+    expect(
+      toolEvents.map((e) => e.state),
+      everyElement(AgentToolCallState.success),
+    );
   });
 
   test('finish_task 收尾时同轮剩余预建工具事件按中断回填，不留永久 running', () async {
@@ -1112,13 +1118,18 @@ void main() {
     await engine.run(task, AgentCancellationToken());
 
     expect(gateway.last.status, AgentTaskStatus.done);
-    final toolEvents =
-        (await store.getEvents(task.id)).whereType<ToolCallEvent>().toList();
+    final toolEvents = (await store.getEvents(
+      task.id,
+    )).whereType<ToolCallEvent>().toList();
     // 跟在 finish_task 后面的预建工具事件被回填为失败，而不是永久 running。
-    expect(toolEvents.map((e) => e.state),
-        isNot(contains(AgentToolCallState.running)));
-    expect(toolEvents.map((e) => e.state),
-        contains(AgentToolCallState.failure));
+    expect(
+      toolEvents.map((e) => e.state),
+      isNot(contains(AgentToolCallState.running)),
+    );
+    expect(
+      toolEvents.map((e) => e.state),
+      contains(AgentToolCallState.failure),
+    );
   });
 
   test('ask_user 提问落库、等待回答并可恢复完成', () async {
@@ -1138,8 +1149,9 @@ void main() {
     await engine.run(task, AgentCancellationToken());
 
     expect(gateway.last.status, AgentTaskStatus.waitingInput);
-    final question =
-        (await store.getEvents(task.id)).whereType<UserQuestionEvent>().single;
+    final question = (await store.getEvents(
+      task.id,
+    )).whereType<UserQuestionEvent>().single;
     expect(question.toolCallId, 'ask-1');
     expect(question.question, '选择发布环境');
     expect(question.suggestions, ['测试', '生产']);
@@ -1191,9 +1203,9 @@ void main() {
       isTrue,
     );
     // 普通工具调用成功且有耗时/结果。
-    final tool = events
-        .whereType<ToolCallEvent>()
-        .singleWhere((e) => e.toolName == 'read_file');
+    final tool = events.whereType<ToolCallEvent>().singleWhere(
+      (e) => e.toolName == 'read_file',
+    );
     expect(tool.state, AgentToolCallState.success);
     expect(tool.resultSummary, isNotEmpty);
     expect(tool.elapsed, isNotNull);
@@ -1230,21 +1242,28 @@ void main() {
     final engine = AgentEngine(
       llm: ScriptedLlm([
         // 3 项全 completed 且无验证类条目 → 附提醒。
-        AgentLlmTurn(toolCalls: [
-          plan('plan-nudge', ['写代码', '改配置', '更新文档']),
-        ]),
+        AgentLlmTurn(
+          toolCalls: [
+            plan('plan-nudge', ['写代码', '改配置', '更新文档']),
+          ],
+        ),
         // 3 项全 completed 但含"测试"条目 → 不附提醒。
-        AgentLlmTurn(toolCalls: [
-          plan('plan-ok', ['写代码', '跑测试', '更新文档']),
-        ]),
-        AgentLlmTurn(text: '完成。', toolCalls: [
-          AgentToolCallRequest(
-            id: 'finish-1',
-            name: kToolFinishTask,
-            argsJson: jsonEncode({'summary': '完成'}),
-            argSummary: '收尾',
-          ),
-        ]),
+        AgentLlmTurn(
+          toolCalls: [
+            plan('plan-ok', ['写代码', '跑测试', '更新文档']),
+          ],
+        ),
+        AgentLlmTurn(
+          text: '完成。',
+          toolCalls: [
+            AgentToolCallRequest(
+              id: 'finish-1',
+              name: kToolFinishTask,
+              argsJson: jsonEncode({'summary': '完成'}),
+              argSummary: '收尾',
+            ),
+          ],
+        ),
       ]),
       tools: const FakeAgentToolExecutor(delay: Duration.zero),
       approval: const AutoApprovalGate(),
@@ -1279,30 +1298,37 @@ void main() {
         );
     final engine = AgentEngine(
       llm: ScriptedLlm([
-        AgentLlmTurn(toolCalls: [
-          call({
-            'items': [
-              {'content': '第一步', 'status': 'in_progress'},
-            ],
-          }),
-        ]),
-        AgentLlmTurn(toolCalls: [
-          // 非法 status + 空 items：都应被拒绝，不覆盖已有计划。
-          call({
-            'items': [
-              {'content': '第一步', 'status': 'done'},
-            ],
-          }),
-          call({'items': <Object?>[]}),
-        ]),
-        AgentLlmTurn(text: '完成。', toolCalls: [
-          AgentToolCallRequest(
-            id: 'finish-1',
-            name: kToolFinishTask,
-            argsJson: jsonEncode({'summary': '完成'}),
-            argSummary: '收尾',
-          ),
-        ]),
+        AgentLlmTurn(
+          toolCalls: [
+            call({
+              'items': [
+                {'content': '第一步', 'status': 'in_progress'},
+              ],
+            }),
+          ],
+        ),
+        AgentLlmTurn(
+          toolCalls: [
+            // 非法 status + 空 items：都应被拒绝，不覆盖已有计划。
+            call({
+              'items': [
+                {'content': '第一步', 'status': 'done'},
+              ],
+            }),
+            call({'items': <Object?>[]}),
+          ],
+        ),
+        AgentLlmTurn(
+          text: '完成。',
+          toolCalls: [
+            AgentToolCallRequest(
+              id: 'finish-1',
+              name: kToolFinishTask,
+              argsJson: jsonEncode({'summary': '完成'}),
+              argSummary: '收尾',
+            ),
+          ],
+        ),
       ]),
       tools: const FakeAgentToolExecutor(delay: Duration.zero),
       approval: const AutoApprovalGate(),
@@ -1358,8 +1384,9 @@ void main() {
     expect(gateway.last.status, AgentTaskStatus.done);
     // 每次运行最多阻一次：第二次收尾不再调 guard，直接放行（防死循环）。
     expect(guardCalls, 1);
-    final messages =
-        (await store.getEvents(task.id)).whereType<UserMessageEvent>();
+    final messages = (await store.getEvents(
+      task.id,
+    )).whereType<UserMessageEvent>();
     expect(messages.any((m) => m.text.contains('还有测试没跑')), isTrue);
   });
 
@@ -1490,14 +1517,13 @@ void main() {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
     AgentEngine buildEngine() => AgentEngine(
-          llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
-          tools:
-              const FakeAgentToolExecutor(delay: Duration(milliseconds: 10)),
-          approval: const AutoApprovalGate(),
-          store: store,
-          gateway: gateway,
-          budget: AgentBudget(),
-        );
+      llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
+      tools: const FakeAgentToolExecutor(delay: Duration(milliseconds: 10)),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
     final task = newTask();
     await store.appendUserMessage(task.id, '帮我看看项目结构');
 
@@ -1552,9 +1578,7 @@ void main() {
 
     final events = await store.getEvents(task.id);
     for (final id in [stale1.id, stale2.id]) {
-      final e = events.whereType<ToolCallEvent>().firstWhere(
-            (t) => t.id == id,
-          );
+      final e = events.whereType<ToolCallEvent>().firstWhere((t) => t.id == id);
       expect(e.state, AgentToolCallState.failure);
       expect(e.resultSummary, contains('进程中断'));
     }
@@ -1565,13 +1589,13 @@ void main() {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
     AgentEngine buildEngine(AgentBudget budget) => AgentEngine(
-          llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
-          tools: const FakeAgentToolExecutor(delay: Duration.zero),
-          approval: const AutoApprovalGate(),
-          store: store,
-          gateway: gateway,
-          budget: budget,
-        );
+      llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: budget,
+    );
     final task = newTask();
     await store.appendUserMessage(task.id, '帮我看看项目结构');
 
@@ -1718,11 +1742,48 @@ void main() {
     expect(compactionFailed, preCompact);
   });
 
-  test('上下文超限 → 反应式压缩后重试本轮并完成（升级计划 ⑧）', () async {
+  test('上下文超限 → 第一级 drain 折叠后重试即恢复（不调 LLM 压缩）', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final llm = OverflowThenFinishLlm();
+    final engine = AgentEngine(
+      llm: llm,
+      tools: BigOutputToolExecutor(),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(compactionKeepChars: 600),
+    );
+    final task = newTask();
+    for (var i = 0; i < 12; i++) {
+      await store.appendUserMessage(task.id, '消息$i：${'长' * 500}');
+    }
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    final events = await store.getEvents(task.id);
+    // 第一级即恢复：不走 LLM 反应式压缩。
+    expect(events.whereType<CompactionEvent>(), isEmpty);
+    expect(
+      events.whereType<StatusChangeEvent>().where(
+        (e) => e.description.contains('折叠旧工具输出后重试本轮'),
+      ),
+      hasLength(1),
+    );
+    // 重试请求以 drain 档阈值强制折叠重放视图。
+    expect(llm.capturedMicroEnabled.last, isTrue);
+    expect(
+      llm.capturedMicroTriggerChars.last,
+      lessThanOrEqualTo(kOverflowDrainTriggerChars),
+    );
+  });
+
+  test('上下文超限 → drain 后仍超限 → 第二级反应式压缩后完成（升级计划 ⑧）', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
     final engine = AgentEngine(
-      llm: OverflowThenFinishLlm(),
+      llm: OverflowThenFinishLlm(overflowTurns: 2),
       tools: BigOutputToolExecutor(),
       approval: const AutoApprovalGate(),
       store: store,
@@ -1740,14 +1801,14 @@ void main() {
     final events = await store.getEvents(task.id);
     expect(events.whereType<CompactionEvent>(), hasLength(1));
     expect(
-      events
-          .whereType<StatusChangeEvent>()
-          .where((e) => e.description.contains('兜底压缩后重试本轮')),
+      events.whereType<StatusChangeEvent>().where(
+        (e) => e.description.contains('兜底压缩后重试本轮'),
+      ),
       hasLength(1),
     );
   });
 
-  test('上下文超限持续 → 只兜底一次，第二次直接 failed（防死循环）', () async {
+  test('上下文超限持续 → drain + 兜底各一次，第三次直接 failed（防死循环）', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
     final engine = AgentEngine(
@@ -1818,8 +1879,11 @@ void main() {
     await store.appendUserMessage(taskId, '第一条');
     await store.appendAssistantText(taskId, '回应一', streaming: false);
     await store.appendAssistantText(taskId, '回应二', streaming: false);
-    final compaction =
-        await store.appendCompaction(taskId, coveredCount: 2, summary: '早期摘要');
+    final compaction = await store.appendCompaction(
+      taskId,
+      coveredCount: 2,
+      summary: '早期摘要',
+    );
     await store.appendUserMessage(taskId, '第二条');
     await store.updateCompaction(taskId, compaction, revoked: true);
 
@@ -1862,33 +1926,41 @@ void main() {
           argSummary: name,
         );
 
-    test('enter_plan_mode：切入 plan、记录 prePlanMode 并请求重启续跑', () async {
+    test('enter_plan_mode：切入 plan、记录 prePlanMode 并同一运行续跑（免重启）', () async {
       final store = InMemoryAgentEventStore();
       final gateway = RecordingTaskGateway();
-      final restarts = <AgentTask>[];
+      final llm = ScriptedLlm([
+        AgentLlmTurn(toolCalls: [planCall(kToolEnterPlanMode)]),
+        AgentLlmTurn(
+          toolCalls: [
+            planCall(kToolFinishTask, {'summary': '规划完成'}),
+          ],
+        ),
+      ]);
       final engine = AgentEngine(
-        llm: ScriptedLlm([
-          AgentLlmTurn(toolCalls: [planCall(kToolEnterPlanMode)]),
-        ]),
+        llm: llm,
         tools: const FakeAgentToolExecutor(),
         approval: const AutoApprovalGate(),
         store: store,
         gateway: gateway,
         budget: AgentBudget(),
-        onModeSwitchRestart: restarts.add,
       );
       final task = newTask();
       await store.appendUserMessage(task.id, '重构整个模块');
 
       await engine.run(task, AgentCancellationToken());
 
+      // 同一运行内继续：下一轮 LLM 请求已是 plan 模式。
+      expect(llm.seenModes.take(2), [
+        AgentSessionMode.code,
+        AgentSessionMode.plan,
+      ]);
       expect(gateway.last.mode, AgentSessionMode.plan);
       expect(gateway.last.prePlanMode, AgentSessionMode.code);
-      expect(gateway.last.status, AgentTaskStatus.running);
-      expect(restarts.single.mode, AgentSessionMode.plan);
-      final toolEvent = (await store.getEvents(task.id))
-          .whereType<ToolCallEvent>()
-          .single;
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().first;
       expect(toolEvent.state, AgentToolCallState.success);
       expect(toolEvent.resultDetail, contains('exit_plan_mode'));
     });
@@ -1896,50 +1968,57 @@ void main() {
     test('enter_plan_mode 在只读模式下拒绝并继续循环', () async {
       final store = InMemoryAgentEventStore();
       final gateway = RecordingTaskGateway();
-      final restarts = <AgentTask>[];
       final engine = AgentEngine(
         llm: ScriptedLlm([
           AgentLlmTurn(toolCalls: [planCall(kToolEnterPlanMode)]),
-          AgentLlmTurn(text: '规划完成。', toolCalls: [
-            planCall(kToolFinishTask, {'summary': '完成'}),
-          ]),
+          AgentLlmTurn(
+            text: '规划完成。',
+            toolCalls: [
+              planCall(kToolFinishTask, {'summary': '完成'}),
+            ],
+          ),
         ]),
         tools: const FakeAgentToolExecutor(),
         approval: const AutoApprovalGate(),
         store: store,
         gateway: gateway,
         budget: AgentBudget(),
-        onModeSwitchRestart: restarts.add,
       );
       final task = newTask().copyWith(mode: AgentSessionMode.plan);
       await store.appendUserMessage(task.id, '规划');
 
       await engine.run(task, AgentCancellationToken());
 
-      expect(restarts, isEmpty);
+      expect(gateway.last.mode, AgentSessionMode.plan);
       expect(gateway.last.status, AgentTaskStatus.done);
-      final toolEvent = (await store.getEvents(task.id))
-          .whereType<ToolCallEvent>()
-          .single;
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().single;
       expect(toolEvent.state, AgentToolCallState.failure);
     });
 
-    test('exit_plan_mode 批准：恢复 prePlanMode、清空标记并回填方案全文', () async {
+    test('exit_plan_mode 批准：恢复 prePlanMode、清空标记并同一运行续跑', () async {
       final store = InMemoryAgentEventStore();
       final gateway = RecordingTaskGateway();
-      final restarts = <AgentTask>[];
-      final engine = AgentEngine(
-        llm: ScriptedLlm([
-          AgentLlmTurn(toolCalls: [
+      final llm = ScriptedLlm([
+        AgentLlmTurn(
+          toolCalls: [
             planCall(kToolExitPlanMode, {'plan': '## 方案\n分两步实现'}),
-          ]),
-        ]),
+          ],
+        ),
+        AgentLlmTurn(
+          toolCalls: [
+            planCall(kToolFinishTask, {'summary': '完成'}),
+          ],
+        ),
+      ]);
+      final engine = AgentEngine(
+        llm: llm,
         tools: const FakeAgentToolExecutor(),
         approval: const AutoApprovalGate(),
         store: store,
         gateway: gateway,
         budget: AgentBudget(),
-        onModeSwitchRestart: restarts.add,
       );
       final task = newTask().copyWith(
         mode: AgentSessionMode.plan,
@@ -1949,13 +2028,17 @@ void main() {
 
       await engine.run(task, AgentCancellationToken());
 
+      // 同一运行内继续：批准后下一轮已是恢复的执行模式。
+      expect(llm.seenModes.take(2), [
+        AgentSessionMode.plan,
+        AgentSessionMode.auto,
+      ]);
       expect(gateway.last.mode, AgentSessionMode.auto);
       expect(gateway.last.prePlanMode, isNull);
-      expect(gateway.last.status, AgentTaskStatus.running);
-      expect(restarts.single.mode, AgentSessionMode.auto);
-      final toolEvent = (await store.getEvents(task.id))
-          .whereType<ToolCallEvent>()
-          .single;
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().first;
       expect(toolEvent.state, AgentToolCallState.success);
       expect(toolEvent.resultDetail, contains('分两步实现'));
     });
@@ -1963,34 +2046,35 @@ void main() {
     test('exit_plan_mode 拒绝：留在 plan 模式并把拒绝理由回填给模型', () async {
       final store = InMemoryAgentEventStore();
       final gateway = RecordingTaskGateway();
-      final restarts = <AgentTask>[];
       final engine = AgentEngine(
         llm: ScriptedLlm([
-          AgentLlmTurn(toolCalls: [
-            planCall(kToolExitPlanMode, {'plan': '## 方案 v1'}),
-          ]),
-          AgentLlmTurn(toolCalls: [
-            planCall(kToolFinishTask, {'summary': '修订中'}),
-          ]),
+          AgentLlmTurn(
+            toolCalls: [
+              planCall(kToolExitPlanMode, {'plan': '## 方案 v1'}),
+            ],
+          ),
+          AgentLlmTurn(
+            toolCalls: [
+              planCall(kToolFinishTask, {'summary': '修订中'}),
+            ],
+          ),
         ]),
         tools: const FakeAgentToolExecutor(),
         approval: const DenyingApprovalGate('改用方案 B'),
         store: store,
         gateway: gateway,
         budget: AgentBudget(),
-        onModeSwitchRestart: restarts.add,
       );
       final task = newTask().copyWith(mode: AgentSessionMode.plan);
       await store.appendUserMessage(task.id, '出方案');
 
       await engine.run(task, AgentCancellationToken());
 
-      expect(restarts, isEmpty);
       expect(gateway.last.mode, AgentSessionMode.plan);
       expect(gateway.last.status, AgentTaskStatus.done);
-      final toolEvent = (await store.getEvents(task.id))
-          .whereType<ToolCallEvent>()
-          .first;
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().first;
       expect(toolEvent.state, AgentToolCallState.denied);
       expect(toolEvent.resultDetail, contains('改用方案 B'));
       expect(toolEvent.resultDetail, contains(kPlanRejectionPrefix));
@@ -1999,12 +2083,18 @@ void main() {
     test('exit_plan_mode 编辑后批准：以编辑版方案回填并回写参数详情', () async {
       final store = InMemoryAgentEventStore();
       final gateway = RecordingTaskGateway();
-      final restarts = <AgentTask>[];
       final engine = AgentEngine(
         llm: ScriptedLlm([
-          AgentLlmTurn(toolCalls: [
-            planCall(kToolExitPlanMode, {'plan': '## 方案 v1'}),
-          ]),
+          AgentLlmTurn(
+            toolCalls: [
+              planCall(kToolExitPlanMode, {'plan': '## 方案 v1'}),
+            ],
+          ),
+          AgentLlmTurn(
+            toolCalls: [
+              planCall(kToolFinishTask, {'summary': '完成'}),
+            ],
+          ),
         ]),
         tools: const FakeAgentToolExecutor(),
         approval: const VerdictApprovalGate(
@@ -2013,7 +2103,6 @@ void main() {
         store: store,
         gateway: gateway,
         budget: AgentBudget(),
-        onModeSwitchRestart: restarts.add,
       );
       final task = newTask().copyWith(mode: AgentSessionMode.plan);
       await store.appendUserMessage(task.id, '出方案');
@@ -2021,10 +2110,10 @@ void main() {
       await engine.run(task, AgentCancellationToken());
 
       expect(gateway.last.mode, AgentSessionMode.code);
-      expect(restarts, hasLength(1));
-      final toolEvent = (await store.getEvents(task.id))
-          .whereType<ToolCallEvent>()
-          .single;
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().first;
       expect(toolEvent.state, AgentToolCallState.success);
       expect(toolEvent.resultDetail, contains('## 方案 v2（用户改）'));
       expect(toolEvent.resultDetail, contains('经用户编辑'));
@@ -2034,13 +2123,20 @@ void main() {
     test('exit_plan_mode 批准并免审执行：切 Auto 模式', () async {
       final store = InMemoryAgentEventStore();
       final gateway = RecordingTaskGateway();
-      final restarts = <AgentTask>[];
-      final engine = AgentEngine(
-        llm: ScriptedLlm([
-          AgentLlmTurn(toolCalls: [
+      final llm = ScriptedLlm([
+        AgentLlmTurn(
+          toolCalls: [
             planCall(kToolExitPlanMode, {'plan': '## 方案'}),
-          ]),
-        ]),
+          ],
+        ),
+        AgentLlmTurn(
+          toolCalls: [
+            planCall(kToolFinishTask, {'summary': '完成'}),
+          ],
+        ),
+      ]);
+      final engine = AgentEngine(
+        llm: llm,
         tools: const FakeAgentToolExecutor(),
         approval: const VerdictApprovalGate(
           ApprovalVerdict.approved(autoAccept: true),
@@ -2048,7 +2144,6 @@ void main() {
         store: store,
         gateway: gateway,
         budget: AgentBudget(),
-        onModeSwitchRestart: restarts.add,
       );
       final task = newTask().copyWith(
         mode: AgentSessionMode.plan,
@@ -2058,15 +2153,17 @@ void main() {
 
       await engine.run(task, AgentCancellationToken());
 
+      expect(llm.seenModes.take(2), [
+        AgentSessionMode.plan,
+        AgentSessionMode.auto,
+      ]);
       expect(gateway.last.mode, AgentSessionMode.auto);
       expect(gateway.last.prePlanMode, isNull);
-      expect(restarts.single.mode, AgentSessionMode.auto);
     });
 
     test('杀进程恢复：挂起中的方案审批不回填失败，直接重建挂起', () async {
       final store = InMemoryAgentEventStore();
       final gateway = RecordingTaskGateway();
-      final restarts = <AgentTask>[];
       final task = newTask().copyWith(
         mode: AgentSessionMode.plan,
         prePlanMode: AgentSessionMode.code,
@@ -2078,23 +2175,31 @@ void main() {
         planCall(kToolExitPlanMode, {'plan': '## 方案（恢复）'}),
         AgentToolCallState.waitingApproval,
       );
+      final llm = ScriptedLlm([
+        AgentLlmTurn(
+          toolCalls: [
+            planCall(kToolFinishTask, {'summary': '完成'}),
+          ],
+        ),
+      ]);
       final engine = AgentEngine(
-        llm: ScriptedLlm(const []), // 批准后重启，不应再走 LLM
+        llm: llm,
         tools: const FakeAgentToolExecutor(),
         approval: const AutoApprovalGate(),
         store: store,
         gateway: gateway,
         budget: AgentBudget(),
-        onModeSwitchRestart: restarts.add,
       );
 
       await engine.run(task, AgentCancellationToken());
 
+      // 批准后同一运行继续：首轮 LLM 请求已是恢复的执行模式。
+      expect(llm.seenModes, isNotEmpty);
+      expect(llm.seenModes, everyElement(AgentSessionMode.code));
       expect(gateway.last.mode, AgentSessionMode.code);
-      expect(restarts, hasLength(1));
-      final toolEvent = (await store.getEvents(task.id))
-          .whereType<ToolCallEvent>()
-          .single;
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().first;
       expect(toolEvent.state, AgentToolCallState.success);
       expect(toolEvent.resultDetail, contains('## 方案（恢复）'));
     });
@@ -2102,7 +2207,6 @@ void main() {
     test('杀进程恢复：方案审批被拒绝后留在 plan 继续循环', () async {
       final store = InMemoryAgentEventStore();
       final gateway = RecordingTaskGateway();
-      final restarts = <AgentTask>[];
       final task = newTask().copyWith(mode: AgentSessionMode.plan);
       await store.appendUserMessage(task.id, '出方案');
       await store.appendToolCall(
@@ -2112,26 +2216,26 @@ void main() {
       );
       final engine = AgentEngine(
         llm: ScriptedLlm([
-          AgentLlmTurn(toolCalls: [
-            planCall(kToolFinishTask, {'summary': '修订中'}),
-          ]),
+          AgentLlmTurn(
+            toolCalls: [
+              planCall(kToolFinishTask, {'summary': '修订中'}),
+            ],
+          ),
         ]),
         tools: const FakeAgentToolExecutor(),
         approval: const DenyingApprovalGate('换个思路'),
         store: store,
         gateway: gateway,
         budget: AgentBudget(),
-        onModeSwitchRestart: restarts.add,
       );
 
       await engine.run(task, AgentCancellationToken());
 
-      expect(restarts, isEmpty);
       expect(gateway.last.mode, AgentSessionMode.plan);
       expect(gateway.last.status, AgentTaskStatus.done);
-      final toolEvent = (await store.getEvents(task.id))
-          .whereType<ToolCallEvent>()
-          .first;
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().first;
       expect(toolEvent.state, AgentToolCallState.denied);
       expect(toolEvent.resultDetail, contains('换个思路'));
     });
@@ -2141,12 +2245,16 @@ void main() {
       final gateway = RecordingTaskGateway();
       final engine = AgentEngine(
         llm: ScriptedLlm([
-          AgentLlmTurn(toolCalls: [
-            planCall(kToolExitPlanMode, {'plan': '方案'}),
-          ]),
-          AgentLlmTurn(toolCalls: [
-            planCall(kToolFinishTask, {'summary': '完成'}),
-          ]),
+          AgentLlmTurn(
+            toolCalls: [
+              planCall(kToolExitPlanMode, {'plan': '方案'}),
+            ],
+          ),
+          AgentLlmTurn(
+            toolCalls: [
+              planCall(kToolFinishTask, {'summary': '完成'}),
+            ],
+          ),
         ]),
         tools: const FakeAgentToolExecutor(),
         approval: const AutoApprovalGate(),
@@ -2160,9 +2268,9 @@ void main() {
       await engine.run(task, AgentCancellationToken());
 
       expect(gateway.last.status, AgentTaskStatus.done);
-      final toolEvent = (await store.getEvents(task.id))
-          .whereType<ToolCallEvent>()
-          .first;
+      final toolEvent = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().first;
       expect(toolEvent.state, AgentToolCallState.failure);
       expect(toolEvent.resultDetail, contains('不在计划模式'));
     });
@@ -2176,6 +2284,9 @@ class ScriptedLlm implements AgentLlmClient {
   final List<AgentLlmTurn> turns;
   int _index = 0;
 
+  /// 每轮请求时任务的模式（验免重启模式切换：下一轮用新模式）。
+  final List<AgentSessionMode> seenModes = [];
+
   @override
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
@@ -2185,11 +2296,13 @@ class ScriptedLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
+    seenModes.add(context.task.mode);
     if (_index >= turns.length) return const AgentLlmTurn(text: '（无更多脚本）');
     return turns[_index++];
   }
@@ -2199,8 +2312,7 @@ class ScriptedLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要';
+  }) async => '摘要';
 }
 
 /// 一律要求审批且返回固定裁决（测编辑后批准 / 免审执行）。
@@ -2213,16 +2325,14 @@ class VerdictApprovalGate implements ApprovalGate {
   Future<ApprovalRequirement> evaluate(
     AgentToolCallRequest call,
     AgentTask task,
-  ) async =>
-      ApprovalRequirement.needsUser;
+  ) async => ApprovalRequirement.needsUser;
 
   @override
   Future<ApprovalVerdict> waitForVerdict(
     AgentToolCallRequest call,
     AgentTask task,
     AgentCancellationToken cancel,
-  ) async =>
-      verdict;
+  ) async => verdict;
 }
 
 /// 一律要求审批且裁决为拒绝（测方案被拒流程）。
@@ -2235,14 +2345,12 @@ class DenyingApprovalGate implements ApprovalGate {
   Future<ApprovalRequirement> evaluate(
     AgentToolCallRequest call,
     AgentTask task,
-  ) async =>
-      ApprovalRequirement.needsUser;
+  ) async => ApprovalRequirement.needsUser;
 
   @override
   Future<ApprovalVerdict> waitForVerdict(
     AgentToolCallRequest call,
     AgentTask task,
     AgentCancellationToken cancel,
-  ) async =>
-      ApprovalVerdict.denied(reason);
+  ) async => ApprovalVerdict.denied(reason);
 }

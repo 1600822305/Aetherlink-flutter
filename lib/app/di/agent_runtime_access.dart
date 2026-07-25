@@ -94,48 +94,59 @@ class AgentRuntime {
   final Ref Function() _refOf;
 
   Future<
-      ({
-        AgentLlmClient llm,
-        AgentToolExecutor tools,
-        ApprovalGate approval,
-        Future<String?> Function() stopGuard,
-        Future<String?> Function() subagentStopGuard,
-        String? Function() hookStopSignal,
-        Future<void> Function(AgentHookEvent event) lifecycleHooks,
-        Future<void> Function(String message, {String notificationType})
-            notificationHooks,
-        Future<void> Function(AgentHookEvent event, {String summary})
-            compactionHooks,
-        AgentWorkspaceFileWatcher fileWatcher,
-        void Function(AgentHookTimelineSink? sink) setHookTimeline,
-        void Function(AgentHookRewakeSink? sink) setHookRewake,
-      })> forProfile(
+    ({
+      AgentLlmClient llm,
+      AgentToolExecutor tools,
+      ApprovalGate approval,
+      Future<String?> Function() stopGuard,
+      Future<String?> Function() subagentStopGuard,
+      String? Function() hookStopSignal,
+      Future<void> Function(AgentHookEvent event) lifecycleHooks,
+      Future<void> Function(String message, {String notificationType})
+      notificationHooks,
+      Future<void> Function(AgentHookEvent event, {String summary})
+      compactionHooks,
+      AgentWorkspaceFileWatcher fileWatcher,
+      void Function(AgentHookTimelineSink? sink) setHookTimeline,
+      void Function(AgentHookRewakeSink? sink) setHookRewake,
+    })
+  >
+  forProfile(
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
     bool enableSubagents = true,
     String? boundWorkspaceId,
     Model? modelOverride,
   }) async {
-    final catalog = _catalogFor(
-      profile.tools,
-      mode: mode,
-      enableSubagents: enableSubagents,
-    );
-    await _addMcpServerTools(
-      _refOf(),
-      profile,
-      mode,
-      catalog,
-      defer: enableSubagents,
-    );
+    // 模式动态目录（免重启模式切换）：按模式懒装配并缓存，LLM
+    // 客户端每轮按任务当前模式解析，enter/exit_plan_mode 落库后
+    // 下一轮自动生效，无需重启运行。
+    final catalogsByMode = <AgentSessionMode, Future<DynamicToolCatalog>>{};
+    Future<DynamicToolCatalog> catalogForMode(AgentSessionMode m) =>
+        catalogsByMode.putIfAbsent(m, () async {
+          final c = _catalogFor(
+            profile.tools,
+            mode: m,
+            enableSubagents: enableSubagents,
+          );
+          await _addMcpServerTools(
+            _refOf(),
+            profile,
+            m,
+            c,
+            defer: enableSubagents,
+          );
+          return c;
+        });
+    final catalog = AgentRunCatalog(await catalogForMode(mode), catalogForMode);
     final hooked = HookedAgentToolExecutor(
       _refOf,
       _McpAgentToolExecutor(
         _refOf,
-        catalog.routes,
+        catalog,
         boundWorkspaceId: boundWorkspaceId,
       ),
-      catalog.routes,
+      catalog,
       boundWorkspaceId: boundWorkspaceId,
     );
     return (
@@ -146,7 +157,7 @@ class AgentRuntime {
         modelOverride: modelOverride,
       ),
       tools: hooked,
-      approval: _PolicyApprovalGate(_refOf, catalog.routes, hooks: hooked),
+      approval: _PolicyApprovalGate(_refOf, catalog, hooks: hooked),
       stopGuard: hooked.runStopHooks,
       subagentStopGuard: hooked.runSubagentStopHooks,
       hookStopSignal: hooked.takeHookStopSignal,
@@ -187,7 +198,8 @@ Future<AgentContextBreakdown> agentContextBreakdown(
     return const AgentContextBreakdown(sections: []);
   }
   final events = await ref.watch(agentTaskEventsProvider(taskId).future);
-  final profile = ref
+  final profile =
+      ref
           .watch(agentProfilesProvider)
           .where((p) => p.id == task.profileId)
           .firstOrNull ??
@@ -209,12 +221,20 @@ Future<AgentContextBreakdown> agentContextBreakdown(
   final definitions = catalog.definitionsFor(
     await _activatedDeferredKeys(ref, catalog, events),
   );
-  final client = _GatewayAgentLlmClient(() => ref, profile, catalog);
+  final client = _GatewayAgentLlmClient(
+    () => ref,
+    profile,
+    AgentRunCatalog(catalog, (_) async => catalog),
+  );
   final system = buildAgentSystemPrompt(
     task: task,
     profile: profile,
     events: events,
-    environmentContext: await client._environmentContext(ref, task, definitions),
+    environmentContext: await client._environmentContext(
+      ref,
+      task,
+      definitions,
+    ),
     projectInstructions: await client._projectInstructions(ref, task),
   );
   return computeContextBreakdown(
@@ -227,10 +247,8 @@ Future<AgentContextBreakdown> agentContextBreakdown(
 
 /// Hooks 设置页「试跑」入口：用示例上下文单独执行一条 hook。
 /// command 型需要 workspaceId（跑在该工作区的终端里）。
-typedef AgentHookTryRun = Future<AgentHookResult> Function(
-  AgentHook hook, {
-  String? workspaceId,
-});
+typedef AgentHookTryRun =
+    Future<AgentHookResult> Function(AgentHook hook, {String? workspaceId});
 
 @Riverpod(keepAlive: true)
 AgentHookTryRun agentHookTryRun(Ref ref) =>
@@ -504,7 +522,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 
   final Ref Function() _refOf;
   final AgentProfile _profile;
-  final DynamicToolCatalog _catalog;
+  final AgentRunCatalog _catalog;
 
   /// 运行内锁定的模型：首轮解析后本次运行（含压缩）不再跟随默认模型
   /// 切换——重放历史里的 tool_call 结构与 provider 绑定，中途换
@@ -534,28 +552,35 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     final ref = _refOf();
     final model = await _resolveModel(ref);
     final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(model);
 
+    // 模式动态目录：每轮按任务当前模式解析，模式切换落库后下一轮
+    // 自动用新目录（工具定义 + 执行/审批路由同步更新）。
+    final catalog = await _catalog.syncToMode(context.task.mode);
     // 渐进披露：扫原始事件流里成功的 read_skill / load_mcp_tools 调用
     // 确定已激活延迟组，本轮 tools = 常驻 + 已激活组。无状态重算天然
     // 覆盖续跑/重启恢复，与 agentContextBreakdown 同源。
-    final definitions = _catalog.definitionsFor(
-      await _activatedDeferredKeys(ref, _catalog, context.events),
+    final definitions = catalog.definitionsFor(
+      await _activatedDeferredKeys(ref, catalog, context.events),
     );
 
     final system = buildAgentSystemPrompt(
       task: context.task,
       profile: _profile,
       events: context.events,
-      environmentContext:
-          await _environmentContext(ref, context.task, definitions),
+      environmentContext: await _environmentContext(
+        ref,
+        context.task,
+        definitions,
+      ),
       projectInstructions: await _projectInstructions(ref, context.task),
     );
 
@@ -573,13 +598,16 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     // Plan 模式每轮置尾提醒（对标 CC plan_mode attachment）：只进本轮
     // 上下文不落事件流，长任务中防模型"忘了"自己在计划模式。
     if (context.task.mode == AgentSessionMode.plan) {
-      messages.add(const LlmMessage(
-        role: MessageRole.user,
-        content: '<system-reminder>当前仍处于计划模式：只做只读探索与方案设计，'
-            '不要修改任何文件或执行写类操作；方案完整后用 exit_plan_mode 提交'
-            '全文请求批准。本提醒由系统注入，与用户消息无关，不要回应它。'
-            '</system-reminder>',
-      ));
+      messages.add(
+        const LlmMessage(
+          role: MessageRole.user,
+          content:
+              '<system-reminder>当前仍处于计划模式：只做只读探索与方案设计，'
+              '不要修改任何文件或执行写类操作；方案完整后用 exit_plan_mode 提交'
+              '全文请求批准。本提醒由系统注入，与用户消息无关，不要回应它。'
+              '</system-reminder>',
+        ),
+      );
     }
     final request = LlmChatRequest(
       model: model,
@@ -615,8 +643,10 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     var promptTokens = 0;
     var finishReason = '';
     try {
-      await for (final chunk
-          in gateway.streamChat(request, cancelToken: llmCancel)) {
+      await for (final chunk in gateway.streamChat(
+        request,
+        cancelToken: llmCancel,
+      )) {
         switch (chunk) {
           case LlmTextDelta(:final text):
             buffer.write(text);
@@ -624,7 +654,12 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
           case LlmReasoningDelta(:final text):
             reasoning.write(text);
             onReasoningDelta?.call(reasoning.toString());
-          case LlmToolCallDelta(:final key, :final id, :final name, :final argsTextSoFar):
+          case LlmToolCallDelta(
+            :final key,
+            :final id,
+            :final name,
+            :final argsTextSoFar,
+          ):
             deltaKeys[key] = (id: id, name: name);
             if (onToolCallDelta != null) {
               await onToolCallDelta(key, name, argsTextSoFar);
@@ -636,8 +671,8 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
               for (final entry in deltaKeys.entries) {
                 final matchesId =
                     call.id.isNotEmpty && entry.value.id == call.id;
-                final matchesName = entry.value.id == null &&
-                    entry.value.name == call.name;
+                final matchesName =
+                    entry.value.id == null && entry.value.name == call.name;
                 if (matchesId || matchesName) {
                   streamKey = entry.key;
                   break;
@@ -740,10 +775,11 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     String? workspace;
     var onSharedStorage = false;
     try {
-      final bound = (await loadWorkspaces(ref))
-          .where((w) => w.id == task.workspaceId)
-          .firstOrNull;
-      onSharedStorage = bound != null &&
+      final bound = (await loadWorkspaces(
+        ref,
+      )).where((w) => w.id == task.workspaceId).firstOrNull;
+      onSharedStorage =
+          bound != null &&
           (bound.root.startsWith('/storage/emulated/') ||
               bound.root.startsWith('/sdcard'));
       workspace = await buildWorkspaceContextSection(
@@ -777,7 +813,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// available-deferred-tools），完整定义经 load_mcp_tools 装载后
   /// 下一轮注入。
   List<String> _deferredMcpSection() {
-    final entries = _catalog.deferred.entries
+    final entries = _catalog.current.deferred.entries
         .where((e) => e.key.startsWith(kMcpDeferredKeyPrefix))
         .toList();
     if (entries.isEmpty) return const [];
@@ -785,7 +821,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       '外部 MCP 服务器（工具定义未装载：需要时先调 load_mcp_tools 装载，'
           '下一轮起可直接调用；重复装载无副作用）：',
       for (final e in entries)
-        '- ${_catalog.deferredMcpLabels[e.key] ?? e.key}：'
+        '- ${_catalog.current.deferredMcpLabels[e.key] ?? e.key}：'
             '${[for (final d in e.value) d.name].join('、')}',
     ];
   }
@@ -793,7 +829,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// 已启用技能清单：read_skill 可读的技能名 + 一句话描述，
   /// 模型按需读取正文（决策 29 skills 联动 / 决策 30）。
   Future<List<String>> _skillsSection(Ref ref, String? workspaceId) async {
-    if (!_catalog.resident.any((d) => d.name == kReadSkillToolName)) {
+    if (!_catalog.current.resident.any((d) => d.name == kReadSkillToolName)) {
       return const [];
     }
     List<Skill> skills = const [];
@@ -812,7 +848,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       '可用技能（read_skill 按名称读取正文）：',
       for (final s in enabled)
         '- ${s.name}${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}'
-            '${_catalog.deferred.containsKey(s.id) ? '（读取本技能后，对应工具将在下一轮可用）' : ''}',
+            '${_catalog.current.deferred.containsKey(s.id) ? '（读取本技能后，对应工具将在下一轮可用）' : ''}',
       for (final s in project)
         '- ${s.name}（项目技能）'
             '${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}',
@@ -822,7 +858,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// 自定义子代理档案清单（工作区 .aetherlink/agents / .cursor/agents 的
   /// markdown 定义）：spawn_subagent 的 type 可填档案名按需委派。
   Future<List<String>> _customSubagentsSection(Ref ref) async {
-    if (!_catalog.hasTool(kToolSpawnSubagent)) {
+    if (!_catalog.current.hasTool(kToolSpawnSubagent)) {
       return const [];
     }
     List<AgentSubagentProfile> profiles;
@@ -848,12 +884,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     try {
       final workspaces = await loadWorkspaces(ref);
       if (workspaces.isEmpty) return null;
-      final bound = workspaces
-              .where((w) => w.id == task.workspaceId)
-              .firstOrNull ??
-          workspaces
-              .where((w) => w.id == _profile.workspaceId)
-              .firstOrNull;
+      final bound =
+          workspaces.where((w) => w.id == task.workspaceId).firstOrNull ??
+          workspaces.where((w) => w.id == _profile.workspaceId).firstOrNull;
       final workspace =
           bound ?? ref.read(currentWorkspaceProvider) ?? workspaces.first;
       final backend = ref.read(workspaceBackendProvider(workspace));
@@ -880,8 +913,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     final events = context.events;
     final plan = events.whereType<PlanUpdateEvent>().lastOrNull;
     if (plan == null || plan.items.isEmpty) return null;
-    if (plan.items.every(
-        (i) => i.status == AgentPlanItemStatus.completed)) {
+    if (plan.items.every((i) => i.status == AgentPlanItemStatus.completed)) {
       return null;
     }
     var toolCallsSince = 0;
@@ -908,7 +940,8 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     ];
     return LlmMessage(
       role: MessageRole.user,
-      content: '<system-reminder>你已有一段时间没有更新计划（update_plan）。'
+      content:
+          '<system-reminder>你已有一段时间没有更新计划（update_plan）。'
           '当前计划如下：\n${lines.join('\n')}\n'
           '若计划仍适用，完成/开始条目时记得全量重新提交更新状态；'
           '若已过时请重新提交修订后的计划。本提醒由系统注入，'
@@ -932,17 +965,18 @@ List<LlmMessage> _replayMessages(
   // 生效值经 AgentLlmContext 来自引擎 budget，两侧视图保持一致。
   // 工具结果总预算在 microcompact 之后兜底（先清可重取旧输出，仍超
   // 才省略其余最旧结果），两侧视图一致。
-  final folded = applyToolResultBudget(microCompactEnabled
-      ? microCompactEntries(
-          foldCompactedEvents(events),
-          triggerChars: microCompactTriggerChars,
-        )
-      : foldCompactedEvents(events));
+  final folded = applyToolResultBudget(
+    microCompactEnabled
+        ? microCompactEntries(
+            foldCompactedEvents(events),
+            triggerChars: microCompactTriggerChars,
+          )
+        : foldCompactedEvents(events),
+  );
   // 提问索引建在折叠后的事件上：提问若已被压缩折叠，其回答退化为
   // 普通用户消息，避免回放出没有前置 tool_call 的 tool 结果。
   final questionsById = {
-    for (final event in folded.whereType<UserQuestionEvent>())
-      event.id: event,
+    for (final event in folded.whereType<UserQuestionEvent>()) event.id: event,
   };
   // 截图淘汰（浏览器设计稿 §17.2/§20.3）：只让最近 N 张截图以图片
   // 进上下文，更旧的重放为文本占位（文件仍在盘上，UI 回看不受影响）。
@@ -985,7 +1019,8 @@ List<LlmMessage> _replayMessages(
                 LlmToolCall(
                   id: event.toolCallId!,
                   name: kToolAskUser,
-                  arguments: event.argsJson ??
+                  arguments:
+                      event.argsJson ??
                       jsonEncode({
                         'question': event.question,
                         'follow_up': event.suggestions,
@@ -1041,7 +1076,8 @@ List<LlmMessage> _replayMessages(
         messages.add(
           LlmMessage(
             role: MessageRole.user,
-            content: '[上下文已压缩]更早的执行过程已压缩为以下摘要：\n'
+            content:
+                '[上下文已压缩]更早的执行过程已压缩为以下摘要：\n'
                 '${event.summary}',
           ),
         );
@@ -1056,9 +1092,9 @@ List<LlmMessage> _replayMessages(
           );
         }
       case ReasoningEvent() ||
-            PlanUpdateEvent() ||
-            CheckpointEvent() ||
-            StatusChangeEvent():
+          PlanUpdateEvent() ||
+          CheckpointEvent() ||
+          StatusChangeEvent():
         break;
     }
   }
@@ -1107,15 +1143,17 @@ String _compactionTranscript(List<AgentEvent> events) {
       case AssistantTextEvent():
         if (event.text.isNotEmpty) lines.add('[助手] ${clip(event.text)}');
       case ToolCallEvent():
-        lines.add('[工具 ${event.toolName}] 参数：'
-            '${clip(event.argsDetail ?? event.argSummary, 500)}\n'
-            '结果：${clip(event.resultDetail ?? event.resultSummary)}');
+        lines.add(
+          '[工具 ${event.toolName}] 参数：'
+          '${clip(event.argsDetail ?? event.argSummary, 500)}\n'
+          '结果：${clip(event.resultDetail ?? event.resultSummary)}',
+        );
       case CompactionEvent():
         lines.add('[早期摘要] ${clip(event.summary)}');
       case ReasoningEvent() ||
-            PlanUpdateEvent() ||
-            CheckpointEvent() ||
-            StatusChangeEvent():
+          PlanUpdateEvent() ||
+          CheckpointEvent() ||
+          StatusChangeEvent():
         break;
     }
   }
@@ -1150,30 +1188,24 @@ LlmMessage? _toolResultImage(ToolCallEvent event, {required bool recent}) {
       ],
     );
   } catch (_) {
-    return const LlmMessage(
-      role: MessageRole.user,
-      content: '[截图文件已丢失]',
-    );
+    return const LlmMessage(role: MessageRole.user, content: '[截图文件已丢失]');
   }
 }
 
 /// ask_user 提问的文本形态（重放/压缩共用）：问题 + 建议答案。
 String _questionText(UserQuestionEvent event) => [
-      event.question,
-      if (event.suggestions.isNotEmpty)
-        '建议：${event.suggestions.join(' / ')}',
-    ].join('\n');
+  event.question,
+  if (event.suggestions.isNotEmpty) '建议：${event.suggestions.join(' / ')}',
+].join('\n');
 
 String _toolResultText(ToolCallEvent event) => switch (event.state) {
-      AgentToolCallState.success =>
-        event.resultDetail ?? event.resultSummary,
-      AgentToolCallState.failure =>
-        '工具执行失败：${event.resultDetail ?? event.resultSummary}',
-      AgentToolCallState.denied => '调用被拒绝：${event.resultSummary}',
-      AgentToolCallState.running ||
-      AgentToolCallState.waitingApproval =>
-        '（工具执行被中断，无结果）',
-    };
+  AgentToolCallState.success => event.resultDetail ?? event.resultSummary,
+  AgentToolCallState.failure =>
+    '工具执行失败：${event.resultDetail ?? event.resultSummary}',
+  AgentToolCallState.denied => '调用被拒绝：${event.resultSummary}',
+  AgentToolCallState.running ||
+  AgentToolCallState.waitingApproval => '（工具执行被中断，无结果）',
+};
 
 /// 工具行的单行关键参数（UI 稿 §4.1）：取 path/command/query 一类
 /// 最有辨识度的字段，截断到 60 字符。
@@ -1206,10 +1238,10 @@ String _truncate(String value) =>
 class _McpAgentToolExecutor implements AgentToolExecutor {
   _McpAgentToolExecutor(
     Ref Function() refOf,
-    this._routes, {
+    this._catalog, {
     String? boundWorkspaceId,
-  })  : _refOf = refOf,
-        _boundWorkspaceId = boundWorkspaceId {
+  }) : _refOf = refOf,
+       _boundWorkspaceId = boundWorkspaceId {
     _executor = ChatToolExecutor(
       refOf,
       assistantId: () => '',
@@ -1222,7 +1254,7 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
   static int _nextRunSequence = 0;
   final int _runSequence = _nextRunSequence++;
 
-  final Map<String, ToolRoute> _routes;
+  final AgentRunCatalog _catalog;
 
   /// 任务绑定的工作区 ID：终端/文件工具未显式传 `workspace` 时缺省
   /// 锚定它（而不是内置终端/当前工作区），避免智能体越出绑定工作区
@@ -1233,7 +1265,7 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
 
   @override
   bool isConcurrencySafe(AgentToolCallRequest call) {
-    final route = _routes[call.name];
+    final route = _catalog.routes[call.name];
     return route != null && toolRouteIsReadOnly(route);
   }
 
@@ -1242,12 +1274,13 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     AgentToolCallRequest call,
     AgentCancellationToken cancel,
   ) async {
-    final route = _routes[call.name];
+    final route = _catalog.routes[call.name];
     if (route == null) {
       return AgentToolResult(
         ok: false,
         summary: '未知工具 ✗',
-        detail: '工具 ${call.name} 不在当前智能体的工具集内；'
+        detail:
+            '工具 ${call.name} 不在当前智能体的工具集内；'
             '若为技能绑定的延迟工具，先用 read_skill 读取对应技能',
       );
     }
@@ -1378,19 +1411,21 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     final omitted = text.length - head - tail;
     final note = path != null
         ? '\n\n…[输出过长已截断：中间省略 $omitted 字符。'
-            '全文共 ${text.length} 字符已保存到 $path，'
-            '需要时用 read_file 指定 start_line/end_line 分段回读]…\n\n'
+              '全文共 ${text.length} 字符已保存到 $path，'
+              '需要时用 read_file 指定 start_line/end_line 分段回读]…\n\n'
         : '\n\n…[输出过长已截断：中间省略 $omitted 字符]…\n\n';
     return (
-      detail: text.substring(0, head) + note + text.substring(text.length - tail),
+      detail:
+          text.substring(0, head) + note + text.substring(text.length - tail),
       path: path,
     );
   }
 
   String _resultSummary(McpToolResult result) {
     final firstLine = result.text.trim().split('\n').first;
-    final head =
-        firstLine.length > 40 ? '${firstLine.substring(0, 40)}…' : firstLine;
+    final head = firstLine.length > 40
+        ? '${firstLine.substring(0, 40)}…'
+        : firstLine;
     return result.isError ? '失败 ✗ $head' : head;
   }
 }
@@ -1404,11 +1439,14 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
 /// 挂起走 [agentApprovalRegistryProvider]，无超时（用户可能锁屏离场）；
 /// 任务被暂停/终止时挂起按拒绝回填，循环在下一个安全点收敛。
 class _PolicyApprovalGate implements ApprovalGate {
-  _PolicyApprovalGate(this._refOf, this._routes, {HookedAgentToolExecutor? hooks})
-      : _hookExecutor = hooks;
+  _PolicyApprovalGate(
+    this._refOf,
+    this._catalog, {
+    HookedAgentToolExecutor? hooks,
+  }) : _hookExecutor = hooks;
 
   final Ref Function() _refOf;
-  final Map<String, ToolRoute> _routes;
+  final AgentRunCatalog _catalog;
   final HookedAgentToolExecutor? _hookExecutor;
 
   @override
@@ -1436,7 +1474,7 @@ class _PolicyApprovalGate implements ApprovalGate {
 
   /// 高危终端命令硬约束（任何 allow 均不可覆盖）。
   bool _highRiskHardConstraint(AgentToolCallRequest call) {
-    final route = _routes[call.name];
+    final route = _catalog.routes[call.name];
     if (route is! TerminalToolRoute) return false;
     return terminalCommandIsHighRisk(call.name, _decodeArgs(call.argsJson));
   }
@@ -1445,7 +1483,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     AgentToolCallRequest call,
     AgentTask task,
   ) async {
-    final route = _routes[call.name];
+    final route = _catalog.routes[call.name];
     if (route == null) return ApprovalRequirement.allow; // 未知工具由执行器兜底
     var args = _decodeArgs(call.argsJson);
     // 与执行器一致：缺省 workspace 参数按任务绑定工作区评估（执行时
@@ -1481,8 +1519,12 @@ class _PolicyApprovalGate implements ApprovalGate {
         break;
     }
 
-    if (!toolNeedsConfirmation(route, call.name, args,
-        workspaces: workspaces)) {
+    if (!toolNeedsConfirmation(
+      route,
+      call.name,
+      args,
+      workspaces: workspaces,
+    )) {
       return ApprovalRequirement.allow;
     }
 
@@ -1555,14 +1597,17 @@ class _PolicyApprovalGate implements ApprovalGate {
     AgentTask task,
     List<Workspace> workspaces,
   ) async {
-    final bound =
-        workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
+    final bound = workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
     if (bound == null) return const [];
     final cached = _workspaceRulesCache[bound.id];
     if (cached != null) return cached;
-    final rules = decodeAgentPermissionRules(
+    final rules =
+        decodeAgentPermissionRules(
           await readWorkspaceConfigFile(
-              ref, bound, '.aetherlink/permissions.json'),
+            ref,
+            bound,
+            '.aetherlink/permissions.json',
+          ),
           layer: PermissionRuleLayer.workspace,
         ) ??
         const <PermissionRule>[];
@@ -1579,7 +1624,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     AgentCancellationToken cancel,
   ) async {
     final registry = _refOf().read(agentApprovalRegistryProvider.notifier);
-    final route = _routes[call.name];
+    final route = _catalog.routes[call.name];
     final args = _decodeArgs(call.argsJson);
     final command = route is TerminalToolRoute
         ? terminalCommandText(call.name, args)
@@ -1587,9 +1632,12 @@ class _PolicyApprovalGate implements ApprovalGate {
     final future = registry.request(
       task.id,
       call,
-      permission:
-          route == null ? call.name : permissionOfToolRoute(route, call.name),
-      alwaysPatterns: command == null ? const [] : terminalAlwaysPatterns(command),
+      permission: route == null
+          ? call.name
+          : permissionOfToolRoute(route, call.name),
+      alwaysPatterns: command == null
+          ? const []
+          : terminalAlwaysPatterns(command),
     );
     // 挂起期间任务被暂停/终止 → 按拒绝回填，循环在安全点收敛。
     void onCancelSignal() {
@@ -1609,8 +1657,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     } finally {
       cancel.removeListener(onCancelSignal);
     }
-    if (decision.approved &&
-        decision.scope == AgentApprovalScope.whitelist) {
+    if (decision.approved && decision.scope == AgentApprovalScope.whitelist) {
       final server = switch (route) {
         FileEditorToolRoute() => kFileEditorServerName,
         TerminalToolRoute() => kTerminalServerName,
@@ -1623,11 +1670,15 @@ class _PolicyApprovalGate implements ApprovalGate {
       } else if (route != null) {
         // 旧白名单只覆盖文件/终端两组内置工具；MCP 等其余工具的
         // 永久放行落成用户全局 allow 规则，效果等价。
-        _refOf().read(agentPermissionRulesProvider.notifier).add(PermissionRule(
-              permission: permissionOfToolRoute(route, call.name),
-              action: PermissionAction.allow,
-              layer: PermissionRuleLayer.userGlobal,
-            ));
+        _refOf()
+            .read(agentPermissionRulesProvider.notifier)
+            .add(
+              PermissionRule(
+                permission: permissionOfToolRoute(route, call.name),
+                action: PermissionAction.allow,
+                layer: PermissionRuleLayer.userGlobal,
+              ),
+            );
       }
     }
     if (!decision.approved) {
@@ -1636,7 +1687,8 @@ class _PolicyApprovalGate implements ApprovalGate {
       final hooks = _hookExecutor;
       if (hooks != null) {
         unawaited(
-            hooks.runPermissionDeniedHooks(call, reason: decision.reason));
+          hooks.runPermissionDeniedHooks(call, reason: decision.reason),
+        );
       }
       return ApprovalVerdict.denied(decision.reason);
     }
@@ -1659,8 +1711,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     if (route is TerminalToolRoute) {
       return !terminalCommandIsHighRisk(toolName, args);
     }
-    final bound =
-        workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
+    final bound = workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
     if (bound == null) return false;
     if (route is FileEditorToolRoute) {
       return fileEditorPathsWithinRoot(args, root: bound.root);
@@ -1668,5 +1719,6 @@ class _PolicyApprovalGate implements ApprovalGate {
     return false;
   }
 
-  Map<String, Object?> _decodeArgs(String argsJson) => decodeToolArgsJson(argsJson);
+  Map<String, Object?> _decodeArgs(String argsJson) =>
+      decodeToolArgsJson(argsJson);
 }
