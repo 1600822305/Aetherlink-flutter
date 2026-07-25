@@ -13,10 +13,10 @@ import 'package:aetherlink_flutter/features/chat/application/parameter_settings_
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/knowledge_mount_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/knowledge_mount_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_panel/mcp_quick_panel_dialog.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/multi_model_selector_sheet.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phrase_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/multi_model_selector_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/quick_phrase_sheet.dart';
 import 'package:aetherlink_flutter/features/debate/presentation/widgets/debate_start_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/reasoning_effort_picker.dart';
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
@@ -24,7 +24,7 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
 import 'package:aetherlink_flutter/shared/widgets/reasoning_effort_icons.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_menu_sheet.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/search_settings_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/search_settings_sheet.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/widgets/voice_input_modal.dart';
 
 /// The chat composer's [InputBoxActions]: the single place that owns every

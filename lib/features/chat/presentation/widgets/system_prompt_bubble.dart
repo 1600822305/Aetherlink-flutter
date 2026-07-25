@@ -4,7 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/dialogs/system_prompt_dialog.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 

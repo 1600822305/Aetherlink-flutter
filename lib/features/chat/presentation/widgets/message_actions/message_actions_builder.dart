@@ -13,7 +13,7 @@ import 'package:aetherlink_flutter/features/chat/application/translate/translate
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/knowledge_mount_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/knowledge_mount_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action_sheets.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';

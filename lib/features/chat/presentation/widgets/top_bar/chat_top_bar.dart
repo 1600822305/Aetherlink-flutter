@@ -11,7 +11,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_search/chat_search_dialog.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/branch_manager_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/branch_manager_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
