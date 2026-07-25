@@ -340,7 +340,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   /// 手动切换任务模式（对标运行中切 Plan/Code）：落审计事件 + 更新任务；
   /// 切入 Plan 时记录 prePlanMode（方案批准退出时恢复），切出 Plan 清标记。
-  /// 运行中的任务：工具目录/系统提示是按模式在运行开始时构建的，
+  /// 运行中的任务：引擎持有的任务快照不感知外部模式变更，
   /// 请求引擎在下个安全点暂停，完成后自动以新模式续跑。
   Future<void> switchMode(AgentTask task, AgentSessionMode newMode) async {
     if (task.mode == newMode) return;
@@ -484,9 +484,6 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     runtime.setHookRewake(_hookRewakeFor(task.id));
     // taskStart hooks：任务启动/续跑时触发，fire-and-forget 不阻断。
     unawaited(runtime.lifecycleHooks(AgentHookEvent.taskStart));
-    // 计划模式切换（enter/exit_plan_mode）：引擎落库新模式后 return，
-    // 这里在本次运行清理完成后以新模式的工具目录重启续跑。
-    AgentTask? modeSwitchRestart;
     final engine = AgentEngine(
       llm: runtime.llm,
       tools: runtime.tools,
@@ -529,7 +526,6 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       onCompactionFailed: () =>
           ref.read(agentCompactionProgressProvider.notifier).finish(task.id),
       manualCompactSignal: () => _manualCompact.consumeSignal(task.id),
-      onModeSwitchRestart: (updated) => modeSwitchRestart = updated,
     );
     // fileChanged hooks 的工作区文件 watcher：与本次运行同生命周期
     // （无配置时 start 内部不订阅）。
@@ -548,11 +544,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       if (state.isEmpty) {
         unawaited(StreamingKeepAliveService.release('agent'));
       }
-      final restart = modeSwitchRestart;
       final userSwitch = _pendingUserModeSwitch.remove(task.id);
-      if (restart != null) {
-        _run(restart);
-      } else if (userSwitch != null) {
+      if (userSwitch != null) {
         // 用户运行中手动切模式：引擎已在安全点退出（通常 paused），
         // 现在落新模式并以新工具目录续跑；若任务已终止/完成则只落
         // 模式不续跑。

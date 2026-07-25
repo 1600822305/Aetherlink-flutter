@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/dynamic_tool_catalog.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
@@ -111,8 +112,11 @@ Future<({AgentHooksConfig? config, String? root})> loadAgentHooksConfig(
       final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
       if (bound != null) {
         root = bound.root;
-        final raw =
-            await readWorkspaceConfigFile(ref, bound, '.aetherlink/hooks.json');
+        final raw = await readWorkspaceConfigFile(
+          ref,
+          bound,
+          '.aetherlink/hooks.json',
+        );
         if (raw != null &&
             raw.trim().isNotEmpty &&
             ref.read(agentHooksTrustProvider)[workspaceId] == raw) {
@@ -138,13 +142,13 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   HookedAgentToolExecutor(
     this._refOf,
     this._inner,
-    this._routes, {
+    this._catalog, {
     String? boundWorkspaceId,
   }) : _boundWorkspaceId = boundWorkspaceId;
 
   final Ref Function() _refOf;
   final AgentToolExecutor _inner;
-  final Map<String, ToolRoute> _routes;
+  final AgentRunCatalog _catalog;
   final String? _boundWorkspaceId;
 
   AgentHooksConfig? _config;
@@ -200,10 +204,11 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     final config = await _hooks();
     if (config == null || config.isEmpty) return null;
 
-    final route = _routes[call.name];
+    final route = _catalog.routes[call.name];
     final args = decodeToolArgsJson(call.argsJson);
-    final permission =
-        route == null ? call.name : permissionOfToolRoute(route, call.name);
+    final permission = route == null
+        ? call.name
+        : permissionOfToolRoute(route, call.name);
     final patterns = route == null
         ? const <String>['*']
         : patternsOfToolCall(route, call.name, args);
@@ -211,13 +216,14 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     final filePath = path is String && path.isNotEmpty ? path : null;
 
     final results = await _runHooksParallel(
-      hooksForToolCall(
-          config, AgentHookEvent.preToolUse, permission, patterns),
-      (hook) => _runHook(hook,
-          eventName: AgentHookEvent.preToolUse.name,
-          toolName: call.name,
-          argsJson: call.argsJson,
-          filePath: filePath),
+      hooksForToolCall(config, AgentHookEvent.preToolUse, permission, patterns),
+      (hook) => _runHook(
+        hook,
+        eventName: AgentHookEvent.preToolUse.name,
+        toolName: call.name,
+        argsJson: call.argsJson,
+        filePath: filePath,
+      ),
       emptyBlockMessage: (hook) => 'hook（${hook.payload}）拦截了本次调用。',
       label: '${AgentHookEvent.preToolUse.name}(${call.name})',
     );
@@ -237,10 +243,11 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     final config = await _hooks();
     if (config == null || config.isEmpty) return null;
 
-    final route = _routes[call.name];
+    final route = _catalog.routes[call.name];
     final args = decodeToolArgsJson(call.argsJson);
-    final permission =
-        route == null ? call.name : permissionOfToolRoute(route, call.name);
+    final permission = route == null
+        ? call.name
+        : permissionOfToolRoute(route, call.name);
     final patterns = route == null
         ? const <String>['*']
         : patternsOfToolCall(route, call.name, args);
@@ -248,15 +255,21 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     final filePath = path is String && path.isNotEmpty ? path : null;
 
     final hooks = hooksForToolCall(
-        config, AgentHookEvent.permissionRequest, permission, patterns);
+      config,
+      AgentHookEvent.permissionRequest,
+      permission,
+      patterns,
+    );
     if (hooks.isEmpty) return null;
     final results = await _runHooksParallel(
       hooks,
-      (hook) => _runHook(hook,
-          eventName: AgentHookEvent.permissionRequest.name,
-          toolName: call.name,
-          argsJson: call.argsJson,
-          filePath: filePath),
+      (hook) => _runHook(
+        hook,
+        eventName: AgentHookEvent.permissionRequest.name,
+        toolName: call.name,
+        argsJson: call.argsJson,
+        filePath: filePath,
+      ),
       emptyBlockMessage: (hook) => 'hook（${hook.payload}）拒绝了本次审批请求。',
       label: '${AgentHookEvent.permissionRequest.name}(${call.name})',
     );
@@ -274,26 +287,33 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     try {
       final config = await _hooks();
       if (config == null || config.isEmpty) return;
-      final route = _routes[call.name];
+      final route = _catalog.routes[call.name];
       final args = decodeToolArgsJson(call.argsJson);
-      final permission =
-          route == null ? call.name : permissionOfToolRoute(route, call.name);
+      final permission = route == null
+          ? call.name
+          : permissionOfToolRoute(route, call.name);
       final patterns = route == null
           ? const <String>['*']
           : patternsOfToolCall(route, call.name, args);
       final path = args['path'];
       final filePath = path is String && path.isNotEmpty ? path : null;
       final hooks = hooksForToolCall(
-          config, AgentHookEvent.permissionDenied, permission, patterns);
+        config,
+        AgentHookEvent.permissionDenied,
+        permission,
+        patterns,
+      );
       if (hooks.isEmpty) return;
       final results = await _runHooksParallel(
         hooks,
-        (hook) => _runHook(hook,
-            eventName: AgentHookEvent.permissionDenied.name,
-            toolName: call.name,
-            argsJson: call.argsJson,
-            filePath: filePath,
-            toolOutput: reason.isEmpty ? null : reason),
+        (hook) => _runHook(
+          hook,
+          eventName: AgentHookEvent.permissionDenied.name,
+          toolName: call.name,
+          argsJson: call.argsJson,
+          filePath: filePath,
+          toolOutput: reason.isEmpty ? null : reason,
+        ),
         label: '${AgentHookEvent.permissionDenied.name}(${call.name})',
       );
       _recordStopSignal(aggregateAgentHookResults(results));
@@ -320,13 +340,16 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       if (hooks.isEmpty) return;
       final results = await _runHooksParallel(
         hooks,
-        (hook) => _runHook(hook,
-            eventName: AgentHookEvent.notification.name,
-            toolName: '',
-            argsJson: '{}',
-            message: message,
-            notificationType: notificationType),
-        label: '${AgentHookEvent.notification.name}'
+        (hook) => _runHook(
+          hook,
+          eventName: AgentHookEvent.notification.name,
+          toolName: '',
+          argsJson: '{}',
+          message: message,
+          notificationType: notificationType,
+        ),
+        label:
+            '${AgentHookEvent.notification.name}'
             '${notificationType.isEmpty ? '' : '($notificationType)'}',
       );
       _recordStopSignal(aggregateAgentHookResults(results));
@@ -348,11 +371,13 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       if (hooks.isEmpty) return;
       final results = await _runHooksParallel(
         hooks,
-        (hook) => _runHook(hook,
-            eventName: event.name,
-            toolName: '',
-            argsJson: '{}',
-            toolOutput: summary.isEmpty ? null : summary),
+        (hook) => _runHook(
+          hook,
+          eventName: event.name,
+          toolName: '',
+          argsJson: '{}',
+          toolOutput: summary.isEmpty ? null : summary,
+        ),
         label: event.name,
       );
       _recordStopSignal(aggregateAgentHookResults(results));
@@ -380,16 +405,22 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       final config = await _hooks();
       if (config == null || config.isEmpty) return;
       final hooks = hooksForToolCall(
-          config, AgentHookEvent.fileChanged, changeKind, [path]);
+        config,
+        AgentHookEvent.fileChanged,
+        changeKind,
+        [path],
+      );
       if (hooks.isEmpty) return;
       final results = await _runHooksParallel(
         hooks,
-        (hook) => _runHook(hook,
-            eventName: AgentHookEvent.fileChanged.name,
-            toolName: '',
-            argsJson: '{}',
-            filePath: path,
-            fileEvent: changeKind),
+        (hook) => _runHook(
+          hook,
+          eventName: AgentHookEvent.fileChanged.name,
+          toolName: '',
+          argsJson: '{}',
+          filePath: path,
+          fileEvent: changeKind,
+        ),
         label: '${AgentHookEvent.fileChanged.name}($changeKind)',
       );
       _recordStopSignal(aggregateAgentHookResults(results));
@@ -430,8 +461,9 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
           .firstWhere((s) => s.isNotEmpty, orElse: () => '');
       try {
         updateStatus = await sink(
-            '[hook] $label 运行中 · ${unique.length} 条'
-            '${status.isEmpty ? '' : ' · $status'}');
+          '[hook] $label 运行中 · ${unique.length} 条'
+          '${status.isEmpty ? '' : ' · $status'}',
+        );
       } catch (_) {}
     }
     final sw = Stopwatch()..start();
@@ -455,16 +487,18 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     ]);
     final aggregate = aggregateAgentHookResults(results);
     if (updateStatus != null && label != null) {
-      updateStatus(formatAgentHookStatusLine(
-        label: label,
-        aggregate: aggregate,
-        count: unique.length,
-        failedCount: results
-            .where((r) => r.outcome == AgentHookOutcome.failed)
-            .length,
-        asyncCount: results.where((r) => r.isAsync).length,
-        elapsed: sw.elapsed,
-      ));
+      updateStatus(
+        formatAgentHookStatusLine(
+          label: label,
+          aggregate: aggregate,
+          count: unique.length,
+          failedCount: results
+              .where((r) => r.outcome == AgentHookOutcome.failed)
+              .length,
+          asyncCount: results.where((r) => r.isAsync).length,
+          elapsed: sw.elapsed,
+        ),
+      );
     }
     // systemMessage（对标 CC）：hook 给用户的提示，单独落一条时间线
     // 状态行（不进模型上下文）。
@@ -491,7 +525,8 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     if (sink != null) {
       try {
         updateStatus = await sink(
-            '[hook] $tag 转后台（rewake）· ${hook.statusMessage.isNotEmpty ? hook.statusMessage : hook.payload}');
+          '[hook] $tag 转后台（rewake）· ${hook.statusMessage.isNotEmpty ? hook.statusMessage : hook.payload}',
+        );
       } catch (_) {}
     }
     final sw = Stopwatch()..start();
@@ -510,14 +545,14 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       final feedback = result.message.isNotEmpty
           ? result.message
           : 'hook（${hook.payload}）报告了问题（无输出）。';
-      updateStatus?.call(
-          '[hook] $tag 后台阻断 ✗ 反馈已注入任务（${seconds}s）');
+      updateStatus?.call('[hook] $tag 后台阻断 ✗ 反馈已注入任务（${seconds}s）');
       try {
         await rewakeSink('[后台 hook 反馈] $tag（${hook.payload}）：\n$feedback');
       } catch (_) {}
     } else {
       updateStatus?.call(
-          '[hook] $tag 后台完成 · ${result.outcome == AgentHookOutcome.failed ? '失败' : '放行'}（${seconds}s）');
+        '[hook] $tag 后台完成 · ${result.outcome == AgentHookOutcome.failed ? '失败' : '放行'}（${seconds}s）',
+      );
     }
   }
 
@@ -566,10 +601,11 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     final config = await _hooks();
     if (config == null || config.isEmpty) return _inner.execute(call, cancel);
 
-    final route = _routes[call.name];
+    final route = _catalog.routes[call.name];
     final args = decodeToolArgsJson(call.argsJson);
-    final permission =
-        route == null ? call.name : permissionOfToolRoute(route, call.name);
+    final permission = route == null
+        ? call.name
+        : permissionOfToolRoute(route, call.name);
     final patterns = route == null
         ? const <String>['*']
         : patternsOfToolCall(route, call.name, args);
@@ -613,13 +649,15 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
 
     final results = await _runHooksParallel(
       hooksForToolCall(config, postEvent, permission, patterns),
-      (hook) => _runHook(hook,
-          eventName: postEvent.name,
-          toolName: call.name,
-          argsJson: effectiveCall.argsJson,
-          filePath: filePath,
-          toolOutput: toolResult.detail ?? toolResult.summary,
-          toolOk: toolResult.ok),
+      (hook) => _runHook(
+        hook,
+        eventName: postEvent.name,
+        toolName: call.name,
+        argsJson: effectiveCall.argsJson,
+        filePath: filePath,
+        toolOutput: toolResult.detail ?? toolResult.summary,
+        toolOk: toolResult.ok,
+      ),
       emptyBlockMessage: (hook) => 'hook（${hook.payload}）报告了问题（无输出）。',
       label: '${postEvent.name}(${call.name})',
     );
@@ -676,8 +714,12 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       if (config == null) return;
       final results = await _runHooksParallel(
         config.ofEvent(event),
-        (hook) => _runHook(hook,
-            eventName: event.name, toolName: event.name, argsJson: '{}'),
+        (hook) => _runHook(
+          hook,
+          eventName: event.name,
+          toolName: event.name,
+          argsJson: '{}',
+        ),
         label: event.name,
       );
       _recordStopSignal(aggregateAgentHookResults(results));
@@ -696,8 +738,12 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     if (config == null) return null;
     final results = await _runHooksParallel(
       config.ofEvent(event),
-      (hook) => _runHook(hook,
-          eventName: event.name, toolName: event.name, argsJson: '{}'),
+      (hook) => _runHook(
+        hook,
+        eventName: event.name,
+        toolName: event.name,
+        argsJson: '{}',
+      ),
       emptyBlockMessage: (hook) => 'hook（${hook.payload}）阻止了收尾。',
       label: event.name,
     );
@@ -718,22 +764,21 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     String? message,
     String? notificationType,
     String? fileEvent,
-  }) =>
-      _execAgentHook(
-        _refOf(),
-        hook,
-        eventName: eventName,
-        toolName: toolName,
-        argsJson: argsJson,
-        filePath: filePath,
-        toolOutput: toolOutput,
-        toolOk: toolOk,
-        message: message,
-        notificationType: notificationType,
-        fileEvent: fileEvent,
-        workspaceId: _boundWorkspaceId,
-        cwd: _workspaceRoot,
-      );
+  }) => _execAgentHook(
+    _refOf(),
+    hook,
+    eventName: eventName,
+    toolName: toolName,
+    argsJson: argsJson,
+    filePath: filePath,
+    toolOutput: toolOutput,
+    toolOk: toolOk,
+    message: message,
+    notificationType: notificationType,
+    fileEvent: fileEvent,
+    workspaceId: _boundWorkspaceId,
+    cwd: _workspaceRoot,
+  );
 }
 
 /// userPromptSubmit hooks（任务运行器在用户消息进入任务前调用）：
@@ -798,7 +843,8 @@ Future<AgentHookResult> tryRunAgentHook(
   AgentHook hook, {
   String? workspaceId,
 }) {
-  final toolEvent = hook.event == AgentHookEvent.preToolUse ||
+  final toolEvent =
+      hook.event == AgentHookEvent.preToolUse ||
       hook.event == AgentHookEvent.postToolUse ||
       hook.event == AgentHookEvent.postToolUseFailure ||
       hook.event == AgentHookEvent.permissionRequest ||
@@ -809,21 +855,24 @@ Future<AgentHookResult> tryRunAgentHook(
     eventName: hook.event.name,
     toolName: toolEvent ? 'terminal_execute' : '',
     argsJson: toolEvent ? '{"command":"echo hook 试跑示例"}' : '{}',
-    toolOutput: hook.event == AgentHookEvent.postToolUse ||
+    toolOutput:
+        hook.event == AgentHookEvent.postToolUse ||
             hook.event == AgentHookEvent.postToolUseFailure
         ? 'hook 试跑示例输出'
         : null,
     toolOk: hook.event == AgentHookEvent.postToolUse
         ? true
         : hook.event == AgentHookEvent.postToolUseFailure
-            ? false
-            : null,
-    prompt: hook.event == AgentHookEvent.userPromptSubmit ? 'hook 试跑示例消息' : null,
+        ? false
+        : null,
+    prompt: hook.event == AgentHookEvent.userPromptSubmit
+        ? 'hook 试跑示例消息'
+        : null,
     message: hook.event == AgentHookEvent.notification ? 'hook 试跑示例通知' : null,
-    notificationType:
-        hook.event == AgentHookEvent.notification ? 'approval' : null,
-    filePath:
-        hook.event == AgentHookEvent.fileChanged ? '试跑示例/文件.dart' : null,
+    notificationType: hook.event == AgentHookEvent.notification
+        ? 'approval'
+        : null,
+    filePath: hook.event == AgentHookEvent.fileChanged ? '试跑示例/文件.dart' : null,
     fileEvent: hook.event == AgentHookEvent.fileChanged ? 'modified' : null,
     workspaceId: workspaceId,
   );
@@ -888,8 +937,12 @@ Future<AgentHookResult> _execAgentHook(
       return switch (hook.type) {
         AgentHookType.prompt => _execPromptHook(ref, hook, stdinJson),
         AgentHookType.http => _execHttpHook(ref, hook, stdinJson),
-        _ => _execAgentVerifierHook(ref, hook, stdinJson,
-            workspaceId: workspaceId),
+        _ => _execAgentVerifierHook(
+          ref,
+          hook,
+          stdinJson,
+          workspaceId: workspaceId,
+        ),
       };
   }
 }
@@ -952,8 +1005,7 @@ Future<AgentHookResult> _execPromptHook(
       await for (final chunk in gateway.streamChat(request)) {
         if (chunk is LlmTextDelta) buffer.write(chunk.text);
       }
-    }()
-        .timeout(Duration(seconds: hook.timeoutSeconds));
+    }().timeout(Duration(seconds: hook.timeoutSeconds));
     return interpretAgentPromptHookResponse(buffer.toString());
   } on TimeoutException {
     return const AgentHookResult(
@@ -1004,7 +1056,8 @@ Future<AgentHookResult> _execAgentVerifierHook(
       if (workspaceId != null && workspaceId.isNotEmpty)
         const McpToolDefinition(
           name: 'run_command',
-          description: '在任务绑定的工作区终端里执行一条 shell 命令，'
+          description:
+              '在任务绑定的工作区终端里执行一条 shell 命令，'
               '返回退出码与输出（用于检查文件/跑测试/搜索）。',
           inputSchema: {
             'type': 'object',
@@ -1053,11 +1106,13 @@ Future<AgentHookResult> _execAgentVerifierHook(
           // 未走工具直接回文本：容忍按 prompt 型同款协议解析。
           return interpretAgentPromptHookResponse(text.toString());
         }
-        messages.add(LlmMessage(
-          role: MessageRole.assistant,
-          content: text.toString(),
-          toolCalls: calls,
-        ));
+        messages.add(
+          LlmMessage(
+            role: MessageRole.assistant,
+            content: text.toString(),
+            toolCalls: calls,
+          ),
+        );
         for (final call in calls) {
           if (call.name == 'submit_result') {
             return interpretAgentPromptHookResponse(call.arguments);
@@ -1080,20 +1135,21 @@ Future<AgentHookResult> _execAgentVerifierHook(
           } else {
             resultText = '未知工具：${call.name}';
           }
-          messages.add(LlmMessage(
-            role: MessageRole.user,
-            content: resultText,
-            toolCallId: call.id,
-            toolName: call.name,
-          ));
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: resultText,
+              toolCallId: call.id,
+              toolName: call.name,
+            ),
+          );
         }
       }
       return const AgentHookResult(
         outcome: AgentHookOutcome.failed,
         message: 'agent hook 超过轮数上限未交回结果',
       );
-    }()
-        .timeout(Duration(seconds: hook.timeoutSeconds));
+    }().timeout(Duration(seconds: hook.timeoutSeconds));
   } on TimeoutException {
     return const AgentHookResult(
       outcome: AgentHookOutcome.failed,
@@ -1132,10 +1188,7 @@ Future<AgentHookResult> _execHttpHook(
           hook.url,
           data: stdinJson,
           options: Options(
-            headers: {
-              'Content-Type': 'application/json',
-              ...hook.headers,
-            },
+            headers: {'Content-Type': 'application/json', ...hook.headers},
             responseType: ResponseType.plain,
             sendTimeout: timeout,
             receiveTimeout: timeout,
@@ -1177,8 +1230,9 @@ Future<String?> _ssrfCheck(String url) async {
   }
   if (_parseAsIpLiteral(host)) return null;
   try {
-    final addresses = await InternetAddress.lookup(host)
-        .timeout(const Duration(seconds: 10));
+    final addresses = await InternetAddress.lookup(
+      host,
+    ).timeout(const Duration(seconds: 10));
     for (final addr in addresses) {
       if (isBlockedAgentHookAddress(addr.address)) {
         return 'http hook 目标 $host 解析到私网/保留地址 '
@@ -1191,8 +1245,7 @@ Future<String?> _ssrfCheck(String url) async {
   return null;
 }
 
-bool _parseAsIpLiteral(String host) =>
-    InternetAddress.tryParse(host) != null;
+bool _parseAsIpLiteral(String host) => InternetAddress.tryParse(host) != null;
 
 /// 跑一条 hook 命令：现场上下文两路传入——
 /// ① stdin JSON（字段命名对齐 Claude Code，见
@@ -1217,8 +1270,9 @@ Future<AgentHookResult> _execHookCommand(
   String? cwd,
 }) async {
   try {
-    final cappedArgs =
-        argsJson.length > 4000 ? argsJson.substring(0, 4000) : argsJson;
+    final cappedArgs = argsJson.length > 4000
+        ? argsJson.substring(0, 4000)
+        : argsJson;
     final cappedOutput = toolOutput != null && toolOutput.length > 4000
         ? toolOutput.substring(0, 4000)
         : toolOutput;
@@ -1232,8 +1286,7 @@ Future<AgentHookResult> _execHookCommand(
         'export AETHER_FILE_PATH=${_shellQuote(filePath)}',
       if (cappedOutput != null)
         'export AETHER_TOOL_OUTPUT=${_shellQuote(cappedOutput)}',
-      if (toolOk != null)
-        'export AETHER_TOOL_OK=${toolOk ? 'true' : 'false'}',
+      if (toolOk != null) 'export AETHER_TOOL_OK=${toolOk ? 'true' : 'false'}',
       if (cappedPrompt != null)
         'export AETHER_PROMPT=${_shellQuote(cappedPrompt)}',
       if (message != null && message.isNotEmpty)
@@ -1277,7 +1330,8 @@ Future<AgentHookResult> _execHookCommand(
     // stderr 经临时文件 + 标记行回传（终端后端合流，见
     // [kAgentHookStderrMarker]）；末尾子 shell 把 hook 退出码透传回来。
     final result = await runTerminalTool(ref, 'terminal_execute', {
-      'command': '__ahs="\${TMPDIR:-/tmp}/.aether_hook_stderr.\$\$"; '
+      'command':
+          '__ahs="\${TMPDIR:-/tmp}/.aether_hook_stderr.\$\$"; '
           '$exports; printf %s ${_shellQuote(stdinJson)} | '
           '( ${hook.command} ) 2>"\$__ahs"; __ahc=\$?; '
           "printf '\\n%s\\n' ${_shellQuote(kAgentHookStderrMarker)}; "

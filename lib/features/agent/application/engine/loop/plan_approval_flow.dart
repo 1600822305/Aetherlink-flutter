@@ -10,8 +10,9 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
 /// 方案审批（exit_plan_mode）的挂起 + 裁决处理：批准后恢复
-/// prePlanMode（autoAccept 则切 Auto 免审）并请求重启（resolve 返回
-/// true，调用方应 return）；拒绝后留在 Plan 模式回填理由继续循环
+/// prePlanMode（autoAccept 则切 Auto 免审）并返回 true，调用方回到
+/// 循环顶部以新模式继续（工具目录/系统提示每轮按任务模式重建，
+/// 无需重启运行）；拒绝后留在 Plan 模式回填理由继续循环
 /// （返回 false）。启动恢复与循环内两个入口共用。
 class PlanApprovalFlow {
   PlanApprovalFlow({
@@ -19,14 +20,12 @@ class PlanApprovalFlow {
     required this.budget,
     required this.tx,
     this.onNotification,
-    this.onModeSwitchRestart,
   });
 
   final ApprovalGate approval;
   final AgentBudget budget;
   final TaskTransitions tx;
   final void Function(String message, String type)? onNotification;
-  final void Function(AgentTask task)? onModeSwitchRestart;
 
   Future<bool> resolve(
     ToolCallEvent event,
@@ -98,7 +97,6 @@ class PlanApprovalFlow {
       ),
     );
     cancel.consumeToolInterrupt();
-    onModeSwitchRestart?.call(current);
     return true;
   }
 }

@@ -55,7 +55,6 @@ class ControlToolFlow {
     required this.guards,
     this.onNotification,
     this.onTaskEnd,
-    this.onModeSwitchRestart,
   });
 
   final AgentEventStore store;
@@ -64,12 +63,11 @@ class ControlToolFlow {
   final FinishGuards guards;
   final void Function(String message, String type)? onNotification;
   final void Function()? onTaskEnd;
-  final void Function(AgentTask task)? onModeSwitchRestart;
 
   /// 处理一个控制工具调用；非控制工具返回 null（走普通执行路径）。
   /// [failPendingToolEvents] 回填本轮剩余预建事件；
   /// [resolvePlanApproval] 为方案审批裁决，返回 true 表示已批准并
-  /// 请求重启。
+  /// 已切回执行模式。
   Future<ControlToolOutcome?> handle(
     AgentToolCallRequest call, {
     required Future<void> Function() failPendingToolEvents,
@@ -209,7 +207,7 @@ class ControlToolFlow {
       current.id,
       '模式切换：${previous.name} → plan（模型请求先规划）',
     );
-    final next = await tx.save(
+    await tx.save(
       current.copyWith(
         mode: AgentSessionMode.plan,
         prePlanMode: previous,
@@ -217,9 +215,10 @@ class ControlToolFlow {
         lastEventSummary: '已进入计划模式',
       ),
     );
+    // 模式已落库：中止本轮剩余工具（它们是旧模式下规划的），
+    // 下一轮按计划模式的工具目录/系统提示继续，无需重启运行。
     await failPendingToolEvents();
-    onModeSwitchRestart?.call(next);
-    return ControlToolOutcome.stopRun;
+    return ControlToolOutcome.nextTurn;
   }
 
   Future<ControlToolOutcome> _exitPlanMode(
@@ -264,8 +263,10 @@ class ControlToolFlow {
       AgentToolCallState.waitingApproval,
     );
     if (await resolvePlanApproval(event, call, plan)) {
+      // 已批准并切回执行模式：中止本轮剩余工具，下一轮按新模式
+      // 的工具目录继续执行，无需重启运行。
       await failPendingToolEvents();
-      return ControlToolOutcome.stopRun;
+      return ControlToolOutcome.nextTurn;
     }
     return ControlToolOutcome.nextCall;
   }

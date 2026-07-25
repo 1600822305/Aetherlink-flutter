@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
@@ -57,6 +58,25 @@ class DynamicToolCatalog {
   bool hasTool(String name) =>
       resident.any((d) => d.name == name) ||
       deferred.values.any((defs) => defs.any((d) => d.name == name));
+}
+
+/// 一次智能体运行内随任务模式动态解析的工具目录（免重启模式切换，
+/// 对标 CC 每轮 refreshTools）：LLM 客户端每轮 completeTurn 按
+/// `task.mode` 解析并更新 [current]，执行器 / 审批门在同一轮的工具
+/// 阶段读到与模型可见定义一致的路由。目录按模式缓存（含外部 MCP
+/// 发现），只在首次进入某模式时有装配成本。
+class AgentRunCatalog {
+  AgentRunCatalog(this._current, this._forMode);
+
+  DynamicToolCatalog _current;
+  final Future<DynamicToolCatalog> Function(AgentSessionMode mode) _forMode;
+
+  DynamicToolCatalog get current => _current;
+
+  Map<String, ToolRoute> get routes => _current.routes;
+
+  Future<DynamicToolCatalog> syncToMode(AgentSessionMode mode) async =>
+      _current = await _forMode(mode);
 }
 
 /// 从**原始 append-only 事件流**扫描已激活的绑定技能。

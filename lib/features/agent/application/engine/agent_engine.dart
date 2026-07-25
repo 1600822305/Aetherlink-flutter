@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
@@ -32,7 +34,8 @@ const String kToolAskUser = 'ask_user';
 const String kToolFinishTask = 'finish_task';
 
 /// 计划模式控制工具（对标 CC EnterPlanMode/ExitPlanMode）：引擎内部处理，
-/// 模式切换需重建工具目录，由 [AgentEngine.onModeSwitchRestart] 回调续跑。
+/// 模式落库后回到循环顶部继续跑——工具目录/系统提示由 LLM 客户端
+/// 每轮按任务当前模式解析，切换无需重启运行。
 const String kToolEnterPlanMode = 'enter_plan_mode';
 const String kToolExitPlanMode = 'exit_plan_mode';
 
@@ -63,7 +66,6 @@ class AgentEngine {
     this.onPostCompact,
     this.onCompactionFailed,
     this.manualCompactSignal,
-    this.onModeSwitchRestart,
   });
 
   final AgentLlmClient llm;
@@ -118,12 +120,6 @@ class AgentEngine {
   /// 请求可携带用户关注点（升级计划 ⑦）；调用即消费（取后清除）。
   final ManualCompactRequest? Function()? manualCompactSignal;
 
-  /// 计划模式切换后的续跑回调：模式已落库，但工具目录/系统提示是
-  /// 按模式在运行开始时构建的，需要调用方以新模式重启运行。
-  /// 引擎调用完立即 return；回调为 null 时任务停在 running，
-  /// 由用户手动续跑。
-  final void Function(AgentTask task)? onModeSwitchRestart;
-
   /// 收尾防线（正文缺失拦截 + stop hook），状态随引擎实例生灭。
   late final FinishGuards _guards = FinishGuards(stopGuard: stopGuard);
 
@@ -131,6 +127,11 @@ class AgentEngine {
   /// _kMaxAutoContinues）：有界，防每轮都截断的死循环。
   static const int _kMaxLengthContinues = 3;
   int _lengthContinues = 0;
+
+  /// 上下文超限恢复第一级（对标 CC collapse drain）：不调 LLM，把重放
+  /// 视图的 microcompact 阈值降到 drain 档强制折叠更多旧工具输出后重试；
+  /// 生效后本次运行保持 drain 档（上下文已贴近上限，回档只会再超）。
+  bool _overflowDrainAttempted = false;
 
   /// 反应式压缩（升级计划 ⑧，对标 CC hasAttemptedReactiveCompact）：
   /// 每次运行只兜底一次，压缩后重试仍超限则直接报错（防死循环）。
@@ -155,7 +156,6 @@ class AgentEngine {
       budget: budget,
       tx: tx,
       onNotification: onNotification,
-      onModeSwitchRestart: onModeSwitchRestart,
     );
     final controlFlow = ControlToolFlow(
       store: store,
@@ -164,7 +164,6 @@ class AgentEngine {
       guards: _guards,
       onNotification: onNotification,
       onTaskEnd: onTaskEnd,
-      onModeSwitchRestart: onModeSwitchRestart,
     );
     var current = task;
 
@@ -174,7 +173,7 @@ class AgentEngine {
         tx.transition(status, description);
 
     // 方案审批裁决：详见 [PlanApprovalFlow.resolve]；返回 true 表示
-    // 已批准并请求重启，调用方应 return。
+    // 已批准并已切回执行模式，调用方回到循环顶部以新模式继续。
     Future<bool> resolvePlanApproval(
       ToolCallEvent event,
       AgentToolCallRequest call,
@@ -214,7 +213,9 @@ class AgentEngine {
             resultSummary: '进程中断，未执行完成',
           );
         } else {
-          final resumed = await resolvePlanApproval(
+          // 批准/拒绝都继续进循环：批准后模式已切回执行模式，
+          // 下一轮按新模式的工具目录继续跑，无需重启运行。
+          await resolvePlanApproval(
             pendingPlanApproval,
             AgentToolCallRequest(
               id: pendingPlanApproval.id,
@@ -224,7 +225,6 @@ class AgentEngine {
             ),
             plan,
           );
-          if (resumed) return;
         }
       }
 
@@ -288,8 +288,14 @@ class AgentEngine {
           AgentLlmContext(
             task: current,
             events: events,
-            microCompactEnabled: budget.microCompactEnabled,
-            microCompactTriggerChars: budget.microCompactTriggerChars,
+            microCompactEnabled:
+                budget.microCompactEnabled || _overflowDrainAttempted,
+            microCompactTriggerChars: _overflowDrainAttempted
+                ? min(
+                    kOverflowDrainTriggerChars,
+                    budget.microCompactTriggerChars,
+                  )
+                : budget.microCompactTriggerChars,
           ),
           cancel: cancel,
           onReasoningDelta: writer.onReasoningDelta,
@@ -309,18 +315,25 @@ class AgentEngine {
         try {
           turn = await callTurn();
         } catch (e) {
-          // 反应式压缩（升级计划 ⑧，对标 CC prompt-too-long recovery）：
-          // 供应商拒绝超长 prompt 时兜底强制压缩一次后重试本轮；
-          // 每次运行只尝试一次，仍超限则报错（防死循环）。
-          if (_reactiveCompactAttempted || !isContextOverflowError(e)) {
-            rethrow;
-          }
-          _reactiveCompactAttempted = true;
+          // 上下文超限恢复梯队（对标 CC prompt-too-long 分级恢复）：
+          // 第一级 drain 折叠（不调 LLM、零成本），仍超限才走第二级
+          // 反应式 LLM 压缩；两级各只尝试一次，再超限报错（防死循环）。
+          if (!isContextOverflowError(e)) rethrow;
           // 半途流出的思考/正文定格落库，避免流式事件永久 streaming；
           // 本轮已流式预建的工具事件按中断回填，避免永久 running。
           await writer.finish('');
           await binder.failStreaming();
           await binder.failAllPending();
+          if (!_overflowDrainAttempted) {
+            _overflowDrainAttempted = true;
+            await store.appendStatusChange(
+              current.id,
+              '上下文超限（供应商拒绝），折叠旧工具输出后重试本轮',
+            );
+            continue;
+          }
+          if (_reactiveCompactAttempted) rethrow;
+          _reactiveCompactAttempted = true;
           await store.appendStatusChange(current.id, '上下文超限（供应商拒绝），兜底压缩后重试本轮');
           // 强制压缩（失败向上抛 → 任务 failed，因为不压缩重试也必然超限）；
           // 压缩后回到循环顶部重试本轮（重读事件，折叠视图已缩小）。

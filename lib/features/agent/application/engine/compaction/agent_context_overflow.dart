@@ -21,6 +21,11 @@ const List<String> _kContextOverflowPatterns = [
   'request too large',
 ];
 
+/// 超限恢复第一级 drain 折叠的 microcompact 阈值（字符）：远低于常规
+/// 阈值（80k），把可重取的旧工具输出尽量折叠成占位符，不调 LLM、
+/// 零成本；仍超限才走第二级反应式 LLM 压缩。
+const int kOverflowDrainTriggerChars = 20000;
+
 /// 判断一个异常是否是「上下文超限」类错误（可通过压缩恢复）。
 bool isContextOverflowError(Object error) {
   final text = error.toString().toLowerCase();
