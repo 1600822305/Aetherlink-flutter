@@ -523,7 +523,7 @@ class ContextCapturingLlm implements AgentLlmClient {
   }) async => '摘要';
 }
 
-class BigOutputToolExecutor implements AgentToolExecutor {
+class BigOutputToolExecutor extends AgentToolExecutor {
   @override
   bool isConcurrencySafe(AgentToolCallRequest call) => false;
 
@@ -534,7 +534,7 @@ class BigOutputToolExecutor implements AgentToolExecutor {
   ) async => AgentToolResult(ok: true, summary: 'ok', detail: 'x' * 500);
 }
 
-class FailingToolExecutor implements AgentToolExecutor {
+class FailingToolExecutor extends AgentToolExecutor {
   @override
   bool isConcurrencySafe(AgentToolCallRequest call) => false;
 
@@ -760,7 +760,7 @@ class TwoReadToolsThenFinishLlm implements AgentLlmClient {
 
 /// 记录并发度的只读执行器：两个调用都开始后才放行
 /// （验证只读段真正 Future.wait 并行）。
-class ConcurrencyRecordingExecutor implements AgentToolExecutor {
+class ConcurrencyRecordingExecutor extends AgentToolExecutor {
   final _bothStarted = Completer<void>();
   var _running = 0;
   var maxConcurrent = 0;
@@ -877,7 +877,7 @@ class InterruptDuringWaitApprovalGate implements ApprovalGate {
 }
 
 /// 记录执行时刻的打断标记状态（真实执行器会据此瞬间中断命令）。
-class InterruptFlagRecordingExecutor implements AgentToolExecutor {
+class InterruptFlagRecordingExecutor extends AgentToolExecutor {
   final List<bool> interruptFlagsAtExecute = [];
 
   @override
@@ -1455,6 +1455,67 @@ void main() {
       3,
       reason: '3 次连续失败后停在安全点',
     );
+  });
+
+  test('工具超时分级：执行器放宽的兜底超时生效，慢工具不被预算一刀切掐死', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final engine = AgentEngine(
+      llm: OneToolThenFinishLlm(),
+      tools: TieredTimeoutExecutor(
+        tieredTimeout: const Duration(seconds: 5),
+        executeDelay: const Duration(milliseconds: 200),
+      ),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(toolTimeout: const Duration(milliseconds: 50)),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '推送代码');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    final toolEvents = (await store.getEvents(
+      task.id,
+    )).whereType<ToolCallEvent>().toList();
+    expect(
+      toolEvents.any((e) => e.state == AgentToolCallState.success),
+      isTrue,
+      reason: '分级放宽后 200ms 的工具不被 50ms 预算兜底掐死',
+    );
+  });
+
+  test('工具超时 → 结果附带已流出的部分输出而非光秃秃「超时 ✗」', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final tools = PartialOutputHangingExecutor(
+      partial: 'building step 3/10\ncompiling core module…',
+    );
+    final engine = AgentEngine(
+      llm: OneToolThenFinishLlm(),
+      tools: tools,
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(toolTimeout: const Duration(milliseconds: 100)),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '构建项目');
+
+    await engine.run(task, AgentCancellationToken());
+
+    final timedOut = (await store.getEvents(task.id))
+        .whereType<ToolCallEvent>()
+        .firstWhere((e) => e.state == AgentToolCallState.failure);
+    expect(timedOut.resultSummary, contains('超时'));
+    expect(
+      timedOut.resultDetail,
+      contains('step 3/10'),
+      reason: '超时结果回填已流出的部分输出',
+    );
+    expect(timedOut.resultDetail, contains('部分输出'));
   });
 
   test('输出被 token 上限截断 → 自动续跑而非判 done', () async {
@@ -2489,7 +2550,7 @@ class VerdictApprovalGate implements ApprovalGate {
 }
 
 /// 记录执行开始时 LLM 流是否仍在进行（测边流边跑）。
-class EagerRecordingExecutor implements AgentToolExecutor {
+class EagerRecordingExecutor extends AgentToolExecutor {
   bool Function() isStreamOpen = () => false;
   final started = Completer<void>();
   final List<bool> streamOpenAtExecute = [];
@@ -2558,7 +2619,7 @@ class EagerStreamLlm implements AgentLlmClient {
 }
 
 /// 一直挂起直到收到工具中断信号的只读执行器（测兄弟中止）。
-class HangUntilInterruptExecutor implements AgentToolExecutor {
+class HangUntilInterruptExecutor extends AgentToolExecutor {
   var interrupted = false;
 
   @override
@@ -2620,6 +2681,57 @@ class EagerUnreturnedLlm implements AgentLlmClient {
     List<AgentEvent> events, {
     String? customInstructions,
   }) async => '摘要';
+}
+
+/// 分级超时测试执行器：timeoutFor 返回放宽后的兜底超时，execute 固定延迟。
+class TieredTimeoutExecutor extends AgentToolExecutor {
+  TieredTimeoutExecutor({
+    required this.tieredTimeout,
+    required this.executeDelay,
+  });
+
+  final Duration tieredTimeout;
+  final Duration executeDelay;
+
+  @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => false;
+
+  @override
+  Duration timeoutFor(AgentToolCallRequest call, Duration fallback) =>
+      tieredTimeout;
+
+  @override
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  ) async {
+    await Future<void>.delayed(executeDelay);
+    return const AgentToolResult(ok: true, summary: '完成');
+  }
+}
+
+/// 超时部分输出测试执行器：挂住直到被中断，partialOutput 回已流出文本。
+class PartialOutputHangingExecutor extends AgentToolExecutor {
+  PartialOutputHangingExecutor({required this.partial});
+
+  final String partial;
+
+  @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => false;
+
+  @override
+  String? partialOutput(AgentToolCallRequest call) => partial;
+
+  @override
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  ) async {
+    while (!cancel.toolInterruptRequested && !cancel.stopRequested) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    return const AgentToolResult(ok: false, summary: '已中断 ✗');
+  }
 }
 
 /// 一律要求审批且裁决为拒绝（测方案被拒流程）。

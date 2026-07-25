@@ -314,15 +314,29 @@ class AgentEngine {
         ) async {
           final stopwatch = Stopwatch()..start();
           var timeoutInterruptGen = 0;
+          // 超时分级：长命令类工具（终端等）由执行器按调用参数放宽兜底，
+          // 其余维持预算一刀切值。
+          final timeout = tools.timeoutFor(call, budget.toolTimeout);
           final result = await tools
               .execute(call, cancel)
               .timeout(
-                budget.toolTimeout,
+                timeout,
                 onTimeout: () {
                   // 同时中止仍在运行的底层工具，避免模型重发同一命令时
                   // 与旧命令并发（双重执行）。
                   timeoutInterruptGen = cancel.requestToolInterrupt();
-                  return const AgentToolResult(ok: false, summary: '超时 ✗');
+                  // 超时不只回一句「超时 ✗」：附上已流出的部分输出
+                  // （头尾摘录），模型能看到跑到哪、决定下一步。
+                  final partial = tools.partialOutput(call);
+                  final base = '工具执行超过 ${timeout.inSeconds}s 未返回，已中断。';
+                  return AgentToolResult(
+                    ok: false,
+                    summary: '超时 ✗',
+                    detail: partial == null || partial.trim().isEmpty
+                        ? base
+                        : '$base\n以下是超时前已产生的部分输出（头尾摘录）：\n'
+                              '${clipAgentTimeoutPartialOutput(partial)}',
+                  );
                 },
               );
           stopwatch.stop();

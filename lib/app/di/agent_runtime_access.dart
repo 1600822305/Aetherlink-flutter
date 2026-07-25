@@ -1263,7 +1263,7 @@ String _truncate(String value) =>
 
 /// 真实工具执行器：按 [ToolRoute] 分发到既有 shared handler
 /// （文件编辑/终端/知识库/网络搜索/技能），工具失败转为结果回填而非抛错。
-class _McpAgentToolExecutor implements AgentToolExecutor {
+class _McpAgentToolExecutor extends AgentToolExecutor {
   _McpAgentToolExecutor(
     Ref Function() refOf,
     this._catalog, {
@@ -1290,6 +1290,35 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
   final String? _boundWorkspaceId;
   final Ref Function() _refOf;
   late final ChatToolExecutor _executor;
+
+  /// 命令类工具已流出的实时输出（按调用 id）：引擎超时兜底时取头尾
+  /// 摘录回填给模型；调用自然结束后清理。缓冲封顶防长命令刷爆内存。
+  static const int _kLiveOutputBufferCap = 200000;
+  final Map<String, StringBuffer> _liveOutput = {};
+
+  @override
+  Duration timeoutFor(AgentToolCallRequest call, Duration fallback) {
+    // 终端命令是唯一带自身超时参数的长命令类工具：尊重
+    // timeout_ms（封顶）+ 宽限，让工具自己的优雅超时（部分输出 +
+    // 会话里继续跑）先于引擎硬掐触发。
+    if (_catalog.routes[call.name] is! TerminalToolRoute) return fallback;
+    int? requested;
+    try {
+      final decoded = jsonDecode(call.argsJson);
+      if (decoded is Map<String, dynamic>) {
+        final raw = decoded['timeout_ms'];
+        requested = raw is int ? raw : int.tryParse('$raw');
+      }
+    } catch (_) {}
+    return resolveAgentToolTimeout(
+      fallback: fallback,
+      requestedTimeoutMs: requested,
+    );
+  }
+
+  @override
+  String? partialOutput(AgentToolCallRequest call) =>
+      _liveOutput[call.id]?.toString();
 
   @override
   bool isConcurrencySafe(AgentToolCallRequest call) {
@@ -1361,8 +1390,32 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
               call.name,
               args,
               cancelSignal: interrupted.future,
+              onOutput: route is TerminalToolRoute
+                  ? (chunk) {
+                      final buffer = _liveOutput.putIfAbsent(
+                        call.id,
+                        StringBuffer.new,
+                      );
+                      buffer.write(chunk);
+                      if (buffer.length > _kLiveOutputBufferCap) {
+                        final text = buffer.toString();
+                        buffer
+                          ..clear()
+                          ..write(
+                            text.substring(
+                              text.length - _kLiveOutputBufferCap ~/ 2,
+                            ),
+                          );
+                      }
+                    }
+                  : null,
             );
-      unawaited(pending.then((_) {}, onError: (_) {}));
+      unawaited(
+        pending.then(
+          (_) => _liveOutput.remove(call.id),
+          onError: (_) => _liveOutput.remove(call.id),
+        ),
+      );
       final result = await Future.any<McpToolResult?>([
         pending,
         interrupted.future.then((_) => null),

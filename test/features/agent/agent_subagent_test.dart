@@ -30,9 +30,10 @@ class TwoSpawnLlm implements AgentLlmClient {
       String streamKey,
       String? toolName,
       String argsTextSoFar,
-    )? onToolCallDelta,
+    )?
+    onToolCallDelta,
     Future<void> Function(AgentToolCallRequest call, String? streamKey)?
-        onToolCall,
+    onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     _round++;
@@ -79,11 +80,10 @@ class TwoSpawnLlm implements AgentLlmClient {
     AgentTask task,
     List<AgentEvent> events, {
     String? customInstructions,
-  }) async =>
-      '摘要';
+  }) async => '摘要';
 }
 
-class NoToolExecutor implements AgentToolExecutor {
+class NoToolExecutor extends AgentToolExecutor {
   @override
   bool isConcurrencySafe(AgentToolCallRequest call) => false;
 
@@ -91,8 +91,7 @@ class NoToolExecutor implements AgentToolExecutor {
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
     AgentCancellationToken cancel,
-  ) async =>
-      const AgentToolResult(ok: false, summary: '不应走 executor ✗');
+  ) async => const AgentToolResult(ok: false, summary: '不应走 executor ✗');
 }
 
 /// 记录并发度的假启动器：两个都启动后才放行（验证 Future.wait 并行）。
@@ -141,10 +140,9 @@ void main() {
   });
 
   test('内置类型含 fork（分身）', () {
-    expect(
-      {for (final t in AgentSubagentType.values) t.name},
-      containsAll(['explore', 'bash', 'fork']),
-    );
+    expect({
+      for (final t in AgentSubagentType.values) t.name,
+    }, containsAll(['explore', 'bash', 'fork']));
   });
 
   test('buildSubagentForkContext：序列化用户/助手/工具/压缩摘要', () {
@@ -207,8 +205,10 @@ void main() {
     expect(decoded.parentTaskId, task.id);
     expect(decoded.isSubtask, isTrue);
     // copyWith 不丢父子关系。
-    expect(decoded.copyWith(status: AgentTaskStatus.done).parentTaskId,
-        task.id);
+    expect(
+      decoded.copyWith(status: AgentTaskStatus.done).parentTaskId,
+      task.id,
+    );
     // 旧数据无该字段 → 空串（非子任务）。
     expect(converter.fromSql(converter.toSql(task)).isSubtask, isFalse);
   });
@@ -248,9 +248,9 @@ void main() {
     expect(launcher.toolEventIds.toSet(), {for (final e in spawns) e.id});
     // 子代理中间过程不进父事件流（父级只有回填的工具结果）。
     expect(
-      (await store.getEvents(task.id))
-          .whereType<AssistantTextEvent>()
-          .where((e) => e.text.contains('调研')),
+      (await store.getEvents(
+        task.id,
+      )).whereType<AssistantTextEvent>().where((e) => e.text.contains('调研')),
       isEmpty,
     );
   });

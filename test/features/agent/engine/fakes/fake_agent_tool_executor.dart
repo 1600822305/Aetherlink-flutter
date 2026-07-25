@@ -3,7 +3,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_c
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 
 /// 演示用假工具执行器：固定延迟后返回成功；支持被用户打断。
-class FakeAgentToolExecutor implements AgentToolExecutor {
+class FakeAgentToolExecutor extends AgentToolExecutor {
   const FakeAgentToolExecutor({
     this.delay = const Duration(milliseconds: 900),
     this.concurrencySafe = false,
@@ -32,7 +32,8 @@ class FakeAgentToolExecutor implements AgentToolExecutor {
     return AgentToolResult(
       ok: true,
       summary: '完成 · ${delay.inMilliseconds / 1000}s（演示）',
-      detail: '（演示输出）${call.name}(${call.argSummary}) 执行成功。\n'
+      detail:
+          '（演示输出）${call.name}(${call.argSummary}) 执行成功。\n'
           '接真实现时这里是 ToolRoute 分发的真实工具输出。',
     );
   }
