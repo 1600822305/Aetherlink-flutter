@@ -48,6 +48,11 @@ class AgentLlmTurn {
   final int contextTokens;
 }
 
+/// 输出被 token 上限截断后的升配值（对标 CC max_tokens escalation）：
+/// agent 请求默认不设 max_tokens（Anthropic 适配器兜底 4096），首次
+/// 截断后后续轮次显式升到本值，避免续跑轮次反复截断。
+const int kAgentEscalatedMaxOutputTokens = 8192;
+
 /// 一轮调用的上下文：任务 + 事件流（压缩视图后续在引擎内做）。
 /// 引擎把本轮生效的 microcompact 设置一并带给重放侧，保证同一轮
 /// 引擎核算的字符量与真实进模型的视图一致（设置可配后的一致性硬点）。
@@ -58,6 +63,7 @@ class AgentLlmContext {
     this.microCompactEnabled = true,
     this.microCompactTriggerChars = kMicroCompactTriggerChars,
     this.contextLimitTokens = 0,
+    this.escalateOutputTokens = false,
   });
 
   final AgentTask task;
@@ -72,6 +78,10 @@ class AgentLlmContext {
   /// 模型上下文窗口（取自引擎 budget，0 = 未知）：供视图流水线
   /// 的 token 化触发判定，真实占用用 task.contextTokens。
   final int contextLimitTokens;
+
+  /// 本次运行已发生过输出截断：请求显式把 max_tokens 升到
+  /// [kAgentEscalatedMaxOutputTokens]（否则不设，由供应商默认）。
+  final bool escalateOutputTokens;
 }
 
 /// LLM 调用抽象：骨架期用假实现跑通状态机，接真实现时经 app/di

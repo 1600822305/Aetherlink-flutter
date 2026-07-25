@@ -62,6 +62,7 @@ class AgentEngine {
     this.onTurnStart,
     this.onTurnEnd,
     this.onTaskEnd,
+    this.onTaskFailed,
     this.onNotification,
     this.onPreCompact,
     this.onPostCompact,
@@ -102,6 +103,10 @@ class AgentEngine {
   /// 同步触发、不等待、不阻断。
   final void Function()? onTaskEnd;
 
+  /// 任务异常失败（转 failed）后的生命周期回调（taskFailed hooks，
+  /// 对标 CC StopFailure）：同步触发、不等待、不阻断，错误文本随回调传出。
+  final void Function(String error)? onTaskFailed;
+
   /// 需要用户注意的时刻（notification hooks，对标 CC
   /// Notification）：审批挂起（type=approval）/ ask_user 等待
   /// （type=question）时同步触发、不等待、不阻断。
@@ -128,6 +133,16 @@ class AgentEngine {
   /// _kMaxAutoContinues）：有界，防每轮都截断的死循环。
   static const int _kMaxLengthContinues = 3;
   int _lengthContinues = 0;
+
+  /// 首次截断后置位：后续轮次请求显式升配 max_tokens（对标 CC
+  /// max_tokens escalation），避免续跑轮次在同一上限反复截断。
+  bool _outputTokensEscalated = false;
+
+  /// 空回复（无正文无工具调用）重试次数（对标 CC withheld/empty
+  /// response 重试）：供应商偶发地返回全空 turn 时注入提示重试
+  /// 而非判收尾；有界，防持续空回复死循环。
+  static const int _kMaxEmptyRetries = 2;
+  int _emptyRetries = 0;
 
   /// 上下文超限恢复第一级（对标 CC collapse drain）：不调 LLM，把重放
   /// 视图的 microcompact 阈值降到 drain 档强制折叠更多旧工具输出后重试；
@@ -370,6 +385,7 @@ class AgentEngine {
                   )
                 : budget.microCompactTriggerChars,
             contextLimitTokens: budget.contextLimitTokens,
+            escalateOutputTokens: _outputTokensEscalated,
           ),
           cancel: cancel,
           onReasoningDelta: writer.onReasoningDelta,
@@ -474,6 +490,7 @@ class AgentEngine {
           // 指令后回到循环顶部，而不是把半成品判 done。
           if (turn.truncated && _lengthContinues < _kMaxLengthContinues) {
             _lengthContinues++;
+            _outputTokensEscalated = true;
             await store.appendStatusChange(
               current.id,
               '输出达 token 上限被截断，自动续跑'
@@ -483,6 +500,24 @@ class AgentEngine {
               current.id,
               '[系统] 上一条回复因达到输出 token 上限被截断，任务尚未'
               '结束。请从截断处继续完成剩余工作。',
+            );
+            continue;
+          }
+          // 全空 turn（无正文、无工具调用、非截断）：多半是供应商
+          // 偶发异常（withheld/网关丢块）而非模型自主收尾，注入
+          // 提示重试而不是把零产出判 done。
+          if (turn.text.trim().isEmpty && _emptyRetries < _kMaxEmptyRetries) {
+            _emptyRetries++;
+            await store.appendStatusChange(
+              current.id,
+              '模型返回空回复，自动重试'
+              '（$_emptyRetries/$_kMaxEmptyRetries）',
+            );
+            await store.appendUserMessage(
+              current.id,
+              '[系统] 上一条回复为空（既无正文也无工具调用），可能是'
+              '供应商异常。任务尚未结束，请继续推进；若任务已完成，'
+              '请输出面向用户的最终结论后再结束。',
             );
             continue;
           }
@@ -733,6 +768,7 @@ class AgentEngine {
           lastEventSummary: '执行出错：$e',
         ),
       );
+      onTaskFailed?.call('$e');
     }
   }
 }

@@ -62,6 +62,10 @@ enum AgentHookEvent {
   /// 主任务正常结束后（不阻断，只观测）。
   taskEnd,
 
+  /// 主任务异常失败后（对标 Claude Code StopFailure，观测型不阻断）：
+  /// 错误信息经 `message` 传入。
+  taskFailed,
+
   /// 上下文压缩前（对标 Claude Code PreCompact，观测型不阻断）；
   /// matcher 匹配触发方式（目前仅 auto），pattern 忽略。
   preCompact,

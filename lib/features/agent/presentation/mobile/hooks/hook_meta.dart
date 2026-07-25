@@ -192,6 +192,13 @@ HookEventMeta hookEventMetaOf(AgentHookEvent event) => switch (event) {
     description: '主任务正常完成后触发。',
     canBlock: false,
   ),
+  AgentHookEvent.taskFailed => (
+    stage: 'AGENT',
+    color: Colors.purple,
+    title: 'taskFailed',
+    description: '主任务异常失败后触发（观测型，不阻断）；错误信息经 message 传入。',
+    canBlock: false,
+  ),
   AgentHookEvent.preCompact => (
     stage: 'AGENT',
     color: Colors.purple,
@@ -221,6 +228,7 @@ const List<(String, List<AgentHookEvent>)> kHookStageGroups = [
       AgentHookEvent.userPromptSubmit,
       AgentHookEvent.stop,
       AgentHookEvent.taskEnd,
+      AgentHookEvent.taskFailed,
       AgentHookEvent.preCompact,
       AgentHookEvent.postCompact,
     ],

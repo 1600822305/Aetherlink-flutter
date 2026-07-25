@@ -504,6 +504,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           unawaited(runtime.lifecycleHooks(AgentHookEvent.turnEnd)),
       onTaskEnd: () =>
           unawaited(runtime.lifecycleHooks(AgentHookEvent.taskEnd)),
+      onTaskFailed: (error) => unawaited(
+        runtime.lifecycleHooks(AgentHookEvent.taskFailed, message: error),
+      ),
       onNotification: (message, type) =>
           unawaited(runtime.notificationHooks(message, notificationType: type)),
       onPreCompact: () {
