@@ -1393,7 +1393,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'timeout_ms': {
             'type': 'number',
-            'description': '超时毫秒数（可选，默认 120000；超时不杀命令，命令继续在会话里跑）',
+            'description':
+                '超时毫秒数（可选，默认 120000，上限 600000；超时不杀命令，'
+                '命令继续在会话里跑，可用 terminal_session 回看进度）',
           },
         },
         'required': ['command'],

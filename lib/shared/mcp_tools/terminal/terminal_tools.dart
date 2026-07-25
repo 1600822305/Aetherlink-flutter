@@ -29,6 +29,10 @@ const String kTerminalServerName = '@aether/terminal';
 /// Default one-shot command timeout（设计文档 §2.3：默认 120s，可配）。
 const int _kDefaultTimeoutMs = 120000;
 
+/// timeout_ms 参数上限（对标 CC BASH_MAX_TIMEOUT_MS = 10 分钟）：
+/// 与引擎兜底超时分级的封顶一致，超过按上限收敛。
+const int kTerminalMaxTimeoutMs = 600000;
+
 /// 单次 exec 返回给模型的输出上限（字符）：超出时保留头尾、中间省略，
 /// 防止 cat 大文件 / 长构建日志一次性灌爆模型上下文。
 const int _kExecOutputLimit = 30000;
@@ -233,9 +237,7 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
   }
   if (target.backend is ProotLocalBackend &&
       !await TerminalEngineManager.instance.isInstalled()) {
-    throw const FileEditorError(
-      '内置终端环境未安装。请让用户在「工作区 → 打开文件夹 → 内置终端」里完成安装后再试。',
-    );
+    throw const FileEditorError('内置终端环境未安装。请让用户在「工作区 → 打开文件夹 → 内置终端」里完成安装后再试。');
   }
   return target;
 }
@@ -250,9 +252,7 @@ bool _isSharedStoragePath(String path) =>
 McpToolResult? _guardCommand(String command) {
   final reason = blockedCommandReason(command);
   if (reason == null) return null;
-  return fileEditorError(
-    '命令被安全黑名单拦截（$reason），未执行。如确需执行，请让用户在终端里手动运行。',
-  );
+  return fileEditorError('命令被安全黑名单拦截（$reason），未执行。如确需执行，请让用户在终端里手动运行。');
 }
 
 /// terminal_execute —— 默认跑在长驻默认会话里（IDE 体验：cd / 环境变量跨
@@ -274,7 +274,8 @@ Future<McpToolResult> _execute(
       optionalString(args, 'session') ?? optionalString(args, 'session_id');
   final PooledWorkspaceSession session;
   if (sessionRef != null) {
-    session = _findSession(
+    session =
+        _findSession(
           manager,
           sessionRef,
           workspaceId: await _scopedWorkspaceId(ref, args),
@@ -299,12 +300,14 @@ Future<McpToolResult> _execute(
   final effective = (cwd == null || cwd.isEmpty)
       ? command
       : "cd '${cwd.replaceAll("'", r"'\''")}' && $command";
-  final timeoutMs = optionalInt(args, 'timeout_ms') ?? _kDefaultTimeoutMs;
+  final requestedMs = optionalInt(args, 'timeout_ms') ?? _kDefaultTimeoutMs;
+  final timeoutMs = (requestedMs > 0 ? requestedMs : _kDefaultTimeoutMs).clamp(
+    1,
+    kTerminalMaxTimeoutMs,
+  );
   final result = await session.exec(
     effective,
-    timeout: Duration(
-      milliseconds: timeoutMs > 0 ? timeoutMs : _kDefaultTimeoutMs,
-    ),
+    timeout: Duration(milliseconds: timeoutMs),
     cancelSignal: cancelSignal,
     onOutput: onOutput,
   );
@@ -317,7 +320,8 @@ Future<McpToolResult> _execute(
     'timedOut': result.timedOut,
     'canceled': result.canceled,
     if (result.timedOut)
-      'hint': '命令超时未结束，仍在会话里继续跑（该会话在其结束前保持占用）；'
+      'hint':
+          '命令超时未结束，仍在会话里继续跑（该会话在其结束前保持占用）；'
           '可用 terminal_session action=output 回看进度，若它在等交互输入可用 '
           'action=write 写 stdin；需要并行执行其他命令请传新的 session 名字。'
     else if (result.canceled)
@@ -351,10 +355,7 @@ PooledWorkspaceSession? _findSession(
 
 /// `workspace` 参数存在时解析为工作区 ID（会话级工具的隔离边界），
 /// 未传时返回 null（不限定）。
-Future<String?> _scopedWorkspaceId(
-  Ref ref,
-  Map<String, Object?> args,
-) async {
+Future<String?> _scopedWorkspaceId(Ref ref, Map<String, Object?> args) async {
   if (optionalString(args, 'workspace') == null) return null;
   return (await resolveWorkspace(ref, args)).workspace.id;
 }
@@ -381,10 +382,7 @@ Future<PooledWorkspaceSession> _createNamedSession(
       );
 }
 
-Future<McpToolResult> _sessionList(
-  Ref ref,
-  Map<String, Object?> args,
-) async {
+Future<McpToolResult> _sessionList(Ref ref, Map<String, Object?> args) async {
   var sessions = ref.read(workspaceSessionPoolManagerProvider).allSessions();
   // 传 workspace 参数时只列该工作区的会话（双作用域设计稿 §3.1）。
   if (optionalString(args, 'workspace') != null) {
@@ -410,10 +408,7 @@ Future<McpToolResult> _sessionList(
   });
 }
 
-Future<McpToolResult> _sessionOutput(
-  Ref ref,
-  Map<String, Object?> args,
-) async {
+Future<McpToolResult> _sessionOutput(Ref ref, Map<String, Object?> args) async {
   final sessionId = requireString(args, 'session_id');
   final scope = await _scopedWorkspaceId(ref, args);
   var session = ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
@@ -433,10 +428,7 @@ Future<McpToolResult> _sessionOutput(
 }
 
 /// 往长驻会话的运行中进程写 stdin（交互式程序输入，设计稿 §3.4）。
-Future<McpToolResult> _sessionWrite(
-  Ref ref,
-  Map<String, Object?> args,
-) async {
+Future<McpToolResult> _sessionWrite(Ref ref, Map<String, Object?> args) async {
   final sessionId = requireString(args, 'session_id');
   final scope = await _scopedWorkspaceId(ref, args);
   var session = ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
@@ -460,4 +452,3 @@ Future<McpToolResult> _sessionWrite(
     'hint': '已写入 stdin；可用 terminal_session action=output 回看进程响应。',
   });
 }
-

@@ -138,13 +138,21 @@ Future<({AgentHooksConfig? config, String? root})> loadAgentHooksConfig(
 /// 退出协议见 [interpretAgentHookExit]：preToolUse 阻断时本次调用
 /// 不执行（阻断原因作为失败结果回给模型）；postToolUse 阻断时
 /// 把反馈追加进工具结果（如格式化/编译报错）。
-class HookedAgentToolExecutor implements AgentToolExecutor {
+class HookedAgentToolExecutor extends AgentToolExecutor {
   HookedAgentToolExecutor(
     this._refOf,
     this._inner,
     this._catalog, {
     String? boundWorkspaceId,
   }) : _boundWorkspaceId = boundWorkspaceId;
+
+  @override
+  Duration timeoutFor(AgentToolCallRequest call, Duration fallback) =>
+      _inner.timeoutFor(call, fallback);
+
+  @override
+  String? partialOutput(AgentToolCallRequest call) =>
+      _inner.partialOutput(call);
 
   final Ref Function() _refOf;
   final AgentToolExecutor _inner;
