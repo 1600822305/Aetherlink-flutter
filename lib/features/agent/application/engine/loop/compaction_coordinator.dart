@@ -49,15 +49,15 @@ class CompactionCoordinator {
     List<AgentEvent> events, {
     bool force = false,
   }) async {
-    // 与重放侧同款视图：先折叠、再 microcompact，确保 LLM 压缩的
-    // 触发判断基于模型实际看到的内容量（两级降压：先 micro 后 LLM）。
-    final folded = foldCompactedEvents(events);
-    final entries = applyToolResultBudget(budget.microCompactEnabled
-        ? microCompactEntries(
-            folded,
-            triggerChars: budget.microCompactTriggerChars,
-          )
-        : folded);
+    // 与重放侧同款视图（统一降压流水线），确保 LLM 压缩的触发判断
+    // 基于模型实际看到的内容量（两级降压：先 micro 后 LLM）。
+    final entries = buildContextView(
+      events,
+      microCompactEnabled: budget.microCompactEnabled,
+      microCompactTriggerChars: budget.microCompactTriggerChars,
+      contextTokens: task.contextTokens,
+      contextLimitTokens: budget.contextLimitTokens,
+    );
     // 手动压缩（升级计划 ⑤）：用户主动触发时跳过阈值/预警/熔断，
     // 直接走 keep 前缀选择。
     final manualRequest = manualCompactSignal?.call();
@@ -156,16 +156,16 @@ class CompactionCoordinator {
       // 避免每轮白调一次 LLM；给一次可见提示。
       try {
         await store.appendStatusChange(
-            task.id,
-            '上下文压缩连续失败 '
-            '${_breaker.maxConsecutiveFailures} 次，本次运行内'
-            '不再尝试（续跑恢复）：$error');
+          task.id,
+          '上下文压缩连续失败 '
+          '${_breaker.maxConsecutiveFailures} 次，本次运行内'
+          '不再尝试（续跑恢复）：$error',
+        );
       } catch (_) {}
     } else if (!_failureNotified) {
       _failureNotified = true;
       try {
-        await store.appendStatusChange(
-            task.id, '上下文压缩失败（不影响任务，下轮重试）：$error');
+        await store.appendStatusChange(task.id, '上下文压缩失败（不影响任务，下轮重试）：$error');
       } catch (_) {}
     }
   }

@@ -369,6 +369,7 @@ class AgentEngine {
                     budget.microCompactTriggerChars,
                   )
                 : budget.microCompactTriggerChars,
+            contextLimitTokens: budget.contextLimitTokens,
           ),
           cancel: cancel,
           onReasoningDelta: writer.onReasoningDelta,

@@ -57,12 +57,12 @@ Future<ManualCompactionOutcome> runManualCompaction({
   bool Function()? isCancelled,
   String? customInstructions,
 }) async {
-  final entries = microCompactEnabled
-      ? microCompactEntries(
-          foldCompactedEvents(events),
-          triggerChars: microCompactTriggerChars,
-        )
-      : foldCompactedEvents(events);
+  final entries = buildContextView(
+    events,
+    microCompactEnabled: microCompactEnabled,
+    microCompactTriggerChars: microCompactTriggerChars,
+    contextTokens: task.contextTokens,
+  );
   final covered = selectCompactionPrefix(entries, keepChars: keepChars);
   if (covered.isEmpty) return const ManualCompactionNothingToCover();
   final summary = await llm.summarizeForCompaction(
