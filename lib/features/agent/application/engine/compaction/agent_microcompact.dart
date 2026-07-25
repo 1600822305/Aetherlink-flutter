@@ -5,11 +5,45 @@
 /// 同款共享模式；事件流本体永不改写。
 library;
 
+import 'dart:math';
+
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_trigger.dart';
 
 /// 被清除的旧工具输出在上下文里的占位文本。
 const String kMicroCompactClearedPlaceholder = '[旧工具输出已清除]';
+
+/// 同参数重复调用被去重的旧输出在上下文里的占位文本。
+const String kDedupedRepeatedReadPlaceholder = '[重复调用，输出已由后面同参数调用的最新结果取代]';
+
+/// 同参数重复读去重（对标 CC 缓存编辑里的去重一招）：同一个
+/// 可重取工具（[kMicroCompactableTools]）以同一份参数被调用多次
+/// （agent 反复读同一文件是上下文膨胀头号来源）时，视图里只保留
+/// 最后一次的输出，更旧的替换为占位符。无需阈值——旧重复输出对
+/// 模型无增量信息。确定性纯函数，事件流本体永不改写；未命中时
+/// 原样返回同一列表实例。
+List<AgentEvent> dedupeRepeatedReads(List<AgentEvent> entries) {
+  final seen = <String>{};
+  List<AgentEvent>? result;
+  for (var i = entries.length - 1; i >= 0; i--) {
+    final event = entries[i];
+    if (event is! ToolCallEvent) continue;
+    if (!kMicroCompactableTools.contains(event.toolName)) continue;
+    final detail = event.resultDetail;
+    if (detail == null) continue;
+    final key =
+        '${event.toolName}\u0000${event.argsDetail ?? event.argSummary}';
+    if (seen.add(key)) continue;
+    if (detail.length <= kDedupedRepeatedReadPlaceholder.length) continue;
+    result ??= List.of(entries);
+    result[i] = _withClearedResult(
+      event,
+      placeholder: kDedupedRepeatedReadPlaceholder,
+    );
+  }
+  return result ?? entries;
+}
 
 /// 可被 microcompact 清除输出的工具（对标 CC COMPACTABLE_TOOLS）：
 /// 只清「可重取」的输出——终端 / 文件读 / 搜索 / 网络抓取 / 知识库
@@ -91,8 +125,13 @@ List<AgentEvent> microCompactEntries(
 
 // ── 工具结果聚合预算（对标 CC tool result budget）──
 
-/// 超出总预算被省略的工具结果在上下文里的存根文本。
-const String kToolResultBudgetStub = '[工具结果已省略：超出上下文工具结果总预算，需要时可重新调用工具获取]';
+/// 超出总预算被摘录的工具结果里的省略标记文本（头尾之间）。
+const String kToolResultBudgetStub = '[中间内容已省略：超出上下文工具结果总预算，需要完整内容可重新调用工具获取]';
+
+/// 超预算摘录保留的头部 / 尾部字符数（对标 CC snip 思路：整条
+/// 省略会让模型完全失忆，留头尾信息损失小得多）。
+const int kToolResultExcerptHeadChars = 800;
+const int kToolResultExcerptTailChars = 800;
 
 /// 全部工具结果（resultDetail）在上下文视图里的总字符预算。
 /// 单条已有 8000 字符截断落盘，但并发读取后一轮可产出十条以上，
@@ -100,8 +139,9 @@ const String kToolResultBudgetStub = '[工具结果已省略：超出上下文�
 const int kToolResultBudgetChars = 60000;
 
 /// 工具结果总预算裁剪：所有 ToolCallEvent 的 resultDetail 总字符量超
-/// [budgetChars] 时，从最旧开始把结果替换为存根（不限工具白名单，
-/// 但最近 [keepRecentToolCalls] 条不动），直到降到预算内。与
+/// [budgetChars] 时，从最旧开始把结果摘录为头尾片段 + 省略标记
+/// （不限工具白名单，但最近 [keepRecentToolCalls] 条不动），直到降到
+/// 预算内。与
 /// [microCompactEntries] 同款确定性纯函数：事件流本体永不改写，
 /// 引擎与重放侧共用同一视图。应在 microcompact 之后调用：先清
 /// 可重取的旧输出，仍超预算才兜底省略其余最旧结果。
@@ -130,32 +170,97 @@ List<AgentEvent> applyToolResultBudget(
     final event = entries[i];
     if (event is! ToolCallEvent) continue;
     final detail = event.resultDetail;
-    if (detail == null || detail.length <= kToolResultBudgetStub.length) {
-      continue;
-    }
+    if (detail == null || detail.length <= _kExcerptMinChars) continue;
+    final excerpt = _excerptDetail(detail);
     result ??= List.of(entries);
-    result[i] = _withClearedResult(event, placeholder: kToolResultBudgetStub);
-    total -= detail.length - kToolResultBudgetStub.length;
+    result[i] = _withClearedResult(event, placeholder: excerpt);
+    total -= detail.length - excerpt.length;
   }
   return result ?? entries;
+}
+
+/// 短于此长度的结果不摘录（摘录后反而不省字符）。
+const int _kExcerptMinChars =
+    kToolResultExcerptHeadChars + kToolResultExcerptTailChars + 200;
+
+String _excerptDetail(String detail) =>
+    '${detail.substring(0, kToolResultExcerptHeadChars)}\n'
+    '$kToolResultBudgetStub\n'
+    '${detail.substring(detail.length - kToolResultExcerptTailChars)}';
+
+// ── 统一降压流水线（引擎 / 重放 / 压缩协调 / 上下文明细共用入口）──
+
+/// microcompact 的 token 触发比例：LLM 压缩在 0.92 才触发，micro
+/// 应早得多（字符档位 80k vs 120k ≈ 两三开，换算≈ 0.92 × 2/3）。
+const double kMicroCompactTriggerRatio = 0.6;
+
+/// microcompact 触发阈值 token 化（与 compaction 的 token 判定同源）：
+/// 有 API usage 的真实上下文 token 与模型窗口时，真实占用超过
+/// 「micro 比例 × 有效窗口」就把字符阈值按超出比例等比收紧，
+/// 让折叠量跟真实占用对齐（中文/代码 token 密度高，字符估算常常
+/// 偏低致折叠过晚）。只收紧不放宽：拿不到 usage 或未超 token
+/// 阈值时维持字符档兜底，超限 drain 降档等现有语义不变。
+int effectiveMicroCompactTriggerChars({
+  required int contextTokens,
+  required int contextLimitTokens,
+  required int estimatedChars,
+  required int fallbackTriggerChars,
+}) {
+  if (contextTokens <= 0 || contextLimitTokens <= 0) {
+    return fallbackTriggerChars;
+  }
+  final triggerTokens =
+      (effectiveContextWindowTokens(contextLimitTokens) *
+              kMicroCompactTriggerRatio)
+          .floor();
+  if (triggerTokens <= 0 || contextTokens <= triggerTokens) {
+    return fallbackTriggerChars;
+  }
+  return min(
+    fallbackTriggerChars,
+    estimatedChars * triggerTokens ~/ contextTokens,
+  );
+}
+
+/// 上下文视图单一入口：折叠已压缩事件 → 同参数重复读去重 →
+/// microcompact（token 化触发）→ 工具结果总预算（头尾摘录）。
+/// 引擎请求、重放侧消息构建、压缩触发核算、上下文明细都走这一个
+/// 函数，保证四侧视图一致；确定性纯函数，事件流本体永不改写。
+List<AgentEvent> buildContextView(
+  List<AgentEvent> events, {
+  bool microCompactEnabled = true,
+  int microCompactTriggerChars = kMicroCompactTriggerChars,
+  int contextTokens = 0,
+  int contextLimitTokens = 0,
+}) {
+  final deduped = dedupeRepeatedReads(foldCompactedEvents(events));
+  if (!microCompactEnabled) return applyToolResultBudget(deduped);
+  final trigger = effectiveMicroCompactTriggerChars(
+    contextTokens: contextTokens,
+    contextLimitTokens: contextLimitTokens,
+    estimatedChars: totalContextChars(deduped),
+    fallbackTriggerChars: microCompactTriggerChars,
+  );
+  return applyToolResultBudget(
+    microCompactEntries(deduped, triggerChars: trigger),
+  );
 }
 
 ToolCallEvent _withClearedResult(
   ToolCallEvent event, {
   String placeholder = kMicroCompactClearedPlaceholder,
-}) =>
-    ToolCallEvent(
-      id: event.id,
-      seq: event.seq,
-      at: event.at,
-      toolName: event.toolName,
-      argSummary: event.argSummary,
-      state: event.state,
-      resultSummary: event.resultSummary,
-      elapsed: event.elapsed,
-      argsDetail: event.argsDetail,
-      resultDetail: placeholder,
-      resultOverflowPath: event.resultOverflowPath,
-      imagePath: event.imagePath,
-      imageMimeType: event.imageMimeType,
-    );
+}) => ToolCallEvent(
+  id: event.id,
+  seq: event.seq,
+  at: event.at,
+  toolName: event.toolName,
+  argSummary: event.argSummary,
+  state: event.state,
+  resultSummary: event.resultSummary,
+  elapsed: event.elapsed,
+  argsDetail: event.argsDetail,
+  resultDetail: placeholder,
+  resultOverflowPath: event.resultOverflowPath,
+  imagePath: event.imagePath,
+  imageMimeType: event.imageMimeType,
+);

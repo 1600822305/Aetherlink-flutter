@@ -240,7 +240,7 @@ Future<AgentContextBreakdown> agentContextBreakdown(
   return computeContextBreakdown(
     systemPrompt: system,
     toolDefinitions: definitions,
-    messages: _replayMessages(events),
+    messages: _replayMessages(events, contextTokens: task.contextTokens),
     apiContextTokens: task.contextTokens,
   );
 }
@@ -589,6 +589,8 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       context.events,
       microCompactEnabled: context.microCompactEnabled,
       microCompactTriggerChars: context.microCompactTriggerChars,
+      contextTokens: context.task.contextTokens,
+      contextLimitTokens: context.contextLimitTokens,
     );
     // 计划提醒（对标 CC todo_reminder）：久未更新计划时才把当前计划
     // 快照以置尾 system-reminder 注入（只进本轮上下文不落事件流，
@@ -958,20 +960,19 @@ List<LlmMessage> _replayMessages(
   List<AgentEvent> events, {
   bool microCompactEnabled = true,
   int microCompactTriggerChars = kMicroCompactTriggerChars,
+  int contextTokens = 0,
+  int contextLimitTokens = 0,
 }) {
   final messages = <LlmMessage>[];
-  // 先折叠、再 microcompact（与引擎 _maybeCompact 同款视图）：超阈值时
-  // 较旧的可重取工具输出以占位符进上下文，不改事件流本体。
-  // 生效值经 AgentLlmContext 来自引擎 budget，两侧视图保持一致。
-  // 工具结果总预算在 microcompact 之后兜底（先清可重取旧输出，仍超
-  // 才省略其余最旧结果），两侧视图一致。
-  final folded = applyToolResultBudget(
-    microCompactEnabled
-        ? microCompactEntries(
-            foldCompactedEvents(events),
-            triggerChars: microCompactTriggerChars,
-          )
-        : foldCompactedEvents(events),
+  // 统一降压流水线（与引擎/压缩协调器同款视图）：折叠 → 去重 →
+  // microcompact → 工具结果预算，不改事件流本体。生效值经
+  // AgentLlmContext 来自引擎 budget，两侧视图保持一致。
+  final folded = buildContextView(
+    events,
+    microCompactEnabled: microCompactEnabled,
+    microCompactTriggerChars: microCompactTriggerChars,
+    contextTokens: contextTokens,
+    contextLimitTokens: contextLimitTokens,
   );
   // 提问索引建在折叠后的事件上：提问若已被压缩折叠，其回答退化为
   // 普通用户消息，避免回放出没有前置 tool_call 的 tool 结果。

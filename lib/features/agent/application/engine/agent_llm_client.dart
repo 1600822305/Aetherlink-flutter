@@ -57,6 +57,7 @@ class AgentLlmContext {
     required this.events,
     this.microCompactEnabled = true,
     this.microCompactTriggerChars = kMicroCompactTriggerChars,
+    this.contextLimitTokens = 0,
   });
 
   final AgentTask task;
@@ -67,6 +68,10 @@ class AgentLlmContext {
 
   /// 本轮生效的 microcompact 触发阈值（取自引擎 budget）。
   final int microCompactTriggerChars;
+
+  /// 模型上下文窗口（取自引擎 budget，0 = 未知）：供视图流水线
+  /// 的 token 化触发判定，真实占用用 task.contextTokens。
+  final int contextLimitTokens;
 }
 
 /// LLM 调用抽象：骨架期用假实现跑通状态机，接真实现时经 app/di
