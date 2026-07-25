@@ -9,7 +9,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar/topics_providers.dart';
-import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
+import 'package:aetherlink_flutter/app/di/auxiliary_model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';

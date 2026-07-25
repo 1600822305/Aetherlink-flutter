@@ -10,7 +10,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_ac
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action_button.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_actions_builder.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/token_display.dart';
-import 'package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart';
+import 'package:aetherlink_flutter/app/di/message_bubble_access.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 

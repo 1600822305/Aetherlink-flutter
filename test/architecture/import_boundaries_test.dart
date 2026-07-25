@@ -109,21 +109,6 @@ void main() {
 /// DO NOT ADD ENTRIES — new cross-feature composition must go through `app/di`.
 const _knownAcceptedViolations = <String>{
   'lib/features/backup/application/backup_controller.dart -> package:aetherlink_flutter/features/chat/application/chat_providers.dart',
-  'lib/features/chat/application/send/turn_finisher.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
-  'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
-  'lib/features/chat/application/modes/multi_model_send_service.dart -> package:aetherlink_flutter/features/settings/application/model_combo_providers.dart',
-  'lib/features/chat/application/combo_executor.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
-  'lib/features/chat/application/context_condense_service.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
-  'lib/features/chat/application/translate/translate_controller.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
-  'lib/features/chat/presentation/widgets/top_bar/chat_top_bar.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
-  'lib/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',
-  'lib/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart -> package:aetherlink_flutter/features/settings/application/model_combo_providers.dart',
-  'lib/features/settings/application/auxiliary_model_controller.dart -> package:aetherlink_flutter/features/chat/application/chat_providers.dart',
-  'lib/features/settings/presentation/mobile/skill_store_page.dart -> package:aetherlink_flutter/features/chat/application/chat_providers.dart',
-  'lib/features/settings/presentation/mobile/skill_store_page.dart -> package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart',
-  'lib/features/settings/presentation/mobile/web_search/add_search_provider_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
-  'lib/features/settings/presentation/mobile/web_search/search_provider_detail_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
-  'lib/features/settings/presentation/mobile/web_search_settings_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
   // Accumulated while the guard itself was red (masked by the other failing
   // suites): workspace/terminal/knowledge/backup slices that landed with
   // direct cross-feature imports. Same migration debt as above — route these
@@ -131,12 +116,8 @@ const _knownAcceptedViolations = <String>{
   'lib/features/backup/data/chatbox_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
   'lib/features/backup/data/chatbox_txt_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
   'lib/features/backup/data/cherry_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
-  'lib/features/chat/application/send/turn_stream_binder.dart -> package:aetherlink_flutter/features/workspace/application/workspace_store.dart',
-  'lib/features/chat/presentation/widgets/blocks/message_selection_area.dart -> package:aetherlink_flutter/features/settings/application/selection_menu_settings_controller.dart',
-  'lib/features/chat/presentation/widgets/message_actions/message_toolbar.dart -> package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart',
   'lib/features/knowledge/presentation/mobile/knowledge_base_detail_page.dart -> package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart',
   'lib/features/knowledge/presentation/mobile/knowledge_base_detail_page.dart -> package:aetherlink_flutter/features/workspace/application/workspace_store.dart',
-  'lib/features/settings/presentation/mobile/web_search/search_multi_key_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
   'lib/features/workspace/data/proot_local_backend.dart -> package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart',
   'lib/features/workspace/data/proot_local_backend.dart -> package:aetherlink_flutter/features/terminal/data/proot_process_runner.dart',
   'lib/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart -> package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart',

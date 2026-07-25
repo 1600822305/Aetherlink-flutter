@@ -3,6 +3,9 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 
+export 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart'
+    show workspaceStoreProvider;
+
 part 'workspace_access.g.dart';
 
 /// App-level composition seam exposing the「最近打开」workspace list to other

@@ -28,7 +28,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/multi_model_mes
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
-import 'package:aetherlink_flutter/features/settings/application/model_combo_providers.dart';
+import 'package:aetherlink_flutter/app/di/model_combo_access.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 

@@ -12,7 +12,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_ima
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
-import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
+import 'package:aetherlink_flutter/app/di/auxiliary_model_access.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
