@@ -8,7 +8,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_controller.dar
 import 'package:aetherlink_flutter/features/chat/application/chat_nav_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
-import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page/deferred_bubble.dart';

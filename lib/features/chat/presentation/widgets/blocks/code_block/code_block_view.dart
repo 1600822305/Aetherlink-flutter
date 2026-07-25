@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
-import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_sidebar_panel.dart';
 
 part 'notes_sidebar_access.g.dart';

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aetherlink_flutter/features/chat/application/long_text_paste.dart';
+import 'package:aetherlink_flutter/features/chat/application/composer/long_text_paste.dart';
 
 void main() {
   group('convertPastedTextToAttachment', () {

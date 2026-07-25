@@ -9,7 +9,7 @@ import 'package:aetherlink_flutter/app/di/app_main_mode.dart';
 import 'package:aetherlink_flutter/app/di/notes_sidebar_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
-import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/tabs/assistant_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/tabs/settings/settings_tab.dart';

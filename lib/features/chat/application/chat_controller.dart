@@ -34,7 +34,7 @@ import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controlle
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
-import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
