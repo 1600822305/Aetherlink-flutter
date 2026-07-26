@@ -8,6 +8,12 @@
 library;
 
 import 'deck_document.dart';
+import 'deck_qa.dart'
+    show
+        kQaLineHeightFactor,
+        kQaMinFontSize,
+        kQaTextOverflowTolerance,
+        qaTextWidthInches;
 import 'deck_style.dart';
 
 const double _kMargin = 0.42;
@@ -153,14 +159,28 @@ List<DeckElement> _cover(
     ),
     _text(
       DeckFrame(x: _kMargin, y: h * 0.40, w: w - _kMargin * 2, h: 1.4),
-      [(title, 44, p.textPrimary, true)],
+      [
+        (
+          title,
+          _fitFontSize(title, w - _kMargin * 2, 1.4, 44, maxLines: 2),
+          p.textPrimary,
+          true,
+        ),
+      ],
       font: p.font,
       valign: 'middle',
     ),
     if (subtitle != null)
       _text(
         DeckFrame(x: _kMargin, y: h * 0.40 + 1.45, w: w - _kMargin * 2, h: 0.6),
-        [(subtitle, 20, p.textSecondary, false)],
+        [
+          (
+            subtitle,
+            _fitFontSize(subtitle, w - _kMargin * 2, 0.6, 20, maxLines: 2),
+            p.textSecondary,
+            false,
+          ),
+        ],
         font: p.font,
       ),
     if (meta != null)
@@ -171,7 +191,14 @@ List<DeckElement> _cover(
           w: w - _kMargin * 2,
           h: 0.4,
         ),
-        [(meta, 13, p.textSecondary, false)],
+        [
+          (
+            meta,
+            _fitFontSize(meta, w - _kMargin * 2, 0.4, 13),
+            p.textSecondary,
+            false,
+          ),
+        ],
         font: p.font,
         valign: 'bottom',
       ),
@@ -192,13 +219,27 @@ List<DeckElement> _section(
     if (label != null)
       _text(
         DeckFrame(x: _kMargin, y: h * 0.32, w: w - _kMargin * 2, h: 0.45),
-        [(label, 16, p.accent(0), true)],
+        [
+          (
+            label,
+            _fitFontSize(label, w - _kMargin * 2, 0.45, 16),
+            p.accent(0),
+            true,
+          ),
+        ],
         font: p.font,
         align: 'center',
       ),
     _text(
       DeckFrame(x: _kMargin, y: h * 0.40, w: w - _kMargin * 2, h: 1.1),
-      [(title, 38, p.textPrimary, true)],
+      [
+        (
+          title,
+          _fitFontSize(title, w - _kMargin * 2, 1.1, 38, maxLines: 2),
+          p.textPrimary,
+          true,
+        ),
+      ],
       font: p.font,
       align: 'center',
       valign: 'middle',
@@ -206,7 +247,14 @@ List<DeckElement> _section(
     if (lead != null)
       _text(
         DeckFrame(x: w * 0.2, y: h * 0.40 + 1.2, w: w * 0.6, h: 0.8),
-        [(lead, 15, p.textSecondary, false)],
+        [
+          (
+            lead,
+            _fitFontSize(lead, w * 0.6, 0.8, 15, maxLines: 2),
+            p.textSecondary,
+            false,
+          ),
+        ],
         font: p.font,
         align: 'center',
       ),
@@ -223,10 +271,31 @@ List<DeckElement> _end(
   final title = _reqString(json, 'title', '$where.layout');
   final items = _stringList(json['items'], '$where.layout.items');
   final meta = json['meta'] as String?;
+  if (items.length > 8) {
+    throw DeckParseException(
+      '$where.layout(end) 的 items 最多 8 条：收到 ${items.length}',
+    );
+  }
+  // 整体框高按条数给（每条 0.42）；字号按 QA 同一套逐段换行估算缩到
+  // 全部装得下，避免任何一条换行把整块撑爆。
+  final itemSize = _fitParagraphsFontSize(
+    items,
+    w * 0.5,
+    items.length * 0.42,
+    15,
+    lineSpacing: 1.3,
+  );
   return [
     _text(
       DeckFrame(x: _kMargin, y: h * 0.26, w: w - _kMargin * 2, h: 1.0),
-      [(title, 38, p.textPrimary, true)],
+      [
+        (
+          title,
+          _fitFontSize(title, w - _kMargin * 2, 1.0, 38),
+          p.textPrimary,
+          true,
+        ),
+      ],
       font: p.font,
       align: 'center',
       valign: 'middle',
@@ -239,7 +308,7 @@ List<DeckElement> _end(
           w: w * 0.5,
           h: items.length * 0.42,
         ),
-        [for (final it in items) (it, 15, p.textSecondary, false)],
+        [for (final it in items) (it, itemSize, p.textSecondary, false)],
         font: p.font,
         align: 'center',
         lineSpacing: 1.3,
@@ -252,7 +321,14 @@ List<DeckElement> _end(
           w: w - _kMargin * 2,
           h: 0.4,
         ),
-        [(meta, 13, p.textSecondary, false)],
+        [
+          (
+            meta,
+            _fitFontSize(meta, w - _kMargin * 2, 0.4, 13),
+            p.textSecondary,
+            false,
+          ),
+        ],
         font: p.font,
         align: 'center',
         valign: 'bottom',
@@ -297,7 +373,20 @@ List<DeckElement> _toc(
             w: frame.w - _kPad * 2,
             h: frame.h - _kPad * 2 - 0.55,
           ),
-          [(items[i], p.cardTitleSize, p.textPrimary, true)],
+          [
+            (
+              items[i],
+              _fitFontSize(
+                items[i],
+                frame.w - _kPad * 2,
+                frame.h - _kPad * 2 - 0.55,
+                p.cardTitleSize,
+                maxLines: 2,
+              ),
+              p.textPrimary,
+              true,
+            ),
+          ],
           font: p.font,
         ),
       );
@@ -326,7 +415,19 @@ List<DeckElement> _titleBar(String title, double w, _Palette p) => [
       w: w - _kMargin * 2 - 0.18,
       h: _kTitleH,
     ),
-    [(title, p.titleSize * 0.8, p.textPrimary, true)],
+    [
+      (
+        title,
+        _fitFontSize(
+          title,
+          w - _kMargin * 2 - 0.18,
+          _kTitleH,
+          p.titleSize * 0.8,
+        ),
+        p.textPrimary,
+        true,
+      ),
+    ],
     font: p.font,
     valign: 'middle',
   ),
@@ -524,15 +625,28 @@ List<DeckElement> _cardElements(
       if (title != null) {
         elements.add(
           _text(DeckFrame(x: inner.x, y: top, w: inner.w, h: 0.42), [
-            (title, p.cardTitleSize, accent, true),
+            (
+              title,
+              _fitFontSize(title, inner.w, 0.42, p.cardTitleSize),
+              accent,
+              true,
+            ),
           ], font: p.font),
         );
         top += 0.52;
       }
+      final bodyH = inner.y + inner.h - top;
+      final bodyFit = _fitParagraphsFontSize(
+        body,
+        inner.w,
+        bodyH,
+        p.bodySize,
+        lineSpacing: 1.35,
+      );
       elements.add(
         _text(
-          DeckFrame(x: inner.x, y: top, w: inner.w, h: inner.y + inner.h - top),
-          [for (final b in body) (b, p.bodySize, p.textPrimary, false)],
+          DeckFrame(x: inner.x, y: top, w: inner.w, h: bodyH),
+          [for (final b in body) (b, bodyFit, p.textPrimary, false)],
           font: p.font,
           lineSpacing: 1.35,
         ),
@@ -541,18 +655,25 @@ List<DeckElement> _cardElements(
       final value = _reqString(json, 'value', '$where(data)');
       final label = json['label'] as String?;
       final desc = json['desc'] as String?;
-      elements
-        ..add(
-          _text(DeckFrame(x: inner.x, y: inner.y, w: inner.w, h: 0.85), [
-            (value, 38, accent, true),
-          ], font: p.font),
-        )
-        ..add(
+      elements.add(
+        _text(DeckFrame(x: inner.x, y: inner.y, w: inner.w, h: 0.85), [
+          (value, _fitFontSize(value, inner.w, 0.85, 38), accent, true),
+        ], font: p.font),
+      );
+      if (label != null) {
+        elements.add(
           _text(DeckFrame(x: inner.x, y: inner.y + 0.9, w: inner.w, h: 0.4), [
-            (label ?? '', p.bodySize, p.textSecondary, false),
+            (
+              label,
+              _fitFontSize(label, inner.w, 0.4, p.bodySize),
+              p.textSecondary,
+              false,
+            ),
           ], font: p.font),
         );
-      if (desc != null) {
+      }
+      // desc 区不足 0.2 英寸时直接不放（小卡片上强塞必然溢出）。
+      if (desc != null && inner.h - 1.35 >= 0.2) {
         elements.add(
           _text(
             DeckFrame(
@@ -561,7 +682,20 @@ List<DeckElement> _cardElements(
               w: inner.w,
               h: inner.h - 1.35,
             ),
-            [(desc, p.bodySize - 1, p.textPrimary, false)],
+            [
+              (
+                desc,
+                _fitParagraphsFontSize(
+                  [desc],
+                  inner.w,
+                  inner.h - 1.35,
+                  p.bodySize - 1,
+                  lineSpacing: 1.3,
+                ),
+                p.textPrimary,
+                false,
+              ),
+            ],
             font: p.font,
             lineSpacing: 1.3,
           ),
@@ -577,11 +711,23 @@ List<DeckElement> _cardElements(
       if (title != null) {
         elements.add(
           _text(DeckFrame(x: inner.x, y: top, w: inner.w, h: 0.42), [
-            (title, p.cardTitleSize, accent, true),
+            (
+              title,
+              _fitFontSize(title, inner.w, 0.42, p.cardTitleSize),
+              accent,
+              true,
+            ),
           ], font: p.font),
         );
         top += 0.52;
       }
+      final itemFit = _fitParagraphsFontSize(
+        items,
+        inner.w,
+        inner.y + inner.h - top,
+        p.bodySize,
+        lineSpacing: 1.4,
+      );
       elements.add(
         DeckTextElement(
           frame: DeckFrame(
@@ -598,7 +744,7 @@ List<DeckElement> _cardElements(
                 runs: [
                   DeckTextRun(
                     text: it,
-                    size: p.bodySize,
+                    size: itemFit,
                     color: p.textPrimary,
                     font: p.font,
                   ),
@@ -617,7 +763,12 @@ List<DeckElement> _cardElements(
       if (title != null) {
         elements.add(
           _text(DeckFrame(x: inner.x, y: top, w: inner.w, h: 0.42), [
-            (title, p.cardTitleSize, accent, true),
+            (
+              title,
+              _fitFontSize(title, inner.w, 0.42, p.cardTitleSize),
+              accent,
+              true,
+            ),
           ], font: p.font),
         );
         top += 0.55;
@@ -626,7 +777,10 @@ List<DeckElement> _cardElements(
       var tx = inner.x;
       var ty = top;
       for (final (ti, tag) in tags.indexed) {
-        final tagW = 0.28 + tag.length * 0.15;
+        // 药丸宽度按 QA 同一套宽度估算量出来，并钳到卡内；超长标签靠
+        // 缩字号兜底，而不是让药丸伸出卡片/画布。
+        var tagW = qaTextWidthInches(tag, p.bodySize - 2) + 0.28;
+        if (tagW > inner.w) tagW = inner.w;
         if (tx + tagW > inner.x + inner.w && tx > inner.x) {
           tx = inner.x;
           ty += tagH + 0.12;
@@ -647,7 +801,14 @@ List<DeckElement> _cardElements(
           ..add(
             _text(
               DeckFrame(x: tx, y: ty + 0.03, w: tagW, h: tagH - 0.06),
-              [(tag, p.bodySize - 2, p.textPrimary, false)],
+              [
+                (
+                  tag,
+                  _fitFontSize(tag, tagW, tagH - 0.06, p.bodySize - 2),
+                  p.textPrimary,
+                  false,
+                ),
+              ],
               font: p.font,
               align: 'center',
               valign: 'middle',
@@ -665,16 +826,28 @@ List<DeckElement> _cardElements(
       if (title != null) {
         elements.add(
           _text(DeckFrame(x: inner.x, y: top, w: inner.w, h: 0.42), [
-            (title, p.cardTitleSize, accent, true),
+            (
+              title,
+              _fitFontSize(title, inner.w, 0.42, p.cardTitleSize),
+              accent,
+              true,
+            ),
           ], font: p.font),
         );
         top += 0.55;
       }
       const dot = 0.34;
       final stepH = (inner.y + inner.h - top) / steps.length;
+      if (stepH < 0.2) {
+        throw DeckParseException(
+          '$where(process) 的 ${steps.length} 步在这张卡里放不下'
+          '（每步至少 0.2 英寸）：减少步骤或换更高的卡位',
+        );
+      }
       for (final (si, step) in steps.indexed) {
         final cy = top + si * stepH;
-        if (si < steps.length - 1) {
+        // 步距小于圆点时连接线高度为负 —— 直接不画。
+        if (si < steps.length - 1 && stepH - dot > 0.02) {
           elements.add(
             DeckShapeElement(
               frame: DeckFrame(
@@ -703,7 +876,7 @@ List<DeckElement> _cardElements(
               [
                 (
                   '${si + 1}',
-                  p.bodySize - 2,
+                  _fitFontSize('${si + 1}', dot, dot - 0.04, p.bodySize - 2),
                   const DeckColor.raw('FFFFFF'),
                   true,
                 ),
@@ -721,9 +894,22 @@ List<DeckElement> _cardElements(
                 w: inner.w - dot - 0.16,
                 h: stepH,
               ),
-              [(step, p.bodySize, p.textPrimary, false)],
+              [
+                (
+                  step,
+                  _fitFontSize(
+                    step,
+                    inner.w - dot - 0.16,
+                    stepH,
+                    p.bodySize,
+                    maxLines: 2,
+                  ),
+                  p.textPrimary,
+                  false,
+                ),
+              ],
               font: p.font,
-              valign: si == steps.length - 1 ? 'top' : 'top',
+              valign: 'top',
             ),
           );
       }
@@ -738,7 +924,20 @@ List<DeckElement> _cardElements(
             w: inner.w,
             h: label == null ? inner.h : inner.h - 0.5,
           ),
-          [(value, 54, accent, true)],
+          [
+            (
+              value,
+              _fitFontSize(
+                value,
+                inner.w,
+                label == null ? inner.h : inner.h - 0.5,
+                54,
+                maxLines: 2,
+              ),
+              accent,
+              true,
+            ),
+          ],
           font: p.font,
           align: 'center',
           valign: 'middle',
@@ -753,7 +952,14 @@ List<DeckElement> _cardElements(
               w: inner.w,
               h: 0.5,
             ),
-            [(label, p.bodySize, p.textSecondary, false)],
+            [
+              (
+                label,
+                _fitFontSize(label, inner.w, 0.5, p.bodySize, maxLines: 2),
+                p.textSecondary,
+                false,
+              ),
+            ],
             font: p.font,
             align: 'center',
           ),
@@ -810,17 +1016,46 @@ List<DeckElement> _progress(
   String where,
 ) {
   final value = _percent(json, '$where(progress)');
-  final label = json['label'] as String?;
+  if (f.w < 1.2 || f.h < 0.35) {
+    throw DeckParseException(
+      '$where(progress) 的框太小（至少 1.2×0.35 英寸）：收到 '
+      '${f.w.toStringAsFixed(2)}×${f.h.toStringAsFixed(2)}',
+    );
+  }
+  // 矮框（label + 条放不下）自动丢 label，保证条不越出容器。
+  final label = f.h < 0.7 ? null : json['label'] as String?;
   final barH = 0.28;
   final labelH = label == null ? 0.0 : 0.36;
   final barY = f.y + labelH + (f.h - labelH - barH) / 2;
+  // 百分比框按 QA text_overflow 的同一套启发式预留 —— 引擎自产的元素
+  // 不允许溢出自己写的容器（字号来自 style.cardTitleSize，可变，所以
+  // 不能写死 0.8×0.44）。槽宽按「最坏情况文本」而不是当前值预留：同页
+  // 多条 progress 的槽宽必须一致，填充长度才可比（99% 不能比 100% 长）。
+  final pctText = '${_fmtPct(value)}%';
+  final pctSize = p.cardTitleSize;
+  var pctW = qaTextWidthInches('88.8%', pctSize) + 0.06;
+  if (pctW > f.w * 0.45) pctW = f.w * 0.45; // 窄容器：靠缩字号兜底
+  var pctH =
+      pctSize * kQaLineHeightFactor / 72 / kQaTextOverflowTolerance + 0.02;
+  if (pctH < 0.44) pctH = 0.44;
+  if (pctH > f.h) pctH = f.h;
+  var pctY = barY + barH / 2 - pctH / 2;
+  if (pctY + pctH > f.y + f.h) pctY = f.y + f.h - pctH;
+  if (pctY < f.y) pctY = f.y;
+  final rawBarW = f.w - pctW - 0.15;
+  final barW = rawBarW < 0.1 ? 0.1 : rawBarW;
   return [
     if (label != null)
       _text(DeckFrame(x: f.x, y: f.y, w: f.w, h: 0.34), [
-        (label, p.bodySize, p.textSecondary, false),
+        (
+          label,
+          _fitFontSize(label, f.w, 0.34, p.bodySize),
+          p.textSecondary,
+          false,
+        ),
       ], font: p.font),
     DeckShapeElement(
-      frame: DeckFrame(x: f.x, y: barY, w: f.w - 0.85, h: barH),
+      frame: DeckFrame(x: f.x, y: barY, w: barW, h: barH),
       kind: DeckShapeKind.roundRect,
       fill: p.accent(0),
       fillTransparency: 80,
@@ -828,19 +1063,21 @@ List<DeckElement> _progress(
     ),
     if (value > 0)
       DeckShapeElement(
-        frame: DeckFrame(
-          x: f.x,
-          y: barY,
-          w: (f.w - 0.85) * value / 100,
-          h: barH,
-        ),
+        frame: DeckFrame(x: f.x, y: barY, w: barW * value / 100, h: barH),
         kind: DeckShapeKind.roundRect,
         fill: p.accent(0),
         radius: 0.5,
       ),
     _text(
-      DeckFrame(x: f.x + f.w - 0.8, y: barY - 0.08, w: 0.8, h: 0.44),
-      [('${_fmtNum(value)}%', p.cardTitleSize, p.accent(0), true)],
+      DeckFrame(x: f.x + f.w - pctW, y: pctY, w: pctW, h: pctH),
+      [
+        (
+          pctText,
+          _fitFontSize(pctText, pctW, pctH, pctSize),
+          p.accent(0),
+          true,
+        ),
+      ],
       font: p.font,
       align: 'right',
       valign: 'middle',
@@ -862,39 +1099,67 @@ List<DeckElement> _kpi(
     );
   }
   final value = _reqString(json, 'value', '$where(kpi)');
+  if (f.w < 1.0 || f.h < 0.6) {
+    throw DeckParseException(
+      '$where(kpi) 的框太小（至少 1.0×0.6 英寸）：收到 '
+      '${f.w.toStringAsFixed(2)}×${f.h.toStringAsFixed(2)}',
+    );
+  }
   final label = json['label'] as String?;
   final trend = json['trend'] as String?;
   final trendUp = trend == null || !trend.startsWith('-');
+  final innerW = f.w - _kPad * 2;
+  // 矮卡片降级：先掉 trend 行、再掉 label 行，保住主数值的可读空间，
+  // 而不是把数值压到 12pt 以下或产出负高度文本框。
+  var showLabel = label != null;
+  var showTrend = trend != null;
+  double valueBoxH() =>
+      f.h - _kPad * 2 - (showLabel ? 0.36 : 0) - (showTrend ? 0.36 : 0);
+  if (valueBoxH() < 0.35 && showTrend) showTrend = false;
+  if (valueBoxH() < 0.35 && showLabel) showLabel = false;
+  var valueH = valueBoxH();
+  if (valueH < 0.2) valueH = 0.2; // f.h < 0.7 的极小卡兜底
   return [
     _card(f, p),
-    _text(
-      DeckFrame(x: f.x + _kPad, y: f.y + _kPad, w: f.w - _kPad * 2, h: 0.36),
-      [(label ?? '', p.bodySize, p.textSecondary, false)],
-      font: p.font,
-    ),
+    if (showLabel)
+      _text(
+        DeckFrame(x: f.x + _kPad, y: f.y + _kPad, w: innerW, h: 0.36),
+        [
+          (
+            label!,
+            _fitFontSize(label, innerW, 0.36, p.bodySize),
+            p.textSecondary,
+            false,
+          ),
+        ],
+        font: p.font,
+      ),
     _text(
       DeckFrame(
         x: f.x + _kPad,
-        y: f.y + _kPad + 0.36,
-        w: f.w - _kPad * 2,
-        h: f.h - _kPad * 2 - (trend == null ? 0.36 : 0.72),
+        y: f.y + _kPad + (showLabel ? 0.36 : 0),
+        w: innerW,
+        h: valueH,
       ),
-      [(value, 34, p.accent(0), true)],
+      [
+        (value, _fitFontSize(value, innerW, valueH, 34), p.accent(0), true),
+      ],
       font: p.font,
       valign: 'middle',
     ),
-    if (trend != null)
+    if (showTrend)
       _text(
         DeckFrame(
           x: f.x + _kPad,
           y: f.y + f.h - _kPad - 0.36,
-          w: f.w - _kPad * 2,
+          w: innerW,
           h: 0.36,
         ),
         [
           (
             '${trendUp ? '▲' : '▼'} $trend',
-            p.bodySize - 1,
+            _fitFontSize('${trendUp ? '▲' : '▼'} $trend', innerW, 0.36,
+                p.bodySize - 1),
             trendUp
                 ? const DeckColor.raw('16A34A')
                 : const DeckColor.raw('DC2626'),
@@ -915,6 +1180,13 @@ List<DeckElement> _waffle(
   final value = _percent(json, '$where(waffle)');
   final label = json['label'] as String?;
   final labelH = label == null ? 0.0 : 0.4;
+  if (f.w < 0.8 || f.h - labelH < 0.8) {
+    throw DeckParseException(
+      '$where(waffle) 的框太小（10×10 点阵至少需要 0.8×'
+      '${(labelH + 0.8).toStringAsFixed(1)} 英寸）：收到 '
+      '${f.w.toStringAsFixed(2)}×${f.h.toStringAsFixed(2)}',
+    );
+  }
   final grid = f.h - labelH;
   final side = (grid < f.w ? grid : f.w);
   final cell = side / 10;
@@ -923,7 +1195,12 @@ List<DeckElement> _waffle(
   final elements = <DeckElement>[
     if (label != null)
       _text(DeckFrame(x: f.x, y: f.y, w: f.w, h: 0.36), [
-        ('$label ${_fmtNum(value)}%', p.bodySize, p.textSecondary, false),
+        (
+          '$label ${_fmtPct(value)}%',
+          _fitFontSize('$label ${_fmtPct(value)}%', f.w, 0.36, p.bodySize),
+          p.textSecondary,
+          false,
+        ),
       ], font: p.font),
   ];
   for (var i = 0; i < 100; i++) {
@@ -957,6 +1234,19 @@ List<DeckElement> _timeline(
   if (rawSteps is! List || rawSteps.length < 2) {
     throw DeckParseException('$where(timeline) 的 steps 至少 2 个');
   }
+  if (rawSteps.length > 8) {
+    throw DeckParseException(
+      '$where(timeline) 的 steps 最多 8 个：收到 ${rawSteps.length}',
+    );
+  }
+  // 标签行 0.44 + 轴线 0.55 起点 + 圆点 0.26：低于 0.9 英寸放不下。
+  if (f.h < 0.9) {
+    throw DeckParseException(
+      '$where(timeline) 的框高至少 0.9 英寸：收到 ${f.h.toStringAsFixed(2)}',
+    );
+  }
+  // desc 区（轴线下方）不足 0.25 英寸时自动丢弃 desc，避免负高度文本框。
+  final showDesc = f.h - 0.95 >= 0.25;
   final steps = <({String label, String? desc})>[];
   for (final (i, raw) in rawSteps.indexed) {
     if (raw is String) {
@@ -999,11 +1289,18 @@ List<DeckElement> _timeline(
       ),
       _text(
         DeckFrame(x: f.x + i * stepW, y: f.y, w: stepW, h: 0.44),
-        [(step.label, p.bodySize, p.textPrimary, true)],
+        [
+          (
+            step.label,
+            _fitFontSize(step.label, stepW, 0.44, p.bodySize),
+            p.textPrimary,
+            true,
+          ),
+        ],
         font: p.font,
         align: 'center',
       ),
-      if (step.desc != null)
+      if (step.desc != null && showDesc)
         _text(
           DeckFrame(
             x: f.x + i * stepW + 0.06,
@@ -1011,7 +1308,21 @@ List<DeckElement> _timeline(
             w: stepW - 0.12,
             h: f.y + f.h - lineY - dot - 0.14,
           ),
-          [(step.desc!, p.bodySize - 2, p.textSecondary, false)],
+          [
+            (
+              step.desc!,
+              _fitFontSize(
+                step.desc!,
+                stepW - 0.12,
+                f.y + f.h - lineY - dot - 0.14,
+                p.bodySize - 2,
+                maxLines: 3,
+                lineSpacing: 1.25,
+              ),
+              p.textSecondary,
+              false,
+            ),
+          ],
           font: p.font,
           align: 'center',
           lineSpacing: 1.25,
@@ -1029,6 +1340,21 @@ List<DeckElement> _funnel(
   final rawStages = json['stages'];
   if (rawStages is! List || rawStages.length < 2) {
     throw DeckParseException('$where(funnel) 的 stages 至少 2 层');
+  }
+  if (rawStages.length > 8) {
+    throw DeckParseException(
+      '$where(funnel) 的 stages 最多 8 层：收到 ${rawStages.length}',
+    );
+  }
+  {
+    // 每层至少 0.2 英寸（12pt 文字的 QA 下限）+ 层间距 0.1。
+    final minH = 0.2 * rawStages.length + 0.1 * (rawStages.length - 1);
+    if (f.h < minH) {
+      throw DeckParseException(
+        '$where(funnel) ${rawStages.length} 层至少需要 '
+        '${minH.toStringAsFixed(1)} 英寸高度：收到 ${f.h.toStringAsFixed(2)}',
+      );
+    }
   }
   final stages = <({String label, double value})>[];
   for (final (i, raw) in rawStages.indexed) {
@@ -1067,7 +1393,12 @@ List<DeckElement> _funnel(
         [
           (
             '${stage.label}  ${_fmtNum(stage.value)}',
-            p.bodySize,
+            _fitFontSize(
+              '${stage.label}  ${_fmtNum(stage.value)}',
+              f.w,
+              rowH,
+              p.bodySize,
+            ),
             const DeckColor.raw('FFFFFF'),
             true,
           ),
@@ -1087,12 +1418,31 @@ List<DeckElement> _gauge(
   String where,
 ) {
   final value = _percent(json, '$where(gauge)');
+  if (f.w < 1.0 || f.h < 0.9) {
+    throw DeckParseException(
+      '$where(gauge) 的框太小（至少 1.0×0.9 英寸）：收到 '
+      '${f.w.toStringAsFixed(2)}×${f.h.toStringAsFixed(2)}',
+    );
+  }
   final label = json['label'] as String?;
   // 半环仪表盘：底环（半透明）+ 数值弧（pie 形状）+ 背景色内圆抠出环形。
-  final d = (f.w < f.h * 2 ? f.w : f.h * 2) * 0.92;
+  // pie 形状的边界盒是整圆（下半圆不可见但仍参与 out_of_bounds 判定），
+  // 所以直径受三重约束：宽、可见内容的垂直预算、整圆盒不越出容器。
+  var d = (f.w < f.h * 2 ? f.w : f.h * 2) * 0.92;
+  if (d > f.h) d = f.h;
+  final dMax = (f.h - 0.5) * 2;
+  if (d > dMax) d = dMax;
   final cx = f.x + f.w / 2;
-  final topY = f.y + (f.h - d / 2 - 0.5) / 2;
+  var topY = f.y + (f.h - d / 2 - 0.5) / 2;
+  final topMax = f.y + f.h - d; // 整圆盒下缘不出容器
+  if (topY > topMax) topY = topMax;
+  if (topY < f.y) topY = f.y;
   final ring = d * 0.14;
+  var pctY = topY + d / 2 - 0.75;
+  if (pctY + 0.6 > f.y + f.h) pctY = f.y + f.h - 0.6;
+  if (pctY < f.y) pctY = f.y;
+  var labelY = topY + d / 2 + 0.06;
+  if (labelY + 0.4 > f.y + f.h) labelY = f.y + f.h - 0.4;
   return [
     DeckShapeElement(
       frame: DeckFrame(x: cx - d / 2, y: topY, w: d, h: d),
@@ -1121,16 +1471,30 @@ List<DeckElement> _gauge(
       fill: p.background,
     ),
     _text(
-      DeckFrame(x: cx - d / 2, y: topY + d / 2 - 0.75, w: d, h: 0.6),
-      [('${_fmtNum(value)}%', 30, p.accent(0), true)],
+      DeckFrame(x: cx - d / 2, y: pctY, w: d, h: 0.6),
+      [
+        (
+          '${_fmtPct(value)}%',
+          _fitFontSize('${_fmtPct(value)}%', d, 0.6, 30),
+          p.accent(0),
+          true,
+        ),
+      ],
       font: p.font,
       align: 'center',
       valign: 'bottom',
     ),
     if (label != null)
       _text(
-        DeckFrame(x: cx - d / 2, y: topY + d / 2 + 0.06, w: d, h: 0.4),
-        [(label, p.bodySize, p.textSecondary, false)],
+        DeckFrame(x: cx - d / 2, y: labelY, w: d, h: 0.4),
+        [
+          (
+            label,
+            _fitFontSize(label, d, 0.4, p.bodySize),
+            p.textSecondary,
+            false,
+          ),
+        ],
         font: p.font,
         align: 'center',
       ),
@@ -1139,3 +1503,67 @@ List<DeckElement> _gauge(
 
 String _fmtNum(double v) =>
     v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
+
+/// 百分比专用格式：99.95-99.99 会被 toStringAsFixed(1) 进位成 "100.0"
+/// （6 字符，比预留槽宽的最坏情况还宽，且把 <100 显示成 100）——夹回
+/// "99.9"。整 100 仍走 _fmtNum 输出 "100"。
+String _fmtPct(double v) {
+  final s = _fmtNum(v);
+  return s == '100.0' && v < 100 ? '99.9' : s;
+}
+
+/// [text] 在 w×h（英寸）框内、最多 [maxLines] 行时能通过 QA text_overflow
+/// 启发式的最大字号：上限 [max]、下限 [kQaMinFontSize]。宽高都用与 QA
+/// 完全相同的常数估算。引擎写死字号 + 框尺寸随外框/风格走的组合会在小
+/// 卡片上自我溢出，引擎自产的展示文本都应经过这里。
+double _fitFontSize(
+  String text,
+  double w,
+  double h,
+  double max, {
+  int maxLines = 1,
+  double lineSpacing = 1,
+}) {
+  if (text.trim().isEmpty || w <= 0 || h <= 0) return max;
+  final unitW = qaTextWidthInches(text, 1); // 1pt 时的估算宽度（英寸）
+  var best = kQaMinFontSize;
+  // 对每个行数 n 取宽/高两个约束的下界，再在 n 间取最大：短文本自然选
+  // 单行大字，长文本自动换行缩字。0.98 余量避免估算恰好压线。
+  for (var lines = 1; lines <= maxLines; lines++) {
+    final byWidth = unitW <= 0 ? max : lines * w / unitW;
+    final byHeight =
+        h * kQaTextOverflowTolerance * 72 /
+        (kQaLineHeightFactor * lineSpacing * lines);
+    final s = (byWidth < byHeight ? byWidth : byHeight) * 0.98;
+    if (s > best) best = s;
+  }
+  return best > max ? max : best;
+}
+
+/// 多段落版 fit：按 QA 完全相同的逐段 ceil 换行估算总高度，从 [max]
+/// 逐步降到能装进 w×h 为止（下限 [kQaMinFontSize]）。用于正文/列表这类
+/// 允许换行、段数不定的引擎文本。
+double _fitParagraphsFontSize(
+  List<String> paragraphs,
+  double w,
+  double h,
+  double max, {
+  double lineSpacing = 1,
+}) {
+  if (w <= 0 || h <= 0) return max;
+  double estimate(double s) {
+    var total = 0.0;
+    for (final t in paragraphs) {
+      final lines = (qaTextWidthInches(t, s) / w).ceil().clamp(1, 1000);
+      total += lines * s * kQaLineHeightFactor * lineSpacing / 72;
+    }
+    return total;
+  }
+
+  final target = h * kQaTextOverflowTolerance * 0.98;
+  var s = max;
+  while (s > kQaMinFontSize && estimate(s) > target) {
+    s = s * 0.94;
+  }
+  return s < kQaMinFontSize ? kQaMinFontSize : s;
+}

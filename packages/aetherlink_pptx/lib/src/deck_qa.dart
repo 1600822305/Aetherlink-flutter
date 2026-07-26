@@ -40,13 +40,39 @@ const double kQaMinFontSize = 12;
 /// Maximum elements per slide before an over-density warning fires.
 const int kQaMaxElementsPerSlide = 12;
 
-/// Average character width as a fraction of font size — a conservative
-/// CJK-leaning estimate used by the text-overflow heuristic (CJK glyphs are
-/// full-width; latin averages ~0.55, so 0.95 leaves margin for mixed text).
-const double _charWidthFactor = 0.95;
+/// Full-width (CJK/kana/hangul/emoji) character width as a fraction of font
+/// size, used by the text-overflow heuristic.
+/// 布局引擎为自产文本框预留宽度时用同一套估算，保证自产元素过得了自己的 QA。
+const double kQaCharWidthFactor = 0.95;
+
+/// Latin / digit / punctuation average width as a fraction of font size.
+/// 按 0.95 全角估算拉丁数字会高估近一倍，导致大量"实际放得下"的误报。
+const double kQaLatinCharWidthFactor = 0.55;
+
+/// Estimated rendered width of [text] at [sizePt], in inches — per-rune
+/// full-width vs latin factors. QA 与布局引擎必须共用这一个估算。
+double qaTextWidthInches(String text, double sizePt) {
+  var units = 0.0;
+  for (final r in text.runes) {
+    units += _isFullWidth(r) ? kQaCharWidthFactor : kQaLatinCharWidthFactor;
+  }
+  return units * sizePt / 72;
+}
+
+bool _isFullWidth(int rune) =>
+    (rune >= 0x1100 && rune <= 0x115F) || // Hangul Jamo
+    (rune >= 0x2E80 && rune <= 0xA4CF) || // CJK 部首/注音/汉字/彝文
+    (rune >= 0xAC00 && rune <= 0xD7A3) || // Hangul 音节
+    (rune >= 0xF900 && rune <= 0xFAFF) || // CJK 兼容表意
+    (rune >= 0xFE30 && rune <= 0xFE4F) || // CJK 兼容符号
+    (rune >= 0xFF00 && rune <= 0xFF60) || // 全角标点/字母
+    rune >= 0x1F000; // emoji 及以上
 
 /// Line height as a multiple of font size.
-const double _lineHeightFactor = 1.25;
+const double kQaLineHeightFactor = 1.25;
+
+/// Overflow fires when estimated height exceeds frame height × this factor.
+const double kQaTextOverflowTolerance = 1.15;
 
 /// 内容页纯文本字数低于此值且无图表/表格/图片时触发 underfill。
 const int kQaMinContentChars = 20;
@@ -261,18 +287,18 @@ List<DeckQaIssue> _checkText(
         );
       }
       if (size > maxSize) maxSize = size;
-      // pt → inches is /72; width per char ≈ size × factor.
-      textWidth += run.text.length * size * _charWidthFactor / 72;
+      textWidth += qaTextWidthInches(run.text, size);
     }
     if (maxSize == 0) maxSize = 18;
     final lineHeight =
-        maxSize * _lineHeightFactor * (element.lineSpacing ?? 1) / 72;
+        maxSize * kQaLineHeightFactor * (element.lineSpacing ?? 1) / 72;
     final lines = element.frame.w <= 0
         ? 1
         : (textWidth / element.frame.w).ceil().clamp(1, 1000);
     estimatedHeight += lines * lineHeight;
   }
-  if (element.frame.h > 0 && estimatedHeight > element.frame.h * 1.15) {
+  if (element.frame.h > 0 &&
+      estimatedHeight > element.frame.h * kQaTextOverflowTolerance) {
     issues.add(
       DeckQaIssue(
         severity: DeckQaSeverity.error,
