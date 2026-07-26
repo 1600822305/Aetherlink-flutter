@@ -10,6 +10,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_skill_visibility.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -88,8 +91,24 @@ class _AgentSkillsPageState extends ConsumerState<AgentSkillsPage> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final all = ref.watch(skillsProvider).value ?? const <Skill>[];
+    // 与工具动态注入同步：档案关掉某工具分组（如网搜/PPT）时，
+    // 依赖该分组的内置技能从列表动态消失。
+    final profileId = ref.watch(selectedAgentProfileIdProvider);
+    final profileTools =
+        ref
+            .watch(agentProfilesProvider)
+            .where((p) => p.id == profileId)
+            .firstOrNull
+            ?.tools ??
+        AgentToolGroup.values.toSet();
     final builtin = _filter(
-      all.where((s) => s.source == SkillSource.builtin).toList(),
+      all
+          .where(
+            (s) =>
+                s.source == SkillSource.builtin &&
+                builtinSkillAvailableFor(s.id, profileTools),
+          )
+          .toList(),
     );
     final custom = _filter(
       all.where((s) => s.source != SkillSource.builtin).toList(),

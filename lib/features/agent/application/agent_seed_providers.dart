@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_builtin_profiles.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 
 part 'agent_seed_providers.g.dart';
 
@@ -13,6 +14,10 @@ const String kAgentSeededKey = 'agent_seeded_v1';
 /// 一次性清理标记：移除 UI 先行阶段种入的演示话题，并清掉内置
 /// 档案上的假工作区绑定（ws-1/ws-2 不对应任何真实工作区）。
 const String kAgentMockPurgedKey = 'agent_mock_purged_v1';
+
+/// 一次性迁移标记：PPT 工具拆成独立分组后，给内置「PPT 文档」档案
+/// 补上 pptx 分组（其余档案由用户在编辑页自行开关）。
+const String kAgentPptxGroupMigratedKey = 'agent_pptx_group_v1';
 
 /// 首次运行时的一次性种子写入（内置预设档案）。keepAlive 保证
 /// 多个 hydrate 入口共享同一次 Future，不会重复种入。
@@ -27,6 +32,23 @@ Future<void> agentSeed(Ref ref) async {
     await store.saveSetting(kAgentSeededKey, '1');
   }
   await _purgeMockData(ref);
+  await _migratePptxGroup(ref);
+}
+
+Future<void> _migratePptxGroup(Ref ref) async {
+  final store = ref.read(appSettingsStoreProvider);
+  final dao = ref.read(agentDaoProvider);
+  if (await store.getSetting(kAgentPptxGroupMigratedKey) == '1') return;
+  for (final profile in await dao.getAllProfiles()) {
+    if (profile.builtin &&
+        profile.id == 'agent-docs' &&
+        !profile.tools.contains(AgentToolGroup.pptx)) {
+      await dao.upsertProfile(
+        profile.copyWith(tools: {...profile.tools, AgentToolGroup.pptx}),
+      );
+    }
+  }
+  await store.saveSetting(kAgentPptxGroupMigratedKey, '1');
 }
 
 /// 旧版首次启动曾种入 3 条演示话题（task-1/2/3）和带假工作区
