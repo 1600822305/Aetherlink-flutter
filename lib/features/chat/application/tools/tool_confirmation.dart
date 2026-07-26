@@ -3,6 +3,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/pptx/pptx_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/skill_manage_tool.dart';
@@ -37,6 +38,7 @@ bool toolNeedsConfirmation(
             args,
             workspaces: workspaces,
           )) ||
+      (route is PptxToolRoute && pptxToolNeedsConfirmation(toolName)) ||
       (route is BuiltinToolRoute &&
           route.serverName == kBrowserServerName &&
           browserToolNeedsConfirmation(toolName));
@@ -99,6 +101,9 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
       return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
     case 'terminal_execute':
       return '在工作区执行命令：${args['command'] ?? ''}';
+    // @aether/pptx 导出（写入工作区）。
+    case 'pptx_render':
+      return '生成 PPT 并写入「${_pathTail(args['path'])}」';
     // @aether/browser 交互工具（升级设计 §2.2 M4b）。
     case 'browser_click':
       return '在内置浏览器中点击元素「${args['target'] ?? ''}」';

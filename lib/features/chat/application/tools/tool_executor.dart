@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/load_mcp_tools_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/pptx/pptx_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_client.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
@@ -39,8 +40,8 @@ class ChatToolExecutor {
     this._refOf, {
     required String Function() assistantId,
     String Function()? sessionId,
-  })  : _assistantId = assistantId,
-        _sessionId = sessionId;
+  }) : _assistantId = assistantId,
+       _sessionId = sessionId;
 
   final Ref Function() _refOf;
   final String Function() _assistantId;
@@ -127,6 +128,8 @@ class ChatToolExecutor {
           cancelSignal: cancelSignal,
           onOutput: onOutput,
         );
+      case PptxToolRoute():
+        return await runPptxTool(_ref, route.toolName, args);
     }
   }
 
@@ -340,6 +343,9 @@ class ChatToolExecutor {
       if (server.name == kTerminalServerName) {
         return await runTerminalTool(_ref, toolName, toolArgs);
       }
+      if (server.name == kPptxServerName) {
+        return await runPptxTool(_ref, toolName, toolArgs);
+      }
       return await runSettingsTool(_ref, toolName, toolArgs);
     }
     if (kLocallyRunnableBuiltins.contains(server.name)) {
@@ -499,10 +505,7 @@ class ChatToolExecutor {
     }
     persistKeyUpdates();
     return lastResult ??
-        const McpToolResult(
-          '没有可用的搜索 API Key（全部被禁用或处于冷却中）',
-          isError: true,
-        );
+        const McpToolResult('没有可用的搜索 API Key（全部被禁用或处于冷却中）', isError: true);
   }
 
   /// Executes one `search_memory` call: retrieves the user's long-term memories

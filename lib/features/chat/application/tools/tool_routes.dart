@@ -75,6 +75,12 @@ class TerminalToolRoute extends ToolRoute {
   const TerminalToolRoute(super.toolName);
 }
 
+/// A `@aether/pptx` tool (pptx_check / pptx_render), run in-process with
+/// [Ref] access. Rendering writes into the workspace and goes through HITL.
+class PptxToolRoute extends ToolRoute {
+  const PptxToolRoute(super.toolName);
+}
+
 /// A tool run in-process by [runBuiltinTool] (calculator / time / searxng).
 class BuiltinToolRoute extends ToolRoute {
   const BuiltinToolRoute(this.serverName, super.toolName, {this.env});
@@ -136,7 +142,11 @@ const Set<String> _kReadOnlyFileEditorTools = {
   'search_files',
 };
 
-const Set<String> _kReadOnlyKnowledgeTools = {'kb_list', 'kb_search', 'kb_read'};
+const Set<String> _kReadOnlyKnowledgeTools = {
+  'kb_list',
+  'kb_search',
+  'kb_read',
+};
 
 const Set<String> _kReadOnlySettingsTools = {
   'list_providers',
@@ -168,21 +178,20 @@ const Set<String> _kReadOnlyBuiltinServerTools = {
 /// 可与其他只读调用并行执行。写入/执行命令/语义未知（远端 MCP、bridge）
 /// 一律视为不安全，保持串行。
 bool toolRouteIsReadOnly(ToolRoute route) => switch (route) {
-      FileEditorToolRoute() =>
-        _kReadOnlyFileEditorTools.contains(route.toolName),
-      KnowledgeToolRoute() => _kReadOnlyKnowledgeTools.contains(route.toolName),
-      SettingsToolRoute() => _kReadOnlySettingsTools.contains(route.toolName),
-      BuiltinToolRoute() =>
-        _kReadOnlyBuiltinServerTools.contains(route.toolName),
-      SkillReadToolRoute() => true,
-      McpToolsLoadToolRoute() => true,
-      WebSearchToolRoute() => true,
-      MemorySearchToolRoute() => true,
-      BridgeToolRoute() => false,
-      TerminalToolRoute() => false,
-      RemoteToolRoute() => false,
-      StdioToolRoute() => false,
-    };
+  FileEditorToolRoute() => _kReadOnlyFileEditorTools.contains(route.toolName),
+  KnowledgeToolRoute() => _kReadOnlyKnowledgeTools.contains(route.toolName),
+  SettingsToolRoute() => _kReadOnlySettingsTools.contains(route.toolName),
+  BuiltinToolRoute() => _kReadOnlyBuiltinServerTools.contains(route.toolName),
+  SkillReadToolRoute() => true,
+  McpToolsLoadToolRoute() => true,
+  WebSearchToolRoute() => true,
+  MemorySearchToolRoute() => true,
+  BridgeToolRoute() => false,
+  PptxToolRoute() => route.toolName == 'pptx_check',
+  TerminalToolRoute() => false,
+  RemoteToolRoute() => false,
+  StdioToolRoute() => false,
+};
 
 // ── Web Search tool definition ──────────────────────────────────────────────
 

@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tool
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_context.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/pptx/pptx_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
@@ -182,6 +183,9 @@ ToolRoute _routeForRefDependentBuiltin(String serverName, String toolName) {
   }
   if (serverName == kTerminalServerName) {
     return TerminalToolRoute(toolName);
+  }
+  if (serverName == kPptxServerName) {
+    return PptxToolRoute(toolName);
   }
   return SettingsToolRoute(toolName);
 }

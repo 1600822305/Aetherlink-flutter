@@ -1484,6 +1484,66 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
   ],
+  '@aether/pptx': [
+    McpToolDefinition(
+      name: 'pptx_check',
+      description:
+          '校验 deck.json 幻灯片源并运行布局 QA（溢出/密度/字号），不写任何文件。'
+          '返回结构化 QA 报告（errors 必须修正、warnings 酌情优化）。'
+          '建议先 check、按报告改源、再 pptx_render 导出。deck.json 格式详见'
+          '内置技能「PPT 设计师」。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'deck': {
+            'type': 'object',
+            'description':
+                'deck.json 源对象（也接受 JSON 字符串）。顶层：layout(16x9/4x3)、'
+                'title、slides[]；每页：background(6位hex)、elements[]（type: '
+                'text/shape/image/table，坐标单位英寸）',
+          },
+        },
+        'required': ['deck'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'pptx_render',
+      description:
+          '把 deck.json 源渲染成原生可编辑的 .pptx 文件写入工作区（文本框/形状/'
+          '图片/表格都是原生 PowerPoint 对象，不是截图）。导出前自动运行 QA：'
+          '有 error 时默认拒绝导出并返回报告（可传 force=true 强制）。'
+          '纯 Dart 端上生成、后台 isolate 执行，不依赖任何外部运行时。'
+          '执行前会请用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'deck': {
+            'type': 'object',
+            'description': 'deck.json 源对象（也接受 JSON 字符串），格式同 pptx_check',
+          },
+          'path': {
+            'type': 'string',
+            'description': '输出文件路径（工作区相对路径，必须以 .pptx 结尾，缺失目录自动创建）',
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+          'preview': {
+            'type': 'boolean',
+            'description': '是否同时导出同名 .preview.html 预览文件（默认 false）',
+            'default': false,
+          },
+          'force': {
+            'type': 'boolean',
+            'description': 'QA 有 error 时仍强制导出（默认 false）',
+            'default': false,
+          },
+        },
+        'required': ['deck', 'path'],
+      },
+    ),
+  ],
 };
 
 /// Whether [serverName] is a built-in server whose tools can be executed
@@ -1505,6 +1565,7 @@ const Set<String> kRefDependentBuiltins = {
   '@aether/file-editor',
   '@aether/knowledge',
   '@aether/terminal',
+  '@aether/pptx',
 };
 
 /// The tools a built-in MCP server exposes, or an empty list for servers

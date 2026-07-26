@@ -105,6 +105,10 @@ dependencies:
   # 允许 import 它。
   aetherlink_browser:
     path: packages/aetherlink_browser
+  # AI PPT 生成（@aether/pptx）：纯 Dart deck.json → 原生可编辑 PPTX
+  # writer + HTML 预览 + 布局 QA（仅依赖 archive+xml，可在 isolate 跑）。
+  aetherlink_pptx:
+    path: packages/aetherlink_pptx
   # 知识库 P3e 本地解析轨（docs/知识库功能-设计构想.md §5.2）：纯 Dart
   # DOCX→Markdown 转换（仅依赖 archive+xml，可在 isolate 跑）。
   docx_to_markdown:

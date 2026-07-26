@@ -20,7 +20,8 @@ const List<McpServer> kBuiltinMcpServers = [
     name: '@aether/fetch',
     type: McpServerType.inMemory,
     category: McpServerCategory.builtin,
-    description: '获取网页内容并转为 Markdown（遵循 MCP 官方 Fetch Server 规范）。支持分块读取大页面、自定义请求头',
+    description:
+        '获取网页内容并转为 Markdown（遵循 MCP 官方 Fetch Server 规范）。支持分块读取大页面、自定义请求头',
     provider: 'AetherAI',
     tags: ['网页', '抓取', 'HTTP', 'Markdown', '工具'],
   ),
@@ -77,7 +78,8 @@ const List<McpServer> kBuiltinMcpServers = [
     name: '@aether/file-editor',
     type: McpServerType.inMemory,
     category: McpServerCategory.builtin,
-    description: 'AI 文件工具，支持列出工作区、浏览目录、读取文件、查看信息与搜索，以及写入、新建、重命名、移动、复制、删除、插入、应用 diff 与替换等编辑操作（写入/编辑操作会先请用户确认）。',
+    description:
+        'AI 文件工具，支持列出工作区、浏览目录、读取文件、查看信息与搜索，以及写入、新建、重命名、移动、复制、删除、插入、应用 diff 与替换等编辑操作（写入/编辑操作会先请用户确认）。',
     provider: 'AetherAI',
     tags: ['文件', '编辑', 'AI', '工作区', '笔记', '工具'],
   ),
@@ -130,11 +132,24 @@ const List<McpServer> kBuiltinMcpServers = [
     tags: ['终端', 'Linux', '命令', '沙箱', 'AI', '工具'],
   ),
   McpServer(
+    id: 'builtin-pptx',
+    name: '@aether/pptx',
+    type: McpServerType.inMemory,
+    category: McpServerCategory.builtin,
+    description:
+        'AI PPT 工具，把结构化 deck.json 源渲染成原生可编辑的 .pptx 写入工作区'
+        '（文本/形状/图片/表格均为原生 OOXML 对象），内置布局 QA（溢出/密度/字号）'
+        '与 HTML 预览导出。纯 Dart 端上生成，零外部运行时（导出会先请用户确认）。',
+    provider: 'AetherAI',
+    tags: ['PPT', '幻灯片', '演示文稿', 'PPTX', '生成', '工具'],
+  ),
+  McpServer(
     id: 'builtin-knowledge',
     name: '@aether/knowledge',
     type: McpServerType.inMemory,
     category: McpServerCategory.assistant,
-    description: 'AI 知识库工具，支持列出知识库、语义/关键词检索、读取条目原文，以及建库、加笔记、删库等管理操作（管理操作会先请用户确认）。',
+    description:
+        'AI 知识库工具，支持列出知识库、语义/关键词检索、读取条目原文，以及建库、加笔记、删库等管理操作（管理操作会先请用户确认）。',
     provider: 'AetherAI',
     tags: ['知识库', '检索', 'RAG', 'AI', '工具'],
   ),

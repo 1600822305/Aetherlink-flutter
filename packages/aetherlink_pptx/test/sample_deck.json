@@ -1,0 +1,58 @@
+{
+  "layout": "16x9",
+  "title": "AetherLink 移动端 PPT 能力",
+  "slides": [
+    {
+      "background": "0F1115",
+      "elements": [
+        {
+          "type": "text", "x": 1.2, "y": 2.6, "w": 10.9, "h": 1.4, "valign": "middle",
+          "paragraphs": [
+            { "runs": [{ "text": "AetherLink 移动端 PPT", "bold": true, "size": 44, "color": "FFFFFF", "font": "微软雅黑" }], "align": "center" }
+          ]
+        },
+        {
+          "type": "text", "x": 1.2, "y": 4.1, "w": 10.9, "h": 0.6,
+          "paragraphs": [
+            { "runs": [{ "text": "纯 Dart 端上生成 · 原生可编辑 PPTX", "size": 18, "color": "9AA0A6" }], "align": "center" }
+          ]
+        },
+        { "type": "shape", "shape": "line", "x": 4.7, "y": 5.1, "w": 4, "h": 0, "lineColor": "1A73E8", "lineWidth": 3 }
+      ]
+    },
+    {
+      "background": "FFFFFF",
+      "elements": [
+        {
+          "type": "text", "x": 0.8, "y": 0.5, "w": 11.7, "h": 0.9,
+          "paragraphs": [{ "runs": [{ "text": "核心能力", "bold": true, "size": 30, "color": "202124" }] }]
+        },
+        {
+          "type": "shape", "shape": "roundRect", "x": 0.8, "y": 1.7, "w": 5.6, "h": 2.2, "fill": "E8F0FE", "radius": 0.08 },
+        {
+          "type": "text", "x": 1.1, "y": 2.0, "w": 5.0, "h": 1.6,
+          "paragraphs": [
+            { "runs": [{ "text": "文本 / 形状 / 图片 / 表格", "bold": true, "size": 18, "color": "1A73E8" }] },
+            { "runs": [{ "text": "全部为原生 OOXML 对象", "size": 14, "color": "5F6368" }], "bullet": true },
+            { "runs": [{ "text": "打开即可编辑", "size": 14, "color": "5F6368" }], "bullet": true }
+          ]
+        },
+        {
+          "type": "table", "x": 6.9, "y": 1.7, "w": 5.6, "h": 2.2,
+          "headerFill": "1A73E8", "headerColor": "FFFFFF", "borderColor": "DADCE0",
+          "rows": [
+            [ { "text": "指标", "align": "center" }, { "text": "数值", "align": "center" } ],
+            [ "生成耗时", "毫秒级" ],
+            [ "运行依赖", "零外部运行时" ]
+          ]
+        },
+        {
+          "type": "text", "x": 0.8, "y": 4.4, "w": 11.7, "h": 2.4,
+          "paragraphs": [
+            { "runs": [{ "text": "同一份 deck.json 源同时驱动 HTML 预览与 PPTX 导出，所见即所得。", "size": 16, "color": "202124" }] }
+          ]
+        }
+      ]
+    }
+  ]
+}
