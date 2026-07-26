@@ -29,16 +29,14 @@ void main() {
   });
 
   group('@aether/pptx 审批与只读分类', () {
-    test('pptx_render 需要确认，pptx_check 免审', () {
-      expect(pptxToolNeedsConfirmation('pptx_render'), isTrue);
-      expect(pptxToolNeedsConfirmation('pptx_check'), isFalse);
+    test('pptx_render 与 pptx_check 都免审批', () {
       expect(
         toolNeedsConfirmation(
           const PptxToolRoute('pptx_render'),
           'pptx_render',
           const {},
         ),
-        isTrue,
+        isFalse,
       );
       expect(
         toolNeedsConfirmation(
@@ -53,13 +51,6 @@ void main() {
     test('pptx_check 只读、pptx_render 非只读（并发安全分类）', () {
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_check')), isTrue);
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_render')), isFalse);
-    });
-
-    test('pptx_render 的确认摘要包含输出路径', () {
-      expect(
-        toolConfirmSummary('pptx_render', const {'path': '演示/方案.pptx'}),
-        contains('方案.pptx'),
-      );
     });
   });
 }

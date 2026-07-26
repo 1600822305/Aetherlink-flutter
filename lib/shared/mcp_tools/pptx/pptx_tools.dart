@@ -21,10 +21,6 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_writ
 /// The built-in MCP server name this router serves.
 const String kPptxServerName = '@aether/pptx';
 
-/// Whether [toolName] writes into the workspace and therefore requires HITL
-/// confirmation before it runs (`pptx_check` is pure validation, no writes).
-bool pptxToolNeedsConfirmation(String toolName) => toolName == 'pptx_render';
-
 /// Runs a `@aether/pptx` [toolName] with [args], using [ref] to reach the
 /// workspace providers. Returns an error [McpToolResult] for unknown tools or
 /// failures (never throws).
