@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/anthropic_adapter.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/gemini_adapter.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/openai_compatible_adapter.dart';
@@ -500,6 +501,149 @@ data: {"candidates":[{"content":{"role":"model","parts":[{"text":" friend"}]},"f
       expect(adapter.requestBody, contains('"inlineData"'));
       expect(adapter.requestBody, contains('"mimeType":"image/png"'));
       expect(adapter.requestBody, contains('"data":"AAAA"'));
+    });
+  });
+
+  group('in-stream error events', () {
+    test('Anthropic error event throws NetworkFailure with provider detail',
+        () async {
+      const sse = '''
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}
+
+event: error
+data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}
+''';
+      final gateway = AnthropicAdapter(_dioWith(_ReplayAdapter(sse)));
+      final future = gateway
+          .streamChat(_request(_model(provider: 'anthropic')))
+          .toList();
+
+      await expectLater(
+        future,
+        throwsA(
+          isA<NetworkFailure>().having(
+            (f) => f.message,
+            'message',
+            allOf(contains('overloaded_error'), contains('Overloaded')),
+          ),
+        ),
+      );
+    });
+
+    test('Anthropic error event with broken payload still throws', () async {
+      const sse = '''
+event: error
+data: {"type":"error","error":{"type":"overloaded
+''';
+      final gateway = AnthropicAdapter(_dioWith(_ReplayAdapter(sse)));
+
+      await expectLater(
+        gateway.streamChat(_request(_model(provider: 'anthropic'))).toList(),
+        throwsA(isA<NetworkFailure>()),
+      );
+    });
+
+    test('OpenAI top-level error payload throws NetworkFailure', () async {
+      const sse = '''
+data: {"error":{"message":"Insufficient credits","code":402}}
+
+data: [DONE]
+''';
+      final gateway = OpenAiCompatibleAdapter(_dioWith(_ReplayAdapter(sse)));
+
+      await expectLater(
+        gateway.streamChat(_request(_model(provider: 'openai'))).toList(),
+        throwsA(
+          isA<NetworkFailure>().having(
+            (f) => f.message,
+            'message',
+            allOf(contains('402'), contains('Insufficient credits')),
+          ),
+        ),
+      );
+    });
+
+    test('Responses response.failed event throws NetworkFailure', () async {
+      const sse = '''
+data: {"type":"response.failed","response":{"status":"failed","error":{"code":"server_error","message":"Upstream exploded"}}}
+
+data: [DONE]
+''';
+      final gateway = OpenAiCompatibleAdapter(_dioWith(_ReplayAdapter(sse)));
+
+      await expectLater(
+        gateway
+            .streamChat(
+              _request(_model(provider: 'openai'))
+                  .copyWith(useResponsesAPI: true),
+            )
+            .toList(),
+        throwsA(
+          isA<NetworkFailure>().having(
+            (f) => f.message,
+            'message',
+            allOf(contains('server_error'), contains('Upstream exploded')),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('non-JSON keep-alive frames', () {
+    test('OpenAI skips ping frames and keeps streaming', () async {
+      const sse = '''
+data: ping
+
+data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}
+
+data: {"trunc
+
+data: {"choices":[{"delta":{"content":"!"},"finish_reason":"stop"}]}
+
+data: [DONE]
+''';
+      final gateway = OpenAiCompatibleAdapter(_dioWith(_ReplayAdapter(sse)));
+      final chunks = await gateway
+          .streamChat(_request(_model(provider: 'openai')))
+          .toList();
+
+      expect(_text(chunks), 'Hello!');
+      expect(_done(chunks).finishReason, 'stop');
+    });
+
+    test('Anthropic skips non-JSON frames and keeps streaming', () async {
+      const sse = '''
+data: ping
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}
+''';
+      final gateway = AnthropicAdapter(_dioWith(_ReplayAdapter(sse)));
+      final chunks = await gateway
+          .streamChat(_request(_model(provider: 'anthropic')))
+          .toList();
+
+      expect(_text(chunks), 'Hi');
+      expect(_done(chunks).finishReason, 'end_turn');
+    });
+
+    test('Gemini skips non-JSON frames and keeps streaming', () async {
+      const sse = '''
+data: ping
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Hey"}]},"finishReason":"STOP"}]}
+''';
+      final gateway = GeminiAdapter(_dioWith(_ReplayAdapter(sse)));
+      final chunks = await gateway
+          .streamChat(_request(_model(provider: 'gemini')))
+          .toList();
+
+      expect(_text(chunks), 'Hey');
+      expect(_done(chunks).finishReason, 'STOP');
     });
   });
 

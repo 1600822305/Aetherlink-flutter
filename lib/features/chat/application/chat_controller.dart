@@ -409,9 +409,11 @@ class ChatController extends _$ChatController {
       if (await interceptor(trimmed)) return;
     }
 
-    _truncatedMessageId = null;
     final snapshot = state.value ?? ChatState.initial();
     if (snapshot.isStreaming) return;
+    // Only past the streaming guard: an Enter press during streaming must not
+    // clear the truncation mark (it would hide 继续生成 without sending anything).
+    _truncatedMessageId = null;
 
     // 图像/视频生成模式（输入框互斥模式）优先：这一轮不走 LLM 对话，而是
     // 直接调相应供应商的生成 API（web handleMessageSend 的模式分发）。
@@ -688,9 +690,10 @@ class ChatController extends _$ChatController {
   }
 
   Future<void> regenerate(String messageId, {CurrentModel? withModel}) async {
-    _truncatedMessageId = null;
     final snapshot = state.value;
     if (snapshot == null || snapshot.isStreaming) return;
+    // Same ordering as [send]: a no-op call must not clear the truncation mark.
+    _truncatedMessageId = null;
 
     final index = snapshot.messages.indexWhere((view) => view.id == messageId);
     if (index == -1) return;

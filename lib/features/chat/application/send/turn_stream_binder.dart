@@ -1037,7 +1037,11 @@ class TurnStreamBinder {
       messageId: assistantMessageId,
       status: MessageStatus.error,
       blocks: [
-        // Flush any remaining thinking from the current round.
+        ...completed,
+        // Flush any remaining thinking from the current round *after* the
+        // finished blocks, matching the success / persistStopped order —
+        // otherwise a mid-tool-loop failure renders the last round's thinking
+        // above the earlier rounds' prose and tool blocks.
         if (thinking.isNotEmpty)
           _thinkingBlock(
             messageId: assistantMessageId,
@@ -1046,7 +1050,6 @@ class TurnStreamBinder {
             startedAt: thinkingStartAt,
             endedAt: thinkingEndAt,
           ),
-        ...completed,
         if (partial.isNotEmpty)
           _mainTextBlock(
             id: roundBlockId,

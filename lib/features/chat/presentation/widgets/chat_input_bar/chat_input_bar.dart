@@ -248,19 +248,30 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     // (确认清空 / red AlertTriangle); the action reads the latch lazily.
     ref.watch(inputClearConfirmProvider);
     // Watched so toggling the MCP 工具 总开关 repaints the standalone MCP button
-    // (green when enabled); [ChatInputActions] reads the value lazily.
-    ref.watch(mcpToolsControllerProvider);
+    // (green when enabled); [ChatInputActions] reads the value lazily. Only the
+    // 总开关 matters here, so per-tool toggles don't rebuild the whole bar.
+    ref.watch(mcpToolsControllerProvider.select((s) => s.enabled));
     // Watched so changing the reasoning-effort level repaints the standalone
     // 思考程度 button (purple when active); the action reads the value lazily.
-    ref.watch(parameterSettingsControllerProvider);
+    // Only the reasoningEffort value/enabled pair matters here, so edits to
+    // other parameters (temperature 等) don't rebuild the whole bar.
+    ref.watch(
+      parameterSettingsControllerProvider.select(
+        (s) => (
+          s.getParameterValue('reasoningEffort'),
+          s.isParameterEnabled('reasoningEffort'),
+        ),
+      ),
+    );
 
     final CurrentModel? current = ref.watch(appCurrentModelProvider).value;
     final hasApiKey =
         (current?.model.apiKey?.isNotEmpty ?? false) ||
         (current?.provider.apiKey?.isNotEmpty ?? false);
     final modelReady = current != null && hasApiKey;
-    final isStreaming =
-        ref.watch(chatControllerProvider).value?.isStreaming ?? false;
+    final isStreaming = ref.watch(
+      chatControllerProvider.select((a) => a.value?.isStreaming ?? false),
+    );
     final attachments = ref.watch(composerAttachmentsProvider);
     // 建议模型 follow-up suggestions for the latest reply; tap sends, long-press
     // fills the field. Hidden while streaming (also cleared in state then).

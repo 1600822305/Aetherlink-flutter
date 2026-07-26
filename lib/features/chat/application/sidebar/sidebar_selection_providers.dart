@@ -16,6 +16,8 @@ const String kSidebarTabIndexSettingKey = 'sidebarTabIndex';
 /// the port of the web `dexieStorage.saveSetting('currentAssistant', …)`.
 @Riverpod(keepAlive: true)
 class CurrentAssistantId extends _$CurrentAssistantId {
+  bool _touched = false;
+
   @override
   String? build() {
     _hydrate();
@@ -26,10 +28,11 @@ class CurrentAssistantId extends _$CurrentAssistantId {
     final stored = await ref
         .read(chatRepositoryProvider)
         .getSetting(kCurrentAssistantSettingKey);
-    if (stored != null && stored.isNotEmpty) state = stored;
+    if (!_touched && stored != null && stored.isNotEmpty) state = stored;
   }
 
   void set(String? id) {
+    _touched = true;
     state = id;
     ref
         .read(chatRepositoryProvider)
@@ -43,6 +46,8 @@ class CurrentAssistantId extends _$CurrentAssistantId {
 /// [CurrentAssistantId].
 @Riverpod(keepAlive: true)
 class CurrentTopicId extends _$CurrentTopicId {
+  bool _touched = false;
+
   @override
   String? build() {
     _hydrate();
@@ -53,10 +58,11 @@ class CurrentTopicId extends _$CurrentTopicId {
     final stored = await ref
         .read(chatRepositoryProvider)
         .getSetting(kCurrentTopicSettingKey);
-    if (stored != null && stored.isNotEmpty) state = stored;
+    if (!_touched && stored != null && stored.isNotEmpty) state = stored;
   }
 
   void set(String? id) {
+    _touched = true;
     state = id;
     ref
         .read(chatRepositoryProvider)

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/error/network_error_mapper.dart';
 import 'package:aetherlink_flutter/core/network/sse_decoder.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
@@ -119,7 +120,13 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       if (data.isEmpty) continue;
       if (data == '[DONE]') break;
 
-      final json = jsonDecode(data) as Map<String, dynamic>;
+      final json = _tryDecodeFrame(data);
+      if (json == null) continue;
+
+      // 兼容网关（OpenRouter、one-api 中转等）在限流/欠费/上游 5xx 时会返回
+      // HTTP 200 + `data: {"error":{...}}`；不抛出的话回复会以空白"完成"。
+      final error = json['error'];
+      if (error != null) throw _streamFailure(error);
 
       final choices = json['choices'] as List<dynamic>?;
       if (choices != null && choices.isNotEmpty) {
@@ -281,9 +288,20 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       if (data.isEmpty) continue;
       if (data == '[DONE]') break;
 
-      final json = jsonDecode(data) as Map<String, dynamic>;
+      final json = _tryDecodeFrame(data);
+      if (json == null) continue;
 
       switch (json['type']) {
+        // 失败以流事件而非非 2xx 返回：不抛出则回复以空白"完成"。
+        case 'response.failed':
+          final response = json['response'];
+          throw _streamFailure(
+            (response is Map<String, dynamic> ? response['error'] : null) ??
+                json,
+          );
+        case 'response.error':
+        case 'error':
+          throw _streamFailure(json['error'] ?? json);
         case 'response.output_text.delta':
           final delta = json['delta'];
           if (delta is String && delta.isNotEmpty) {
@@ -381,6 +399,34 @@ class OpenAiCompatibleAdapter implements LlmGateway {
     } on DioException catch (e) {
       throw await networkFailureFromStreamingDio(e);
     }
+  }
+
+  /// Decodes one SSE data payload, returning null for non-JSON keep-alive
+  /// frames (e.g. `data: ping`) or non-object JSON so the caller can skip them.
+  static Map<String, dynamic>? _tryDecodeFrame(String data) {
+    try {
+      final decoded = jsonDecode(data);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Builds a [NetworkFailure] from an in-stream error payload — the object
+  /// under a top-level `error` key or carried by a `response.failed` event.
+  static NetworkFailure _streamFailure(Object? error) {
+    if (error is Map) {
+      final message = error['message'];
+      final code = error['code'] ?? error['type'];
+      final detail = [
+        if (code != null && '$code'.isNotEmpty) '$code',
+        if (message is String && message.isNotEmpty) message,
+      ].join(': ');
+      if (detail.isNotEmpty) {
+        return NetworkFailure('Provider stream error — $detail');
+      }
+    }
+    return NetworkFailure('Provider stream error — $error');
   }
 
   /// Translates an [LlmMessage] into an OpenAI wire message. A tool-result turn

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/error/network_error_mapper.dart';
 import 'package:aetherlink_flutter/core/network/sse_decoder.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/llm_cancel_bridge.dart';
@@ -158,9 +159,21 @@ class AnthropicAdapter implements LlmGateway {
 
     await for (final event in decodeSse(byteStream)) {
       if (event.data.isEmpty) continue;
-      final json = jsonDecode(event.data) as Map<String, dynamic>;
+      final json = _tryDecodeFrame(event.data);
+      if (json == null) {
+        // 非 JSON 帧（代理 keep-alive、连接重置后的截断帧）跳过即可，但
+        // error 事件即使载荷坏掉也必须终止本轮，不能被容错吞成空白回复。
+        if (event.event == 'error') {
+          throw NetworkFailure('Anthropic stream error: ${event.data}');
+        }
+        continue;
+      }
 
       switch (json['type'] as String?) {
+        case 'error':
+          // 流中途出错（overloaded_error 等）：服务端随后正常关流，若不在
+          // 这里抛出，回复会以 success + 空白内容"完成"。
+          throw _streamFailure(json['error']);
         case 'message_start':
           final message = json['message'] as Map<String, dynamic>?;
           final u = message?['usage'] as Map<String, dynamic>?;
@@ -237,6 +250,31 @@ class AnthropicAdapter implements LlmGateway {
           )
         : null;
     yield LlmStreamChunk.done(usage: usage, finishReason: finishReason);
+  }
+
+  /// Decodes one SSE data payload, returning null for non-JSON keep-alive
+  /// frames or non-object JSON so the caller can skip them.
+  static Map<String, dynamic>? _tryDecodeFrame(String data) {
+    try {
+      final decoded = jsonDecode(data);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Builds a [NetworkFailure] from an in-stream `error` event payload
+  /// (`{"type":"overloaded_error","message":...}`).
+  static NetworkFailure _streamFailure(Object? error) {
+    final type = error is Map ? error['type'] : null;
+    final message = error is Map ? error['message'] : null;
+    final detail = [
+      if (type is String && type.isNotEmpty) type,
+      if (message is String && message.isNotEmpty) message,
+    ].join(': ');
+    return NetworkFailure(
+      'Anthropic stream error${detail.isEmpty ? '' : ' — $detail'}',
+    );
   }
 
   /// Prompt caching only reuses prefixes that end at an explicit

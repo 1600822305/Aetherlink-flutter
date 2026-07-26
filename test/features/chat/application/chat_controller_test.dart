@@ -90,6 +90,55 @@ class _CancellableGateway implements LlmGateway {
   }
 }
 
+/// A gateway with a distinct script per round (per `streamChat` call). When
+/// [throwAfterLastRound] is set, the final round's chunks are followed by a
+/// stream error — exercising the terminal error path after completed rounds.
+class _RoundScriptGateway implements LlmGateway {
+  _RoundScriptGateway(this.rounds, {this.throwAfterLastRound = false});
+
+  final List<List<LlmStreamChunk>> rounds;
+  final bool throwAfterLastRound;
+  var _calls = 0;
+
+  @override
+  Stream<LlmStreamChunk> streamChat(
+    LlmChatRequest request, {
+    LlmCancelToken? cancelToken,
+  }) async* {
+    final round = _calls < rounds.length ? rounds[_calls] : rounds.last;
+    _calls++;
+    for (final chunk in round) {
+      yield chunk;
+    }
+    if (throwAfterLastRound && _calls >= rounds.length) {
+      throw StateError('boom');
+    }
+  }
+}
+
+/// A repo whose terminal persist ([replaceMessageBlocks]) can be held open on a
+/// [gate], keeping the turn in its streaming state at a deterministic point.
+class _GatedRepo extends ChatRepositoryImpl {
+  _GatedRepo(super.db);
+
+  Completer<void>? gate;
+
+  @override
+  Future<void> replaceMessageBlocks({
+    required String messageId,
+    required List<MessageBlock> blocks,
+    Message? message,
+  }) async {
+    final pending = gate;
+    if (pending != null) await pending.future;
+    return super.replaceMessageBlocks(
+      messageId: messageId,
+      blocks: blocks,
+      message: message,
+    );
+  }
+}
+
 class _FakeFactory implements LlmGatewayFactory {
   _FakeFactory(this.gateway);
 
@@ -952,6 +1001,111 @@ void main() {
       expect(state.messages.any((v) => v.id == u2Id), isTrue);
       expect(state.messages.any((v) => v.id == u3Id), isFalse);
       expect(state.messages.last.role, MessageRole.assistant);
+    },
+  );
+
+  test('send during streaming is a no-op that keeps the truncation mark', () async {
+    final gatedRepo = _GatedRepo(db);
+    // Every round ends truncated, so after the auto-continue budget the binder
+    // marks the reply 可继续生成 before its (gated) terminal persist.
+    final gateway = _FakeGateway(const [
+      LlmStreamChunk.textDelta('片段'),
+      LlmStreamChunk.done(finishReason: 'length'),
+    ]);
+    // A pre-existing topic so mid-turn refreshes don't rebuild the controller
+    // (a rebuild would hand the assertions a different notifier instance).
+    final now = DateTime.now();
+    final topic = Topic(
+      id: 'topic-truncated',
+      assistantId: 'default-assistant',
+      name: '截断',
+      createdAt: now,
+      updatedAt: now,
+    );
+    await gatedRepo.saveTopic(topic);
+    final container = _container(
+      gateway: gateway,
+      repo: gatedRepo,
+      current: _currentModel(),
+      topic: topic,
+    );
+    // Keep the (autodispose) controller alive across the gated await, like the
+    // UI listening to it does.
+    final sub = container.listen(chatControllerProvider, (_, _) {});
+    addTearDown(sub.close);
+    final ctrl = container.read(chatControllerProvider.notifier);
+    await container.read(chatControllerProvider.future);
+
+    final gate = Completer<void>();
+    gatedRepo.gate = gate;
+    final sending = ctrl.send('hi');
+
+    // Wait for the truncation mark; the gated persist keeps the turn streaming
+    // at this point, so an Enter press races exactly like in the real UI.
+    while (ctrl.truncatedMessageId == null) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    final mid = container.read(chatControllerProvider).requireValue;
+    expect(mid.isStreaming, isTrue);
+
+    // The no-op send must not clear the mark (it used to, hiding 继续生成).
+    await ctrl.send('again');
+    expect(ctrl.truncatedMessageId, isNotNull);
+
+    gatedRepo.gate = null;
+    gate.complete();
+    await sending;
+    expect(ctrl.truncatedMessageId, isNotNull);
+  });
+
+  test(
+    'a stream error after completed rounds keeps the last thinking in place',
+    () async {
+      // Round 1 is truncated (auto-continue flushes its thinking into the
+      // completed list); round 2 streams more reasoning and then fails. The
+      // persisted order must keep round 2's thinking AFTER round 1's blocks —
+      // not hoisted to the top of the message.
+      final gateway = _RoundScriptGateway(const [
+        [
+          LlmStreamChunk.reasoningDelta('第一轮思考'),
+          LlmStreamChunk.textDelta('第一轮正文'),
+          LlmStreamChunk.done(finishReason: 'length'),
+        ],
+        [LlmStreamChunk.reasoningDelta('第二轮思考')],
+      ], throwAfterLastRound: true);
+      final container = _container(
+        gateway: gateway,
+        repo: repo,
+        current: _currentModel(),
+      );
+
+      await container.read(chatControllerProvider.future);
+      await container.read(chatControllerProvider.notifier).send('hi');
+
+      final topics = await repo.getRecentTopics();
+      final messages = await repo.getMessagesByTopicId(topics.single.id);
+      final assistantMsg = messages.firstWhere(
+        (m) => m.role == MessageRole.assistant,
+      );
+      expect(assistantMsg.status, MessageStatus.error);
+
+      // Assert on the message's ordered block reference list — the projection
+      // the renderer follows.
+      final byId = {
+        for (final block in await repo.getMessageBlocksByMessageId(
+          assistantMsg.id,
+        ))
+          block.id: block,
+      };
+      final ordered = [for (final id in assistantMsg.blocks) byId[id]!];
+      expect(ordered, hasLength(4));
+      expect(ordered[0], isA<ThinkingBlock>());
+      expect((ordered[0] as ThinkingBlock).content, '第一轮思考');
+      expect(ordered[1], isA<ThinkingBlock>());
+      expect((ordered[1] as ThinkingBlock).content, '第二轮思考');
+      expect(ordered[2], isA<MainTextBlock>());
+      expect((ordered[2] as MainTextBlock).content, contains('第一轮正文'));
+      expect(ordered[3], isA<ErrorBlock>());
     },
   );
 }

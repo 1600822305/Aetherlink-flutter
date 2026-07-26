@@ -181,15 +181,15 @@ void main() {
   group('malformed chunk mid-stream', () {
     for (final entry in _malformedBodies.entries) {
       test(
-        '${entry.key}: a bad JSON chunk surfaces as a stream error',
+        '${entry.key}: a bad JSON chunk is skipped, prior text survives',
         () async {
           final server = await MockSseServer.start(body: entry.value);
           addTearDown(server.stop);
 
-          await expectLater(
-            _stream(server, entry.key),
-            throwsA(isA<FormatException>()),
-          );
+          final chunks = await _stream(server, entry.key);
+
+          expect(_text(chunks), '部分');
+          expect(chunks.last, isA<LlmDone>());
         },
       );
     }

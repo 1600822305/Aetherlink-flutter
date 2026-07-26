@@ -118,7 +118,9 @@ class GeminiAdapter implements LlmGateway {
 
     await for (final event in decodeSse(byteStream)) {
       if (event.data.isEmpty) continue;
-      final json = jsonDecode(event.data) as Map<String, dynamic>;
+      // 非 JSON 帧（代理 keep-alive、截断的末帧）跳过，不终止整轮。
+      final json = _tryDecodeFrame(event.data);
+      if (json == null) continue;
 
       final candidates = json['candidates'] as List<dynamic>?;
       if (candidates != null && candidates.isNotEmpty) {
@@ -190,6 +192,17 @@ class GeminiAdapter implements LlmGateway {
       return response.data!.stream;
     } on DioException catch (e) {
       throw await networkFailureFromStreamingDio(e);
+    }
+  }
+
+  /// Decodes one SSE data payload, returning null for non-JSON keep-alive
+  /// frames or non-object JSON so the caller can skip them.
+  static Map<String, dynamic>? _tryDecodeFrame(String data) {
+    try {
+      final decoded = jsonDecode(data);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
     }
   }
 

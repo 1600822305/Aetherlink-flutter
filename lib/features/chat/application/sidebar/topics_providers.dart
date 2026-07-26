@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar/assistants_
 import 'package:aetherlink_flutter/features/chat/application/sidebar/groups_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_selection_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar/topic_defaults.dart';
+import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
@@ -231,9 +232,42 @@ class Topics extends _$Topics {
     }
   }
 
+  /// How long a destructive operation waits for a cancelled stream to settle
+  /// before giving up and refusing the operation. Cancellation aborts the HTTP
+  /// request immediately and the remaining work is local persistence, so in
+  /// practice settling takes well under a second.
+  static const Duration _streamSettleTimeout = Duration(seconds: 10);
+
+  /// Cancels [id]'s in-flight generation (if any) and waits until the stream
+  /// has fully settled. The registry only drops a streaming topic after every
+  /// bound request has released its token, which the stream binder does *after*
+  /// its terminal persistence (`await checkpointChain` + 终态落盘) — so once
+  /// this returns `true`, no checkpoint or terminal write can resurrect the
+  /// topic's messages. Returns `false` when the stream failed to settle within
+  /// [_streamSettleTimeout]; the caller must then abort the destructive
+  /// operation rather than race the pending writes.
+  Future<bool> _cancelStreamAndSettle(String id) async {
+    if (!ref.read(streamingRegistryProvider).isStreaming(id)) return true;
+    ref.read(streamingRegistryProvider.notifier).cancel(id);
+    final deadline = DateTime.now().add(_streamSettleTimeout);
+    while (ref.read(streamingRegistryProvider).isStreaming(id)) {
+      if (DateTime.now().isAfter(deadline)) return false;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    return true;
+  }
+
   /// Deletes [id]; if it was the current topic, selects the adjacent sibling
   /// (next, else previous, else none) — the port of `handleDeleteTopic`.
+  ///
+  /// A topic generating in the background is cancelled first and the deletion
+  /// only proceeds once its stream has settled — otherwise the stream's 2s
+  /// checkpoints / terminal persistence would write the deleted topic's
+  /// messages straight back into the DB (orphan data + a stale "generating"
+  /// dot). If the stream fails to settle in time, the deletion is refused
+  /// (no-op) rather than left to race those writes.
   Future<void> delete(String id) async {
+    if (!await _cancelStreamAndSettle(id)) return;
     final all = await _repo.getAllTopics();
     Topic? target;
     for (final t in all) {
@@ -244,6 +278,18 @@ class Topics extends _$Topics {
     }
     final wasCurrent = ref.read(currentTopicIdProvider) == id;
     await _repo.deleteTopic(id);
+    // Drop the id from the owning assistant's topicIds (mirrors [move]) —
+    // otherwise deleted ids dangle there forever.
+    if (target != null) {
+      final assistant = await _repo.getAssistant(target.assistantId);
+      if (assistant != null && assistant.topicIds.contains(id)) {
+        await _repo.saveAssistant(
+          assistant.copyWith(
+            topicIds: assistant.topicIds.where((t) => t != id).toList(),
+          ),
+        );
+      }
+    }
     await ref.read(groupsProvider.notifier).purgeItem(id, GroupType.topic);
 
     if (wasCurrent && target != null) {
@@ -324,7 +370,15 @@ class Topics extends _$Topics {
   /// Clears every message of [id] (清空消息). Tree-aware: deletes all non-root
   /// messages and clears `activeNodeId` while keeping the virtual root
   /// ([ChatRepository.clearTopicMessages]).
+  ///
+  /// A topic generating in the background is cancelled first and the clear only
+  /// proceeds once its stream has settled — otherwise the stream's checkpoints
+  /// / terminal persistence would re-write the cleared messages, and the live
+  /// views kept by the [StreamingRegistry] would keep the old conversation on
+  /// screen despite the [chatRefreshProvider] bump. If the stream fails to
+  /// settle in time, the clear is refused (no-op) rather than left to race.
   Future<void> clearMessages(String id) async {
+    if (!await _cancelStreamAndSettle(id)) return;
     await _repo.clearTopicMessages(id);
     final topic = await _repo.getTopic(id);
     if (topic != null) {
