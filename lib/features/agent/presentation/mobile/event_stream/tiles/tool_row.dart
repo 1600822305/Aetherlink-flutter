@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -85,7 +87,7 @@ class ToolRow extends StatelessWidget {
               // 点一下让正在等结果的 exec 提前把控制权和已有输出还给模型。
               if (event.state == AgentToolCallState.running &&
                   event.toolName == 'terminal_execute')
-                const _WaitingInputButton(),
+                _WaitingInputButton(argsDetail: event.argsDetail),
             ],
           ),
         ),
@@ -94,10 +96,29 @@ class ToolRow extends StatelessWidget {
   }
 }
 
-/// 「在等交互输入」手动标记按钮：把所有正在等命令结果的会话标记为
-/// 等交互，对应 exec 带已有输出提前返回，模型随即可写 stdin 回答。
+/// 「在等交互输入」手动标记按钮：把本次调用目标会话（能从参数里解析出
+/// session 时）或所有正在等命令结果的会话标记为等交互，对应 exec 带
+/// 已有输出提前返回，模型随即可写 stdin 回答。
 class _WaitingInputButton extends ConsumerWidget {
-  const _WaitingInputButton();
+  const _WaitingInputButton({this.argsDetail});
+
+  /// 工具调用的完整参数 JSON；解析出 session 参数时只标记该会话，
+  /// 避免并行任务时把无关的长命令也提前打断。
+  final String? argsDetail;
+
+  String? _sessionRef() {
+    final raw = argsDetail;
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final args = jsonDecode(raw);
+      if (args is! Map) return null;
+      final ref = args['session'] ?? args['session_id'];
+      final text = ref?.toString().trim();
+      return (text == null || text.isEmpty) ? null : text;
+    } on FormatException {
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -116,7 +137,7 @@ class _WaitingInputButton extends ConsumerWidget {
         onPressed: () {
           final count = ref
               .read(workspaceSessionPoolManagerProvider)
-              .markWaitingInputAll();
+              .markWaitingInputAll(sessionRef: _sessionRef());
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(count > 0 ? '已告知 AI：命令在等交互输入' : '当前没有正在等结果的命令'),

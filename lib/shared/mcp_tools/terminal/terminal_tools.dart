@@ -4,8 +4,10 @@
 // canExec 的工作区（SSH / Termux），在其远端 shell 里执行。只有两个工具：
 // terminal_execute（执行命令，可选 session 指定会话——传名字/ID，存在就
 // 复用、不存在自动新建（tmux new -A 语义），不传则复用长驻默认会话）
-// 和 terminal_session（会话管理，用 action 参数区分 list / output / write；
-// 不提供关闭——会话由空闲自动回收或用户在终端页手动关），都走 WorkspaceBackend 层的长驻会话池（exec 超时
+// 和 terminal_session（会话管理，用 action 参数区分 list / output / write /
+// interrupt / close：interrupt 发 Ctrl-C 中断卡住的命令，close 关掉不用的
+// 会话——否则跑飞的前台命令会让会话永久 busy、占满池后 AI 无法自救），
+// 都走 WorkspaceBackend 层的长驻会话池（exec 超时
 // 后台继续跑 + tailOutput 回看，见 workspace_session_pool.dart）。命令执行类
 // 工具经聊天层 HITL 审批（见 terminalToolNeedsConfirmation），并统一过命令
 // 黑名单（设计文档 §3.2）。
@@ -144,9 +146,14 @@ Future<McpToolResult> runTerminalTool(
             return await _sessionOutput(ref, args);
           case 'write':
             return await _sessionWrite(ref, args);
+          case 'interrupt':
+            return await _sessionInterrupt(ref, args);
+          case 'close':
+            return await _sessionClose(ref, args);
         }
         return fileEditorError(
-          '未知的 action: ${args['action']}（支持 list / output / write）',
+          '未知的 action: ${args['action']}'
+          '（支持 list / output / write / interrupt / close）',
         );
     }
     return fileEditorError('未知的工具: $toolName');
@@ -283,6 +290,7 @@ Future<McpToolResult> _execute(
           manager,
           sessionRef,
           workspaceId: await _scopedWorkspaceId(ref, args),
+          scopeStrict: true,
         ) ??
         await _createNamedSession(ref, args, sessionRef);
   } else {
@@ -342,20 +350,31 @@ Future<McpToolResult> _execute(
   });
 }
 
-/// 按 ID 或名称查会话（名称重名时取最近使用的一个）。ID 全局唯一，
-/// 指到哪算哪；名称查找始终限定在 [workspaceId] 对应的会话池内
-/// （未传 workspace 参数时为内置终端的 null 池），避免同名会话
-/// 跨工作区误命中（双作用域设计稿 §3.1）。
+/// 按 ID 或名称查会话（名称重名时取最近使用的一个）。
+///
+/// [scopeStrict]（执行类调用）：ID 和名称都限定在 [workspaceId] 对应的
+/// 会话池内（未传 workspace 参数时为内置终端的 null 池）——会话 name
+/// 与全局 ID（s1/s2…）共用命名空间，若 ID 查找不受 workspace 约束，
+/// 模型传的名字可能碰巧命中另一个工作区的会话 ID，命令就会跑到
+/// 错误的工作区 / 远端主机上。
+///
+/// 非 strict（output / write / interrupt / close 等只读或已有 HITL 的
+/// 会话操作）：未传 workspace 参数时 ID 保持全局直达、名称全局查找；
+/// 传了则同样限定在该工作区池内。
 PooledWorkspaceSession? _findSession(
   WorkspaceSessionPoolManager manager,
   String ref, {
   required String? workspaceId,
+  bool scopeStrict = false,
 }) {
+  final scoped = scopeStrict || workspaceId != null;
   final byId = manager.find(ref);
-  if (byId != null) return byId;
+  if (byId != null && (!scoped || byId.workspaceId == workspaceId)) {
+    return byId;
+  }
   PooledWorkspaceSession? match;
   for (final s in manager.allSessions()) {
-    if (s.workspaceId != workspaceId) continue;
+    if (scoped && s.workspaceId != workspaceId) continue;
     if (s.name == ref &&
         (match == null || s.lastUsedAt.isAfter(match.lastUsedAt))) {
       match = s;
@@ -419,11 +438,23 @@ Future<McpToolResult> _sessionList(Ref ref, Map<String, Object?> args) async {
   });
 }
 
+/// 解析 output / write / interrupt / close 的目标会话（session_id 参数
+/// 兼容会话名称，与 terminal_execute 的 session 参数对称）。
+Future<PooledWorkspaceSession?> _resolveSessionArg(
+  Ref ref,
+  Map<String, Object?> args,
+  String sessionRef,
+) async {
+  return _findSession(
+    ref.read(workspaceSessionPoolManagerProvider),
+    sessionRef,
+    workspaceId: await _scopedWorkspaceId(ref, args),
+  );
+}
+
 Future<McpToolResult> _sessionOutput(Ref ref, Map<String, Object?> args) async {
   final sessionId = requireString(args, 'session_id');
-  final scope = await _scopedWorkspaceId(ref, args);
-  var session = ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
-  if (scope != null && session?.workspaceId != scope) session = null;
+  final session = await _resolveSessionArg(ref, args, sessionId);
   if (session == null) {
     return fileEditorError(
       '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
@@ -438,28 +469,109 @@ Future<McpToolResult> _sessionOutput(Ref ref, Map<String, Object?> args) async {
   });
 }
 
+/// write 的 keys 参数支持的特殊按键 → 控制序列（驱动箭头选择器 /
+/// TUI，设计稿 §3.4：纯文本 stdin 无法表达方向键与控制组合键）。
+const Map<String, String> _kWriteKeySequences = {
+  'enter': '\r',
+  'tab': '\t',
+  'space': ' ',
+  'esc': '\x1b',
+  'backspace': '\x7f',
+  'up': '\x1b[A',
+  'down': '\x1b[B',
+  'right': '\x1b[C',
+  'left': '\x1b[D',
+  'ctrl-c': '\x03',
+  'ctrl-d': '\x04',
+  'ctrl-z': '\x1a',
+};
+
 /// 往长驻会话的运行中进程写 stdin（交互式程序输入，设计稿 §3.4）。
+/// 传 input 写文本；传 keys 发特殊按键序列（两者可同时传，先 input 后 keys）。
 Future<McpToolResult> _sessionWrite(Ref ref, Map<String, Object?> args) async {
   final sessionId = requireString(args, 'session_id');
-  final scope = await _scopedWorkspaceId(ref, args);
-  var session = ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
-  if (scope != null && session?.workspaceId != scope) session = null;
+  final session = await _resolveSessionArg(ref, args, sessionId);
   if (session == null) {
     return fileEditorError(
       '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
     );
   }
-  final input = requireString(args, 'input');
-  // stdin 在提示符下等同执行命令，黑名单同样生效，堵住绕过 terminal_execute
-  // 拦截的口子（用户手动输入不受限）。
-  final blocked = _guardCommand(input);
-  if (blocked != null) return blocked;
-  final pressEnter = args['press_enter'] != false;
-  session.writeInput(pressEnter && !input.endsWith('\n') ? '$input\n' : input);
+  final input = optionalString(args, 'input');
+  final rawKeys = args['keys'];
+  final keys = rawKeys is List ? rawKeys.map((k) => '$k').toList() : null;
+  if ((input == null || input.isEmpty) && (keys == null || keys.isEmpty)) {
+    return fileEditorError('write 需要 input（文本）或 keys（特殊按键）参数');
+  }
+  if (input != null && input.isNotEmpty) {
+    // stdin 在提示符下等同执行命令，黑名单同样生效，堵住绕过
+    // terminal_execute 拦截的口子（用户手动输入不受限）。
+    final blocked = _guardCommand(input);
+    if (blocked != null) return blocked;
+    final pressEnter =
+        args['press_enter'] != false && (keys == null || keys.isEmpty);
+    session.writeInput(
+      pressEnter && !input.endsWith('\n') ? '$input\n' : input,
+    );
+  }
+  if (keys != null && keys.isNotEmpty) {
+    final buf = StringBuffer();
+    for (final key in keys) {
+      final seq = _kWriteKeySequences[key.toLowerCase()];
+      if (seq == null) {
+        return fileEditorError(
+          '不支持的按键：$key（支持 ${_kWriteKeySequences.keys.join(' / ')}）',
+        );
+      }
+      buf.write(seq);
+    }
+    session.writeInput(buf.toString());
+  }
   return fileEditorOk({
     'sessionId': session.id,
     'workspace': session.workspaceLabel,
     'written': true,
     'hint': '已写入 stdin；可用 terminal_session action=output 回看进程响应。',
+  });
+}
+
+/// 向会话发 Ctrl-C 中断当前前台命令（会话保活）：命令跑飞 / 等交互
+/// 答错时 AI 的自救手段，避免会话永久 busy。
+Future<McpToolResult> _sessionInterrupt(
+  Ref ref,
+  Map<String, Object?> args,
+) async {
+  final sessionId = requireString(args, 'session_id');
+  final session = await _resolveSessionArg(ref, args, sessionId);
+  if (session == null) {
+    return fileEditorError(
+      '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
+    );
+  }
+  session.interrupt();
+  return fileEditorOk({
+    'sessionId': session.id,
+    'workspace': session.workspaceLabel,
+    'interrupted': true,
+    'hint':
+        '已向会话发 Ctrl-C；可用 terminal_session action=output 确认命令'
+        '已退出。若程序不响应 SIGINT，可用 action=close 直接关掉会话。',
+  });
+}
+
+/// 关闭会话（终止其 shell 进程）：释放池位，避免跑飞的命令把会话池
+/// 占满后 AI 无法再执行任何命令。
+Future<McpToolResult> _sessionClose(Ref ref, Map<String, Object?> args) async {
+  final sessionId = requireString(args, 'session_id');
+  final session = await _resolveSessionArg(ref, args, sessionId);
+  if (session == null) {
+    return fileEditorError(
+      '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
+    );
+  }
+  await ref.read(workspaceSessionPoolManagerProvider).close(session.id);
+  return fileEditorOk({
+    'sessionId': session.id,
+    'workspace': session.workspaceLabel,
+    'closed': true,
   });
 }

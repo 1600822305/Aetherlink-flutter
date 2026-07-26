@@ -128,6 +128,10 @@ class PooledWorkspaceSession {
   /// 当前 exec 的「标记为等交互」触发器；无 exec 在等时为 null。
   void Function()? _flagWaitingInput;
 
+  /// 当前 exec 的「会话被关闭」触发器：会话 close 时让正在等哨兵的
+  /// exec（含超时后的后台等待）立即出错返回，不永久悬挂。
+  void Function()? _failPendingExec;
+
   /// 手动标记当前前台命令在等交互输入（自动检测漏网时的用户兜底）：
   /// 正在等哨兵的 exec 立即带已有输出提前返回（waitingInput = true），
   /// 命令继续在会话里跑。没有正在等的 exec 时返回 false。
@@ -150,6 +154,17 @@ class PooledWorkspaceSession {
     return text.length <= tail ? text : text.substring(text.length - tail);
   }
 
+  /// 向会话发 Ctrl-C（SIGINT）中断当前前台命令，会话本身保活。
+  /// 命令响应 SIGINT 退出后 shell 回到提示符，哨兵（若仍在同一命令
+  /// 列表里）会随之打印，busy 自然释放。
+  void interrupt() {
+    if (!_alive) {
+      throw const WorkspaceSessionException('会话已结束');
+    }
+    lastUsedAt = DateTime.now();
+    _shell.write(const [0x03]);
+  }
+
   void _append(String chunk) {
     if (!_raw.isClosed) _raw.add(chunk);
     final visible = _displayFilter.feed(chunk);
@@ -157,9 +172,15 @@ class PooledWorkspaceSession {
     _buffer.write(visible);
     if (_buffer.length > kSessionBufferLimit) {
       final text = _buffer.toString();
+      // 从行边界开始保留，避免从半个 ANSI 序列 / 多字节字符中间切开
+      // 导致回放渲染错乱；并插入截断标记让回看方知道头部已丢。
+      var cut = text.length - kSessionBufferLimit ~/ 2;
+      final nl = text.indexOf('\n', cut);
+      if (nl >= 0 && nl + 1 < text.length) cut = nl + 1;
       _buffer
         ..clear()
-        ..write(text.substring(text.length - kSessionBufferLimit ~/ 2));
+        ..write('…（缓冲已截断，更早输出已丢弃）\r\n')
+        ..write(text.substring(cut));
     }
     if (!_chunks.isClosed) _chunks.add(visible);
   }
@@ -196,6 +217,10 @@ class PooledWorkspaceSession {
       if (settled || done.isCompleted) return;
       done.completeError(const _SessionExecWaitingInput());
     };
+    _failPendingExec = () {
+      if (done.isCompleted) return;
+      done.completeError(const WorkspaceSessionException('会话已关闭，命令结果不可得'));
+    };
     // 自动判定：输出静默超阈 + 尾部像交互提示 → 不等满超时，提前把
     // 控制权和已有输出还给调用方（模型可立刻写 stdin 回答）。
     final silenceTimer = Timer.periodic(kInteractiveCheckInterval, (_) {
@@ -229,7 +254,9 @@ class PooledWorkspaceSession {
     final sub = _raw.stream.listen((chunk) {
       collected.write(chunk);
       lastChunkAt = DateTime.now();
-      onOutput?.call(chunk);
+      // 超时 / 等交互提前返回后监听仍在（等哨兵释放 busy），但工具结果
+      // 已返回，不再向已完成的工具卡片回调实时输出。
+      if (!settled) onOutput?.call(chunk);
       final window = windowTail + chunk;
       windowTail = window.length <= 96
           ? window
@@ -257,6 +284,7 @@ class PooledWorkspaceSession {
         done.future.then<void>((_) {}, onError: (_) {}).whenComplete(() {
           _busy = false;
           lastUsedAt = DateTime.now();
+          _failPendingExec = null;
           sub.cancel();
         }),
       );
@@ -279,6 +307,7 @@ class PooledWorkspaceSession {
         done.future.then<void>((_) {}, onError: (_) {}).whenComplete(() {
           _busy = false;
           lastUsedAt = DateTime.now();
+          _failPendingExec = null;
           sub.cancel();
         }),
       );
@@ -292,6 +321,7 @@ class PooledWorkspaceSession {
       silenceTimer.cancel();
       _flagWaitingInput = null;
       if (releaseInFinally) {
+        _failPendingExec = null;
         _busy = false;
         lastUsedAt = DateTime.now();
         await sub.cancel();
@@ -311,6 +341,10 @@ class PooledWorkspaceSession {
 
   Future<void> close() async {
     _alive = false;
+    // 让正在等哨兵的 exec（含超时后的后台等待）立即出错返回，
+    // 避免调用方永久悬挂 / 监听器泄漏。
+    _failPendingExec?.call();
+    _failPendingExec = null;
     await _outputSub?.cancel();
     _outputSub = null;
     if (!_chunks.isClosed) await _chunks.close();
@@ -369,7 +403,8 @@ class WorkspaceSessionPool {
     _prune();
     if (_sessions.length >= kMaxPooledSessions) {
       throw const WorkspaceSessionException(
-        '会话数已达上限（$kMaxPooledSessions 个），请先关闭不用的会话',
+        '会话数已达上限（$kMaxPooledSessions 个）：可用 terminal_session '
+        'action=close 关掉不用的会话，或 action=interrupt 中断卡住的命令',
       );
     }
     final shell = await _backend.startShell(
@@ -512,11 +547,17 @@ class WorkspaceSessionPoolManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 把所有正在等命令结果的会话标记为「在等交互输入」（工具卡片上用户
-  /// 手动兜底的入口，Agent 通常同时只占一个会话），返回命中数。
-  int markWaitingInputAll() {
+  /// 把正在等命令结果的会话标记为「在等交互输入」（工具卡片上用户
+  /// 手动兜底的入口），返回命中数。传 [sessionRef]（ID 或名称）时只标记
+  /// 对应会话，避免并行任务时把无关的长命令也提前打断；不传时标记全部。
+  int markWaitingInputAll({String? sessionRef}) {
     var count = 0;
     for (final session in allSessions()) {
+      if (sessionRef != null &&
+          session.id != sessionRef &&
+          session.name != sessionRef) {
+        continue;
+      }
       if (session.markWaitingInput()) count++;
     }
     return count;

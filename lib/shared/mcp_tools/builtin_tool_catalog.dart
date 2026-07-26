@@ -1375,7 +1375,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '不要用本工具启动 vim / top 等全屏交互程序；优先用非交互参数'
           '（-y / --yes / --no-edit / git -c core.pager=cat 等），避免命令停下来等输入。'
           '结果 waitingInput=true 表示命令疑似在等交互输入（未结束）：看 stdout 尾部'
-          '的提示，用 terminal_session action=write 写 stdin 回答（回车确认在末尾带 \\n）。'
+          '的提示，用 terminal_session action=write 写 stdin 回答（回车确认在末尾带 \\n）；'
+          '命令跑飞或不再需要时用 action=interrupt 中断、action=close 关掉会话。'
           '不要执行裸 exit（会结束长驻会话）。执行前会请用户确认。',
       inputSchema: {
         'type': 'object',
@@ -1410,32 +1411,49 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '用 action 参数区分操作：'
           'list 列出所有会话（sessionId、名称、所属工作区、是否正忙）；'
           'output 回看会话最近输出（如超时后查看长任务进度）；'
-          'write 往运行中进程写 stdin（交互式输入，如回答 [y/n]、REPL；执行前会请用户确认）。'
-          '不提供关闭操作：会话空闲自动回收，用户也可在终端页手动关闭。',
+          'write 往运行中进程写 stdin（交互式输入，如回答 [y/n]、REPL；也可用 keys '
+          '发方向键/回车驱动选择器；执行前会请用户确认）；'
+          'interrupt 发 Ctrl-C 中断会话里卡住/跑飞的前台命令（会话保活）；'
+          'close 关闭不再需要的会话（释放池位；会话数达上限时先 close 再建新会话）。'
+          '空闲会话也会自动回收，用户可在终端页手动关闭。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'action': {
             'type': 'string',
-            'enum': ['list', 'output', 'write'],
+            'enum': ['list', 'output', 'write', 'interrupt', 'close'],
             'description': '操作类型',
           },
           'session_id': {
             'type': 'string',
-            'description': '目标会话 ID（output / write 必传）',
+            'description': '目标会话 ID 或名称（list 以外的 action 必传）',
           },
           'workspace': {
             'type': 'string',
-            'description': '目标工作区（序号 / ID / 名称；list 可选，传了只列该工作区的会话）',
+            'description':
+                '目标工作区（序号 / ID / 名称，可选；list 传了只列该工作区的会话，'
+                '其余 action 传了则限定在该工作区内查找会话）',
           },
           'tail_chars': {
             'type': 'number',
             'description': '返回末尾多少个字符（output 可选，默认 4000）',
           },
-          'input': {'type': 'string', 'description': '要写入 stdin 的内容（write 必传）'},
+          'input': {
+            'type': 'string',
+            'description': '要写入 stdin 的文本（write 与 keys 至少传一个）',
+          },
+          'keys': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description':
+                '要发送的特殊按键序列（write 可选，驱动箭头选择器/TUI；支持 '
+                'up / down / left / right / enter / tab / space / esc / '
+                'backspace / ctrl-c / ctrl-d / ctrl-z；与 input 同传时先写 input '
+                '再发按键，且不自动追加回车）',
+          },
           'press_enter': {
             'type': 'boolean',
-            'description': '是否在末尾追加回车（write 可选，默认 true）',
+            'description': '是否在 input 末尾追加回车（write 可选，默认 true；传了 keys 时不追加）',
           },
         },
         'required': ['action'],

@@ -1,14 +1,21 @@
 // 长驻会话里跑一条命令的「哨兵标记」协议（纯 Dart，可单测）。
 //
 // PTY 是合并流（stdout+stderr+回显），无法像一次性 exec 那样拿到干净的退出码。
-// 做法与 tmux 类 Agent 一致：命令后追加一行 printf 哨兵，输出里扫到
+// 做法与 tmux 类 Agent 一致：命令包进 `{ … }` 命令组、同一命令列表末尾
+// 接 printf 哨兵，输出里扫到
 // `__AETHER_DONE_<nonce>_<exitCode>__` 即认为该命令结束。
 
-/// 组装发往长驻 shell 的输入：先执行 [command]，随后打印带 [nonce] 的哨兵行
-/// （携带 `$?`）。[command] 可多行；`$?` 取最后一条命令的退出码。
+/// 组装发往长驻 shell 的输入：[command] 包进 `{ …\n}` 命令组，同一条
+/// 命令列表末尾接带 [nonce] 的哨兵 printf（携带 `$?`）。[command] 可多行；
+/// `$?` 取命令组内最后一条命令的退出码。
+///
+/// 哨兵必须和命令在同一次解析中被 shell 读完：若把哨兵单独放在下一行，
+/// 命令自身读 stdin 时（`cat > f`、REPL、TUI）哨兵行会被它当输入吃掉：
+/// 既污染数据（哨兵写进文件）又永远等不到结束信号。包进命令组后
+/// 整段输入由 shell 解析器一次读完，stdin 里不再残留待处理行。
 String buildSentinelInput(String command, String nonce) {
   final trimmed = command.trimRight();
-  return '$trimmed\nprintf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$?"\n';
+  return '{\n$trimmed\n}; printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$?"\n';
 }
 
 /// 在 [output] 中扫描 [nonce] 对应的哨兵。命中时返回哨兵前的输出与退出码；
@@ -42,11 +49,16 @@ final RegExp _promptPrefix = RegExp(r'^(\x1b\[[0-9;]*m|[^\n\x1b])*?[#$] ');
 String stripSessionEcho(String head, String command, String nonce) {
   final echoes = <String>{
     for (final l in command.trimRight().split('\n')) l.trimRight(),
+    '{',
+    '}; printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$?"',
+    // 旧协议（哨兵单独一行）的回显，兼容历史缓冲。
     'printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$?"',
   }..remove('');
   final kept = <String>[];
   for (final line in head.split('\n')) {
     final t = line.trimRight();
+    // 命令组跨行时 shell 用 PS2（`> `）提示续行，先剥掉再比对回显。
+    final noPs2 = t.replaceFirst(RegExp(r'^(> )+'), '').trimRight();
     final noPrompt = t.replaceFirst(_promptPrefix, '').trimRight();
     // 提示符行尾的空格可能已被 trimRight 掉，补一个再探测。
     final probe = '$t ';
@@ -54,7 +66,12 @@ String stripSessionEcho(String head, String command, String nonce) {
         t.isNotEmpty &&
         _promptPrefix.hasMatch(probe) &&
         probe.replaceFirst(_promptPrefix, '').trim().isEmpty;
-    if (echoes.contains(t) || echoes.contains(noPrompt) || promptOnly) {
+    final ps2Only = t.isNotEmpty && RegExp(r'^(> )*>?\s*$').hasMatch(t);
+    if (echoes.contains(t) ||
+        echoes.contains(noPs2) ||
+        echoes.contains(noPrompt) ||
+        promptOnly ||
+        ps2Only) {
       continue;
     }
     kept.add(line);
@@ -180,6 +197,15 @@ final List<RegExp> _interactivePromptPatterns = [
   RegExp(r'(是否|请输入|请选择|请确认)'),
   RegExp(r'[?？]\s*$'),
   RegExp(r'^\s*❯', multiLine: true),
+  // REPL 提示符（python `>>>` / `...`、node/irb 等裸 `>`）停在行尾。
+  RegExp(r'^(>>>|\.\.\.|In \[\d*\]:)\s*$'),
+  // 数字菜单 / 选项选择："Enter your choice [1-3]:" / "Select an option:"。
+  RegExp(
+    r'\b(choice|select|selection|option)\b[^\n]*[:：]\s*$',
+    caseSensitive: false,
+  ),
+  // 分页器停顣（PAGER=cat 已兜底，命令自带分页时仍可能出现）。
+  RegExp(r'--More--|\(END\)'),
 ];
 
 /// [tail]（输出尾部）看起来是否停在一个交互提示上：剥 ANSI 后取最后

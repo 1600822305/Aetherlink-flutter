@@ -12,7 +12,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_se
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 
 /// Terminal-style card for the `@aether/terminal` `terminal_session` tool
-/// (action = create / list / output / write / close)，也兼容历史消息里的旧
+/// (action = create / list / output / write / interrupt / close)，也兼容历史消息里的旧
 /// terminal_session_* 工具名。
 ///
 /// 历史消息的 `terminal_session_exec` mirrors the run_command card:
@@ -49,7 +49,8 @@ class _TerminalSessionBlockViewState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final status = block.status;
-    final isProcessing = status == MessageBlockStatus.pending ||
+    final isProcessing =
+        status == MessageBlockStatus.pending ||
         status == MessageBlockStatus.processing ||
         status == MessageBlockStatus.streaming;
     final hasError = status == MessageBlockStatus.error;
@@ -64,14 +65,13 @@ class _TerminalSessionBlockViewState
 
     // terminal_session_exec 正在执行（已过审批）：可中断（向会话发
     // Ctrl-C），并实时展示输出尾部。
-    final isRunning = _tool == 'terminal_session_exec' &&
+    final isRunning =
+        _tool == 'terminal_session_exec' &&
         isProcessing &&
         pending == null &&
         ref.watch(runningCommandsProvider).contains(block.id);
     final liveText = isRunning
-        ? ref.watch(
-            commandLiveOutputProvider.select((m) => m[block.id] ?? ''),
-          )
+        ? ref.watch(commandLiveOutputProvider.select((m) => m[block.id] ?? ''))
         : '';
 
     final body = (!isProcessing && !hasError && data != null)
@@ -96,8 +96,9 @@ class _TerminalSessionBlockViewState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
-            onTap:
-                canExpand ? () => setState(() => _expanded = !_expanded) : null,
+            onTap: canExpand
+                ? () => setState(() => _expanded = !_expanded)
+                : null,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
@@ -116,14 +117,14 @@ class _TerminalSessionBlockViewState
                       warning
                           ? LucideIcons.shieldAlert
                           : hasError
-                              ? LucideIcons.circleAlert
-                              : _icon(),
+                          ? LucideIcons.circleAlert
+                          : _icon(),
                       size: 15,
                       color: warning
                           ? const Color(0xFFF59E0B)
                           : hasError
-                              ? theme.colorScheme.error
-                              : theme.colorScheme.primary,
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.primary,
                     ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -220,28 +221,33 @@ class _TerminalSessionBlockViewState
   // ----- header -----
 
   IconData _icon() => switch (_tool) {
-        'terminal_session_create' => LucideIcons.terminal,
-        'terminal_session_list' => LucideIcons.list,
-        'terminal_session_exec' => LucideIcons.squareTerminal,
-        'terminal_session_output' => LucideIcons.scrollText,
-        'terminal_session_write' => LucideIcons.keyboard,
-        'terminal_session_close' => LucideIcons.squareX,
-        _ => LucideIcons.terminal,
-      };
+    'terminal_session_create' => LucideIcons.terminal,
+    'terminal_session_list' => LucideIcons.list,
+    'terminal_session_exec' => LucideIcons.squareTerminal,
+    'terminal_session_output' => LucideIcons.scrollText,
+    'terminal_session_write' => LucideIcons.keyboard,
+    'terminal_session_interrupt' => LucideIcons.octagonX,
+    'terminal_session_close' => LucideIcons.squareX,
+    _ => LucideIcons.terminal,
+  };
 
   String _processingLabel() => switch (_tool) {
-        'terminal_session_create' => '创建会话中...',
-        'terminal_session_exec' => '会话执行中...',
-        'terminal_session_output' => '读取输出中...',
-        'terminal_session_write' => '写入输入中...',
-        'terminal_session_close' => '关闭会话中...',
-        _ => '执行中...',
-      };
+    'terminal_session_create' => '创建会话中...',
+    'terminal_session_exec' => '会话执行中...',
+    'terminal_session_output' => '读取输出中...',
+    'terminal_session_write' => '写入输入中...',
+    'terminal_session_interrupt' => '中断命令中...',
+    'terminal_session_close' => '关闭会话中...',
+    _ => '执行中...',
+  };
 
-  Widget _headerText(ThemeData theme, Map<String, Object?>? data, bool hasError) {
+  Widget _headerText(
+    ThemeData theme,
+    Map<String, Object?>? data,
+    bool hasError,
+  ) {
     if (_tool == 'terminal_session_exec') {
-      final command =
-          (data?['command'] ?? _args['command'])?.toString() ?? '';
+      final command = (data?['command'] ?? _args['command'])?.toString() ?? '';
       return Text.rich(
         TextSpan(
           children: [
@@ -276,8 +282,9 @@ class _TerminalSessionBlockViewState
       case 'terminal_session_create':
         final name = data?['name'] ?? _args['name'] ?? '';
         final workspace = data?['workspace']?.toString();
-        final suffix =
-            (workspace != null && workspace.isNotEmpty) ? ' · $workspace' : '';
+        final suffix = (workspace != null && workspace.isNotEmpty)
+            ? ' · $workspace'
+            : '';
         return '新建会话 $name$suffix';
       case 'terminal_session_list':
         final sessions = data?['sessions'];
@@ -290,6 +297,9 @@ class _TerminalSessionBlockViewState
       case 'terminal_session_write':
         final id = data?['sessionId'] ?? _args['session_id'] ?? '';
         return '会话输入 · $id：${_args['input'] ?? ''}';
+      case 'terminal_session_interrupt':
+        final id = data?['sessionId'] ?? _args['session_id'] ?? '';
+        return '中断命令 · $id';
       case 'terminal_session_close':
         final id = data?['sessionId'] ?? _args['session_id'] ?? '';
         return '关闭会话 $id';
@@ -313,6 +323,7 @@ class _TerminalSessionBlockViewState
       case 'terminal_session_output':
         return _outputBody(data);
       case 'terminal_session_write':
+      case 'terminal_session_interrupt':
         return _metaBody([
           ('会话', data['sessionId']?.toString()),
           ('提示', data['hint']?.toString()),
@@ -411,8 +422,7 @@ class _TerminalSessionBlockViewState
               padding: const EdgeInsets.only(bottom: 4),
               child: OpenInTerminalButton(sessionId: sessionId),
             ),
-          if (sessionId != null || workspace != null)
-            const SizedBox(height: 8),
+          if (sessionId != null || workspace != null) const SizedBox(height: 8),
           if (hint != null && hint.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),

@@ -159,4 +159,51 @@ void main() {
       throwsA(isA<WorkspaceSessionException>()),
     );
   });
+
+  test('interrupt 向会话写 Ctrl-C，会话保活', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    session.interrupt();
+    expect(shell.written.toString(), contains('\x03'));
+    expect(session.alive, isTrue);
+  });
+
+  test('close 让超时后仍在后台等哨兵的 exec 立即收尾，不永久悬挂', () async {
+    final session = await pool.create();
+    await session.exec('sleep 999', timeout: const Duration(milliseconds: 20));
+    expect(session.busy, isTrue);
+    await pool.close(session.id);
+    await Future<void>.delayed(Duration.zero);
+    expect(session.alive, isFalse);
+    expect(pool.list(), isEmpty);
+  });
+
+  test('close 让正在等待中的 exec 出错返回', () async {
+    final session = await pool.create();
+    final future = expectLater(
+      session.exec('sleep 999'),
+      throwsA(isA<WorkspaceSessionException>()),
+    );
+    await Future<void>.delayed(Duration.zero);
+    await pool.close(session.id);
+    await future;
+  });
+
+  test('markWaitingInputAll 传 sessionRef 只标记目标会话', () async {
+    final manager = WorkspaceSessionPoolManager();
+    final p = manager.poolFor(backend);
+    final a = await p.create(name: 'build');
+    final b = await p.create(name: 'ask');
+    final futureA = a.exec('make -j');
+    final futureB = b.exec('npx create-app');
+    await Future<void>.delayed(Duration.zero);
+    expect(manager.markWaitingInputAll(sessionRef: 'ask'), 1);
+    final resultB = await futureB;
+    expect(resultB.waitingInput, isTrue);
+    // 未命中的会话不受影响，仍在等哨兵。
+    expect(a.busy, isTrue);
+    b.markWaitingInput();
+    a.markWaitingInput();
+    await futureA;
+  });
 }
