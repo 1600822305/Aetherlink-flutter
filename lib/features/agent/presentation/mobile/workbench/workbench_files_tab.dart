@@ -29,6 +29,9 @@ class WorkbenchFilesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final async = ref.watch(agentTaskEventsProvider(task.id));
+    if (async.isLoading && !async.hasValue) {
+      return const Center(child: CircularProgressIndicator());
+    }
     final files = deriveAgentFiles(async.value ?? const []);
     if (files.isEmpty) {
       final muted = theme.colorScheme.onSurface.withValues(alpha: 0.35);

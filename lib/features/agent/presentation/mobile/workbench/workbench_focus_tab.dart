@@ -143,11 +143,14 @@ String _readableResult(String raw) {
         final hint = data['hint'];
         return [
           v,
-          if (stderr is String && stderr.trim().isNotEmpty)
-            'stderr:\n$stderr',
+          if (stderr is String && stderr.trim().isNotEmpty) 'stderr:\n$stderr',
           if (hint is String && hint.isNotEmpty) hint,
         ].join('\n');
       }
+    }
+    final stderr = data['stderr'];
+    if (stderr is String && stderr.trim().isNotEmpty) {
+      return 'stderr:\n$stderr';
     }
   }
   return raw;
@@ -179,8 +182,7 @@ String? _partialStringField(String raw, String key) {
           sb.write('\r');
         case 'u':
           if (j + 6 <= raw.length) {
-            final code =
-                int.tryParse(raw.substring(j + 2, j + 6), radix: 16);
+            final code = int.tryParse(raw.substring(j + 2, j + 6), radix: 16);
             if (code != null) sb.writeCharCode(code);
             j += 4;
           } else {
@@ -210,7 +212,8 @@ List<({String? search, String replace})> _editPairsOf(String? raw) {
     decoded = jsonDecode(raw);
   } catch (_) {
     final search = _partialStringField(raw, 'search');
-    final replace = _partialStringField(raw, 'replace') ??
+    final replace =
+        _partialStringField(raw, 'replace') ??
         _partialStringField(raw, 'content') ??
         _partialStringField(raw, 'file_text');
     if (search == null && replace == null) return const [];
@@ -275,23 +278,23 @@ class _FocusView extends StatelessWidget {
     return switch (e) {
       final ToolCallEvent t => _ToolFocus(event: t, taskId: taskId),
       final ReasoningEvent r => _TextFocus(
-          icon: LucideIcons.brain,
-          title: r.streaming
-              ? '思考中…'
-              : (r.elapsed == null ? '思考' : '思考了 ${r.elapsed!.inSeconds}s'),
-          text: r.text,
-          muted: true,
-        ),
+        icon: LucideIcons.brain,
+        title: r.streaming
+            ? '思考中…'
+            : (r.elapsed == null ? '思考' : '思考了 ${r.elapsed!.inSeconds}s'),
+        text: r.text,
+        muted: true,
+      ),
       final AssistantTextEvent a => _TextFocus(
-          icon: LucideIcons.messageSquareText,
-          title: a.streaming ? '汇报中…' : '汇报',
-          text: a.text,
-        ),
+        icon: LucideIcons.messageSquareText,
+        title: a.streaming ? '汇报中…' : '汇报',
+        text: a.text,
+      ),
       final UserMessageEvent u => _TextFocus(
-          icon: LucideIcons.user,
-          title: u.queued ? '用户指令（排队追加）' : '用户指令',
-          text: u.text,
-        ),
+        icon: LucideIcons.user,
+        title: u.queued ? '用户指令（排队追加）' : '用户指令',
+        text: u.text,
+      ),
       final PlanUpdateEvent p => _PlanFocus(event: p),
       _ => const _EmptyFocus(),
     };
@@ -355,9 +358,7 @@ class _ToolFocus extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final (label, color) = _stateLabel(context, event.state);
-    final live = ref.watch(
-      agentToolStreamProvider.select((m) => m[event.id]),
-    );
+    final live = ref.watch(agentToolStreamProvider.select((m) => m[event.id]));
     final args = live?.argsText ?? event.argsDetail;
 
     Widget body;
@@ -370,10 +371,7 @@ class _ToolFocus extends ConsumerWidget {
       final out = event.resultDetail == null
           ? event.resultSummary
           : _readableResult(event.resultDetail!);
-      body = _MonoPane(
-        text: '\$ $cmd\n$out',
-        dark: true,
-      );
+      body = _MonoPane(text: '\$ $cmd\n$out', dark: true);
     } else {
       final pairs = _editPairsOf(args);
       if (pairs.isNotEmpty) {
@@ -482,8 +480,9 @@ class _MonoPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final bg =
-        dark ? const Color(0xFF14161B) : cs.onSurface.withValues(alpha: 0.04);
+    final bg = dark
+        ? const Color(0xFF14161B)
+        : cs.onSurface.withValues(alpha: 0.04);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
@@ -527,8 +526,9 @@ class _PlanFocus extends StatelessWidget {
               if (event.items.isEmpty)
                 Text(
                   '计划已全部完成，清单已清空',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: mutedColor),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: mutedColor,
+                  ),
                 ),
               for (final item in event.items)
                 Padding(
@@ -555,8 +555,9 @@ class _PlanFocus extends StatelessWidget {
                       Expanded(
                         child: Text(
                           item.content,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(height: 1.3),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            height: 1.3,
+                          ),
                         ),
                       ),
                     ],
