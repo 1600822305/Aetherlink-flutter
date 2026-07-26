@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
+import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/devin_diff_lines.dart';
@@ -21,35 +22,22 @@ class WorkbenchFocusTab extends ConsumerWidget {
 
   final AgentTask task;
 
-  /// 最新的「有产物可看」的活动（跳过检查点/压缩等标记事件）。
-  AgentEvent? _latestFocus(List<AgentEvent> events) {
-    for (var i = events.length - 1; i >= 0; i--) {
-      final e = events[i];
-      if (e is ToolCallEvent ||
-          e is ReasoningEvent ||
-          e is AssistantTextEvent ||
-          e is UserMessageEvent ||
-          e is PlanUpdateEvent) {
-        return e;
-      }
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final eventsAsync = ref.watch(agentTaskEventsProvider(task.id));
-    return eventsAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('加载事件失败：$e')),
-      data: (events) {
-        final focus = _latestFocus(events);
-        if (focus == null) return const _EmptyFocus();
-        return SafeArea(
-          top: false,
-          child: _FocusView(event: focus, taskId: task.id),
-        );
-      },
+    final isLoading = ref.watch(
+      agentTaskEventsProvider(task.id).select((a) => a.isLoading && !a.hasValue),
+    );
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    // 最新的「有产物可看」的活动（跳过检查点/压缩等标记事件）。
+    final focus = ref.watch(
+      agentTimelineProvider(task.id).select((v) => v.latestFocus),
+    );
+    if (focus == null) return const _EmptyFocus();
+    return SafeArea(
+      top: false,
+      child: _FocusView(event: focus, taskId: task.id),
     );
   }
 }

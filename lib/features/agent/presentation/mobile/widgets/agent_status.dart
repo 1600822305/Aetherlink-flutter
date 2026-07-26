@@ -96,18 +96,15 @@ class AgentStatusLine extends ConsumerWidget {
     // （对标 CC spinner 用 activeForm 驱动动词）。
     String statusText = agentStatusLabel(task.status);
     if (task.status == AgentTaskStatus.running) {
-      final events =
-          ref.watch(agentTaskEventsProvider(task.id)).value ?? const [];
-      PlanUpdateEvent? plan;
-      for (final e in events) {
-        if (e is PlanUpdateEvent) plan = e;
-      }
-      final active = plan?.items
-          .where((it) => it.status == AgentPlanItemStatus.inProgress)
-          .firstOrNull;
-      if (active != null && active.content.isNotEmpty) {
-        statusText = active.content;
-      }
+      final active = ref.watch(
+        agentTimelineProvider(task.id).select(
+          (v) => v.latestPlan?.items
+              .where((it) => it.status == AgentPlanItemStatus.inProgress)
+              .firstOrNull
+              ?.content,
+        ),
+      );
+      if (active != null && active.isNotEmpty) statusText = active;
     }
     return Row(
       mainAxisSize: MainAxisSize.min,

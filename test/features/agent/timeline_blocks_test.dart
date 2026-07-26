@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/timeline_blocks.dart';
+import 'package:aetherlink_flutter/features/agent/application/timeline_blocks.dart';
 
 void main() {
   final at = DateTime(2026, 1, 1);

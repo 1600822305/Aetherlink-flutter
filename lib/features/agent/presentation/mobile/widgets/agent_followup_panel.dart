@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
+import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -43,9 +43,9 @@ class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
     if (widget.task.status != AgentTaskStatus.waitingInput) {
       return const SizedBox.shrink();
     }
-    final events =
-        ref.watch(agentTaskEventsProvider(widget.task.id)).value ?? const [];
-    final question = latestPendingUserQuestion(events);
+    final question = ref.watch(
+      agentTimelineProvider(widget.task.id).select((v) => v.pendingQuestion),
+    );
     if (question == null) return const SizedBox.shrink();
 
     final theme = Theme.of(context);

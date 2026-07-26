@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 
@@ -22,8 +22,11 @@ class UserQuestionTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final events = ref.watch(agentTaskEventsProvider(taskId)).value ?? const [];
-    final answer = userQuestionAnswer(event, events);
+    final answer = ref.watch(
+      agentTimelineProvider(taskId).select(
+        (v) => v.answersByQuestionId[event.id],
+      ),
+    );
     final answered = answer != null;
 
     return EventRail(
