@@ -7,9 +7,24 @@ import 'package:aetherlink_flutter/app/di/agent_workspace_access.dart';
 import 'package:aetherlink_flutter/app/di/markdown_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/workbench_files.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+
+/// 文件列表推导：每个任务一个增量折叠器，事件 delta 只重扫尾部未完结
+/// 段；列表无变化时返回同一实例，依赖方不会被无关 delta 重建。
+final _agentFilesFoldProvider = Provider.autoDispose
+    .family<AgentFilesFold, String>((ref, taskId) => AgentFilesFold());
+
+final _agentFilesProvider = Provider.autoDispose
+    .family<List<AgentFileEntry>, String>((ref, taskId) {
+      final fold = ref.watch(_agentFilesFoldProvider(taskId));
+      final events =
+          ref.watch(agentTaskEventsProvider(taskId)).value ??
+          const <AgentEvent>[];
+      return fold.fold(events);
+    });
 
 /// 工作台「文件」tab：列出智能体本次任务写入的文件（不限 Markdown）。
 /// 写入进行中带「创建中」实况徽标、点开实时渲染已流出的正文；完成后
@@ -28,11 +43,13 @@ class WorkbenchFilesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final async = ref.watch(agentTaskEventsProvider(task.id));
-    if (async.isLoading && !async.hasValue) {
+    final isLoading = ref.watch(
+      agentTaskEventsProvider(task.id).select((a) => a.isLoading && !a.hasValue),
+    );
+    if (isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    final files = deriveAgentFiles(async.value ?? const []);
+    final files = ref.watch(_agentFilesProvider(task.id));
     if (files.isEmpty) {
       final muted = theme.colorScheme.onSurface.withValues(alpha: 0.35);
       return Center(
@@ -211,10 +228,11 @@ class _FileViewerPageState extends ConsumerState<_FileViewerPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final events = ref.watch(agentTaskEventsProvider(widget.taskId)).value;
-    final file = deriveAgentFiles(
-      events ?? const [],
-    ).where((f) => f.path == widget.path).firstOrNull;
+    final file = ref.watch(
+      _agentFilesProvider(widget.taskId).select(
+        (files) => files.where((f) => f.path == widget.path).firstOrNull,
+      ),
+    );
     final creating = file?.state == AgentFileState.creating;
     final isMd = file?.isMarkdown ?? widget.path.toLowerCase().endsWith('.md');
 

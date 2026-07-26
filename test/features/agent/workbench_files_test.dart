@@ -134,4 +134,89 @@ void main() {
     expect(filePathOfArgs('{"path":"docs/a.md","content":"...'), 'docs/a.md');
     expect(filePathOfArgs('{"content":"..."}'), isNull);
   });
+
+  group('AgentFilesFold 增量折叠', () {
+    test('结果与全量推导一致，含创建中尾部', () {
+      final fold = AgentFilesFold();
+      final e1 = tool(
+        seq: 1,
+        name: 'write',
+        state: AgentToolCallState.success,
+        argsDetail: jsonEncode({'path': 'a.md', 'content': 'v1'}),
+      );
+      final e2 = tool(
+        seq: 2,
+        name: 'write',
+        state: AgentToolCallState.running,
+        argsDetail: '{"path":"b.md","content":"部分正',
+      );
+      for (final events in [
+        [e1],
+        [e1, e2],
+      ]) {
+        final incremental = fold.fold(events);
+        final full = deriveAgentFiles(events);
+        expect(incremental.map((f) => f.path), full.map((f) => f.path));
+        expect(incremental.map((f) => f.state), full.map((f) => f.state));
+      }
+      expect(fold.fold([e1, e2]).first.streamingContent, '部分正');
+    });
+
+    test('创建中事件原地完结后状态被刷新', () {
+      final fold = AgentFilesFold();
+      final running = tool(
+        seq: 1,
+        name: 'write',
+        state: AgentToolCallState.running,
+        argsDetail: jsonEncode({'path': 'a.md', 'content': 'v1'}),
+      );
+      expect(fold.fold([running]).single.state, AgentFileState.creating);
+      final done = tool(
+        seq: 1,
+        name: 'write',
+        state: AgentToolCallState.success,
+        argsDetail: jsonEncode({'path': 'a.md', 'content': 'v1'}),
+      );
+      final files = fold.fold([done]);
+      expect(files.single.state, AgentFileState.done);
+      expect(files.single.streamingContent, isNull);
+    });
+
+    test('无关事件追加时返回同一列表实例（不通知依赖方）', () {
+      final fold = AgentFilesFold();
+      final write = tool(
+        seq: 1,
+        name: 'write',
+        state: AgentToolCallState.success,
+        argsDetail: jsonEncode({'path': 'a.md', 'content': 'v1'}),
+      );
+      final read = tool(
+        seq: 2,
+        name: 'read_file',
+        state: AgentToolCallState.success,
+        argsDetail: jsonEncode({'path': 'x.txt'}),
+      );
+      final first = fold.fold([write]);
+      final second = fold.fold([write, read]);
+      expect(identical(first, second), isTrue);
+    });
+
+    test('事件被删减后整体重扫', () {
+      final fold = AgentFilesFold();
+      final e1 = tool(
+        seq: 1,
+        name: 'write',
+        state: AgentToolCallState.success,
+        argsDetail: jsonEncode({'path': 'a.md', 'content': 'v1'}),
+      );
+      final e2 = tool(
+        seq: 2,
+        name: 'write',
+        state: AgentToolCallState.success,
+        argsDetail: jsonEncode({'path': 'b.md', 'content': 'v2'}),
+      );
+      expect(fold.fold([e1, e2]).length, 2);
+      expect(fold.fold([e1]).map((f) => f.path), ['a.md']);
+    });
+  });
 }
