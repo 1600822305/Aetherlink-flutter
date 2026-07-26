@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'deck_document.dart';
 
@@ -39,6 +40,7 @@ String renderDeckHtml(DeckDocument deck) {
         DeckShapeElement() => _shapeHtml(element),
         DeckImageElement() => _imageHtml(element),
         DeckTableElement() => _tableHtml(element),
+        DeckChartElement() => _chartHtml(element),
       });
     }
     buf.write('</div>');
@@ -146,6 +148,179 @@ String _imageHtml(DeckImageElement element) {
   final data = base64Encode(element.bytes);
   return '<img class="el" style="${_pos(element.frame)}object-fit:fill;" '
       'src="data:image/$format;base64,$data">';
+}
+
+/// Office-default accent palette — mirrors the PPTX writer's chart palette.
+const List<String> _chartPalette = [
+  '4472C4',
+  'ED7D31',
+  'A5A5A5',
+  'FFC000',
+  '5B9BD5',
+  '70AD47',
+];
+
+String _seriesColor(DeckChartSeries series, int index) =>
+    series.color?.value ?? _chartPalette[index % _chartPalette.length];
+
+/// Renders the chart as an inline SVG approximation of the native OOXML
+/// chart (same data, palette and legend; PowerPoint owns the exact styling).
+String _chartHtml(DeckChartElement element) {
+  final w = element.frame.w * 96;
+  final h = element.frame.h * 96;
+  final buf = StringBuffer(
+    '<div class="el" style="${_pos(element.frame)}">'
+    '<svg width="100%" height="100%" viewBox="0 0 ${w.toStringAsFixed(0)} ${h.toStringAsFixed(0)}">',
+  );
+  final titleH = element.title == null ? 0.0 : 22.0;
+  if (element.title != null) {
+    buf.write(
+      '<text x="${(w / 2).toStringAsFixed(1)}" y="16" text-anchor="middle" '
+      'font-size="14" font-weight="bold">${_esc(element.title!)}</text>',
+    );
+  }
+  final legendH = 18.0;
+  final plotX = 30.0;
+  final plotY = titleH + 4;
+  final plotW = w - plotX - 8;
+  final plotH = h - plotY - legendH - 16;
+  switch (element.kind) {
+    case DeckChartKind.bar:
+      buf.write(_barSvg(element, plotX, plotY, plotW, plotH));
+    case DeckChartKind.line:
+      buf.write(_lineSvg(element, plotX, plotY, plotW, plotH));
+    case DeckChartKind.pie:
+      buf.write(_pieSvg(element, w / 2, plotY + plotH / 2, plotH / 2));
+  }
+  // Legend
+  var lx = plotX;
+  final ly = h - 10;
+  final legendEntries = element.kind == DeckChartKind.pie
+      ? [
+          for (final (i, cat) in element.categories.indexed)
+            (cat, _chartPalette[i % _chartPalette.length]),
+        ]
+      : [
+          for (final (i, s) in element.series.indexed)
+            (s.name, _seriesColor(s, i)),
+        ];
+  for (final (label, color) in legendEntries) {
+    buf.write(
+      '<rect x="${lx.toStringAsFixed(1)}" y="${(ly - 8).toStringAsFixed(1)}" '
+      'width="8" height="8" fill="#$color"/>'
+      '<text x="${(lx + 11).toStringAsFixed(1)}" y="${ly.toStringAsFixed(1)}" '
+      'font-size="10">${_esc(label)}</text>',
+    );
+    lx += 22.0 + label.length * 10;
+  }
+  buf.write('</svg></div>');
+  return buf.toString();
+}
+
+double _chartMax(DeckChartElement element) {
+  var max = 0.0;
+  for (final s in element.series) {
+    for (final v in s.values) {
+      if (v > max) max = v;
+    }
+  }
+  return max <= 0 ? 1 : max;
+}
+
+String _barSvg(
+  DeckChartElement element,
+  double x,
+  double y,
+  double w,
+  double h,
+) {
+  final max = _chartMax(element);
+  final buf = StringBuffer(
+    '<line x1="$x" y1="${(y + h).toStringAsFixed(1)}" '
+    'x2="${(x + w).toStringAsFixed(1)}" y2="${(y + h).toStringAsFixed(1)}" stroke="#999"/>',
+  );
+  final catCount = element.categories.length;
+  final groupW = w / catCount;
+  final barW = groupW * 0.6 / element.series.length;
+  for (final (ci, cat) in element.categories.indexed) {
+    for (final (si, s) in element.series.indexed) {
+      final v = s.values[ci];
+      final barH = (v / max) * h;
+      final bx = x + ci * groupW + groupW * 0.2 + si * barW;
+      buf.write(
+        '<rect x="${bx.toStringAsFixed(1)}" y="${(y + h - barH).toStringAsFixed(1)}" '
+        'width="${barW.toStringAsFixed(1)}" height="${barH.toStringAsFixed(1)}" '
+        'fill="#${_seriesColor(s, si)}"/>',
+      );
+    }
+    buf.write(
+      '<text x="${(x + ci * groupW + groupW / 2).toStringAsFixed(1)}" '
+      'y="${(y + h + 12).toStringAsFixed(1)}" text-anchor="middle" '
+      'font-size="10">${_esc(cat)}</text>',
+    );
+  }
+  return buf.toString();
+}
+
+String _lineSvg(
+  DeckChartElement element,
+  double x,
+  double y,
+  double w,
+  double h,
+) {
+  final max = _chartMax(element);
+  final buf = StringBuffer(
+    '<line x1="$x" y1="${(y + h).toStringAsFixed(1)}" '
+    'x2="${(x + w).toStringAsFixed(1)}" y2="${(y + h).toStringAsFixed(1)}" stroke="#999"/>',
+  );
+  final catCount = element.categories.length;
+  final stepX = catCount == 1 ? 0.0 : w / (catCount - 1);
+  for (final (si, s) in element.series.indexed) {
+    final points = [
+      for (final (ci, v) in s.values.indexed)
+        '${(x + ci * stepX).toStringAsFixed(1)},'
+            '${(y + h - v / max * h).toStringAsFixed(1)}',
+    ].join(' ');
+    buf.write(
+      '<polyline points="$points" fill="none" '
+      'stroke="#${_seriesColor(s, si)}" stroke-width="2"/>',
+    );
+  }
+  for (final (ci, cat) in element.categories.indexed) {
+    buf.write(
+      '<text x="${(x + ci * stepX).toStringAsFixed(1)}" '
+      'y="${(y + h + 12).toStringAsFixed(1)}" text-anchor="middle" '
+      'font-size="10">${_esc(cat)}</text>',
+    );
+  }
+  return buf.toString();
+}
+
+String _pieSvg(DeckChartElement element, double cx, double cy, double r) {
+  final values = element.series.first.values;
+  final total = values.fold<double>(0, (a, b) => a + (b < 0 ? 0 : b));
+  if (total <= 0) return '';
+  final buf = StringBuffer();
+  var angle = -pi / 2;
+  for (final (i, v) in values.indexed) {
+    if (v <= 0) continue;
+    final sweep = v / total * 2 * pi;
+    final x1 = cx + r * cos(angle);
+    final y1 = cy + r * sin(angle);
+    angle += sweep;
+    final x2 = cx + r * cos(angle);
+    final y2 = cy + r * sin(angle);
+    final largeArc = sweep > pi ? 1 : 0;
+    buf.write(
+      '<path d="M${cx.toStringAsFixed(1)},${cy.toStringAsFixed(1)} '
+      'L${x1.toStringAsFixed(1)},${y1.toStringAsFixed(1)} '
+      'A${r.toStringAsFixed(1)},${r.toStringAsFixed(1)} 0 $largeArc 1 '
+      '${x2.toStringAsFixed(1)},${y2.toStringAsFixed(1)} Z" '
+      'fill="#${_chartPalette[i % _chartPalette.length]}"/>',
+    );
+  }
+  return buf.toString();
 }
 
 String _tableHtml(DeckTableElement element) {

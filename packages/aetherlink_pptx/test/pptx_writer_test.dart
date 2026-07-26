@@ -260,4 +260,207 @@ void main() {
       expect(html, contains('<table class="deck">'));
     });
   });
+
+  group('charts', () {
+    DeckDocument chartDeck(String kind, {int seriesCount = 2}) =>
+        DeckDocument.parse(
+          jsonEncode({
+            'layout': '16x9',
+            'slides': [
+              {
+                'elements': [
+                  {
+                    'type': 'chart',
+                    'chart': kind,
+                    'x': 1,
+                    'y': 1,
+                    'w': 8,
+                    'h': 4.5,
+                    'title': '季度对比',
+                    'categories': ['Q1', 'Q2', 'Q3'],
+                    'series': [
+                      for (
+                        var i = 0;
+                        i < (kind == 'pie' ? 1 : seriesCount);
+                        i++
+                      )
+                        {
+                          'name': '系列${i + 1}',
+                          'values': [10 + i, 20 + i, 15 + i],
+                          if (i == 0) 'color': '1A73E8',
+                        },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+
+    Map<String, String> partsOf(DeckDocument deck) {
+      final files = ZipDecoder().decodeBytes(buildPptxBytes(deck));
+      return {
+        for (final f in files.files.where((f) => f.isFile))
+          f.name: f.name.endsWith('.xml') || f.name.endsWith('.rels')
+              ? utf8.decode(f.readBytes()!)
+              : '',
+      };
+    }
+
+    test('bar chart emits a native chart part wired via graphicFrame', () {
+      final parts = partsOf(chartDeck('bar'));
+      expect(parts, contains('ppt/charts/chart1.xml'));
+      expect(
+        parts['[Content_Types].xml'],
+        contains(
+          '/ppt/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"',
+        ),
+      );
+      final slide = parts['ppt/slides/slide1.xml']!;
+      expect(slide, contains('<p:graphicFrame>'));
+      expect(slide, contains('drawingml/2006/chart'));
+      expect(
+        parts['ppt/slides/_rels/slide1.xml.rels'],
+        contains('Target="../charts/chart1.xml"'),
+      );
+      final chart = parts['ppt/charts/chart1.xml']!;
+      XmlDocument.parse(chart);
+      expect(chart, contains('<c:barChart>'));
+      expect(chart, contains('<c:v>Q1</c:v>'));
+      expect(chart, contains('<c:v>系列1</c:v>'));
+      expect(chart, contains('val="1A73E8"'));
+      expect(chart, contains('<c:catAx>'));
+      expect(chart, contains('<c:valAx>'));
+      expect(chart, contains('季度对比'));
+    });
+
+    test('line and pie charts map to their OOXML chart types', () {
+      final line = partsOf(chartDeck('line'))['ppt/charts/chart1.xml']!;
+      XmlDocument.parse(line);
+      expect(line, contains('<c:lineChart>'));
+
+      final pie = partsOf(chartDeck('pie'))['ppt/charts/chart1.xml']!;
+      XmlDocument.parse(pie);
+      expect(pie, contains('<c:pieChart>'));
+      expect(pie, isNot(contains('<c:catAx>')));
+    });
+
+    test('multiple charts across slides get distinct parts', () {
+      final deck = DeckDocument.parse(
+        jsonEncode({
+          'layout': '16x9',
+          'slides': [
+            for (var s = 0; s < 2; s++)
+              {
+                'elements': [
+                  {
+                    'type': 'chart',
+                    'chart': 'bar',
+                    'x': 1,
+                    'y': 1,
+                    'w': 6,
+                    'h': 4,
+                    'categories': ['A'],
+                    'series': [
+                      {
+                        'name': 'S',
+                        'values': [s + 1],
+                      },
+                    ],
+                  },
+                ],
+              },
+          ],
+        }),
+      );
+      final parts = partsOf(deck);
+      expect(parts, contains('ppt/charts/chart1.xml'));
+      expect(parts, contains('ppt/charts/chart2.xml'));
+      expect(
+        parts['ppt/slides/_rels/slide2.xml.rels'],
+        contains('Target="../charts/chart2.xml"'),
+      );
+    });
+
+    test('chart source validation is strict and actionable', () {
+      Map<String, Object?> element(Map<String, Object?> patch) => {
+        'layout': '16x9',
+        'slides': [
+          {
+            'elements': [
+              {
+                'type': 'chart',
+                'chart': 'bar',
+                'x': 1,
+                'y': 1,
+                'w': 6,
+                'h': 4,
+                'categories': ['A', 'B'],
+                'series': [
+                  {
+                    'name': 'S',
+                    'values': [1, 2],
+                  },
+                ],
+                ...patch,
+              },
+            ],
+          },
+        ],
+      };
+
+      expect(
+        () => DeckDocument.parse(jsonEncode(element({'chart': 'radar'}))),
+        throwsA(isA<DeckParseException>()),
+      );
+      expect(
+        () => DeckDocument.parse(jsonEncode(element({'categories': []}))),
+        throwsA(isA<DeckParseException>()),
+      );
+      expect(
+        () => DeckDocument.parse(
+          jsonEncode(
+            element({
+              'series': [
+                {
+                  'name': 'S',
+                  'values': [1],
+                },
+              ],
+            }),
+          ),
+        ),
+        throwsA(isA<DeckParseException>()),
+      );
+      expect(
+        () => DeckDocument.parse(
+          jsonEncode(
+            element({
+              'chart': 'pie',
+              'series': [
+                {
+                  'name': 'A',
+                  'values': [1, 2],
+                },
+                {
+                  'name': 'B',
+                  'values': [3, 4],
+                },
+              ],
+            }),
+          ),
+        ),
+        throwsA(isA<DeckParseException>()),
+      );
+    });
+
+    test('HTML preview renders charts as inline SVG', () {
+      final html = renderDeckHtml(chartDeck('pie'));
+      expect(html, contains('<svg'));
+      expect(html, contains('<path'));
+      final barHtml = renderDeckHtml(chartDeck('bar'));
+      expect(barHtml, contains('<rect'));
+      expect(barHtml, contains('季度对比'));
+    });
+  });
 }

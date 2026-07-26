@@ -173,8 +173,9 @@ sealed class DeckElement {
       'shape' => DeckShapeElement.fromJson(json, where),
       'image' => DeckImageElement.fromJson(json, where),
       'table' => DeckTableElement.fromJson(json, where),
+      'chart' => DeckChartElement.fromJson(json, where),
       _ => throw DeckParseException(
-        '$where 的 type 必须是 text/shape/image/table：收到 "$type"',
+        '$where 的 type 必须是 text/shape/image/table/chart：收到 "$type"',
       ),
     };
   }
@@ -437,6 +438,103 @@ class DeckTableElement extends DeckElement {
   final DeckColor? borderColor;
 
   int get columnCount => rows.first.length;
+}
+
+/// Chart kinds the writer maps to native OOXML chart parts.
+enum DeckChartKind {
+  bar,
+  line,
+  pie;
+
+  static DeckChartKind parse(String? raw, String where) => switch (raw) {
+    'bar' => DeckChartKind.bar,
+    'line' => DeckChartKind.line,
+    'pie' => DeckChartKind.pie,
+    _ => throw DeckParseException('$where 的 chart 必须是 bar/line/pie：收到 "$raw"'),
+  };
+}
+
+/// One data series of a chart: a name plus one value per category.
+class DeckChartSeries {
+  const DeckChartSeries({required this.name, required this.values, this.color});
+
+  final String name;
+  final List<double> values;
+
+  /// Series color; null = writer's default palette.
+  final DeckColor? color;
+}
+
+/// A native chart (`<p:graphicFrame>` referencing a `c:chartSpace` part) —
+/// editable data/series in PowerPoint, never a rendered image.
+class DeckChartElement extends DeckElement {
+  const DeckChartElement({
+    required super.frame,
+    required this.kind,
+    required this.categories,
+    required this.series,
+    this.title,
+  });
+
+  factory DeckChartElement.fromJson(Map<String, Object?> json, String where) {
+    final kind = DeckChartKind.parse(json['chart'] as String?, where);
+    final rawCats = json['categories'];
+    if (rawCats is! List ||
+        rawCats.isEmpty ||
+        rawCats.any((c) => c is! String)) {
+      throw DeckParseException('$where 缺少非空字符串数组 "categories"');
+    }
+    final categories = rawCats.cast<String>();
+    final rawSeries = json['series'];
+    if (rawSeries is! List || rawSeries.isEmpty) {
+      throw DeckParseException('$where 缺少非空数组 "series"');
+    }
+    if (kind == DeckChartKind.pie && rawSeries.length > 1) {
+      throw DeckParseException('$where 饼图只支持 1 个 series');
+    }
+    final series = <DeckChartSeries>[];
+    for (final (i, rawSer) in rawSeries.indexed) {
+      final serWhere = '$where.series[$i]';
+      final map = _asMap(rawSer, serWhere);
+      final name = map['name'];
+      if (name is! String || name.isEmpty) {
+        throw DeckParseException('$serWhere 缺少非空字符串 "name"');
+      }
+      final rawValues = map['values'];
+      if (rawValues is! List || rawValues.any((v) => v is! num)) {
+        throw DeckParseException('$serWhere 缺少数值数组 "values"');
+      }
+      if (rawValues.length != categories.length) {
+        throw DeckParseException(
+          '$serWhere 的 values 长度（${rawValues.length}）必须等于 '
+          'categories 长度（${categories.length}）',
+        );
+      }
+      series.add(
+        DeckChartSeries(
+          name: name,
+          values: [for (final v in rawValues) (v as num).toDouble()],
+          color: map['color'] == null
+              ? null
+              : DeckColor(map['color'] as String),
+        ),
+      );
+    }
+    return DeckChartElement(
+      frame: DeckFrame.fromJson(json, where),
+      kind: kind,
+      categories: categories,
+      series: series,
+      title: json['title'] as String?,
+    );
+  }
+
+  final DeckChartKind kind;
+  final List<String> categories;
+  final List<DeckChartSeries> series;
+
+  /// Optional chart title shown above the plot area.
+  final String? title;
 }
 
 /// One slide: background + z-ordered elements.

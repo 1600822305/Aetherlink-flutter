@@ -175,6 +175,7 @@ class _SlideCanvas extends StatelessWidget {
       DeckShapeElement() => _Shape(element: element, scale: scale),
       DeckImageElement() => Image.memory(element.bytes, fit: BoxFit.fill),
       DeckTableElement() => _DeckTable(element: element, scale: scale),
+      DeckChartElement() => CustomPaint(painter: _ChartPainter(element)),
     };
   }
 }
@@ -304,6 +305,216 @@ class _Shape extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Office-default accent palette — mirrors the PPTX writer's chart palette.
+const List<Color> _chartPalette = [
+  Color(0xFF4472C4),
+  Color(0xFFED7D31),
+  Color(0xFFA5A5A5),
+  Color(0xFFFFC000),
+  Color(0xFF5B9BD5),
+  Color(0xFF70AD47),
+];
+
+/// Lightweight approximation of the native OOXML chart: same data, palette
+/// and legend；PowerPoint 拥有导出后的精确样式。
+class _ChartPainter extends CustomPainter {
+  _ChartPainter(this.element);
+
+  final DeckChartElement element;
+
+  Color _seriesColor(int index) =>
+      _color(element.series[index].color) ??
+      _chartPalette[index % _chartPalette.length];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    var top = 0.0;
+    if (element.title != null) {
+      final tp = _paragraph(
+        element.title!,
+        const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: Colors.black87,
+        ),
+        size.width,
+        TextAlign.center,
+      );
+      tp.paint(canvas, Offset.zero);
+      top = tp.height + 2;
+    }
+    const legendH = 14.0;
+    final plot = Rect.fromLTRB(
+      18,
+      top + 2,
+      size.width - 4,
+      size.height - legendH - 14,
+    );
+    switch (element.kind) {
+      case DeckChartKind.bar:
+        _paintBars(canvas, plot);
+      case DeckChartKind.line:
+        _paintLines(canvas, plot);
+      case DeckChartKind.pie:
+        _paintPie(canvas, plot);
+    }
+    _paintLegend(canvas, size);
+  }
+
+  TextPainter _paragraph(
+    String text,
+    TextStyle style,
+    double width,
+    TextAlign align,
+  ) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textAlign: align,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(minWidth: width, maxWidth: width);
+    return tp;
+  }
+
+  double get _maxValue {
+    var max = 0.0;
+    for (final s in element.series) {
+      for (final v in s.values) {
+        if (v > max) max = v;
+      }
+    }
+    return max <= 0 ? 1 : max;
+  }
+
+  void _paintAxis(Canvas canvas, Rect plot) {
+    canvas.drawLine(
+      plot.bottomLeft,
+      plot.bottomRight,
+      Paint()
+        ..color = Colors.black38
+        ..strokeWidth = 1,
+    );
+  }
+
+  void _paintCategoryLabels(Canvas canvas, Rect plot, double Function(int) cx) {
+    const style = TextStyle(fontSize: 7, color: Colors.black54);
+    for (final (i, cat) in element.categories.indexed) {
+      final tp = TextPainter(
+        text: TextSpan(text: cat, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout();
+      tp.paint(canvas, Offset(cx(i) - tp.width / 2, plot.bottom + 2));
+    }
+  }
+
+  void _paintBars(Canvas canvas, Rect plot) {
+    _paintAxis(canvas, plot);
+    final max = _maxValue;
+    final catCount = element.categories.length;
+    final groupW = plot.width / catCount;
+    final barW = groupW * 0.6 / element.series.length;
+    for (var ci = 0; ci < catCount; ci++) {
+      for (final (si, s) in element.series.indexed) {
+        final barH = s.values[ci] / max * plot.height;
+        canvas.drawRect(
+          Rect.fromLTWH(
+            plot.left + ci * groupW + groupW * 0.2 + si * barW,
+            plot.bottom - barH,
+            barW,
+            barH,
+          ),
+          Paint()..color = _seriesColor(si),
+        );
+      }
+    }
+    _paintCategoryLabels(
+      canvas,
+      plot,
+      (i) => plot.left + i * groupW + groupW / 2,
+    );
+  }
+
+  void _paintLines(Canvas canvas, Rect plot) {
+    _paintAxis(canvas, plot);
+    final max = _maxValue;
+    final catCount = element.categories.length;
+    final stepX = catCount == 1 ? 0.0 : plot.width / (catCount - 1);
+    for (final (si, s) in element.series.indexed) {
+      final path = Path();
+      for (final (ci, v) in s.values.indexed) {
+        final p = Offset(
+          plot.left + ci * stepX,
+          plot.bottom - v / max * plot.height,
+        );
+        ci == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+        canvas.drawCircle(p, 1.5, Paint()..color = _seriesColor(si));
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = _seriesColor(si)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+    _paintCategoryLabels(canvas, plot, (i) => plot.left + i * stepX);
+  }
+
+  void _paintPie(Canvas canvas, Rect plot) {
+    final values = element.series.first.values;
+    final total = values.fold<double>(0, (a, b) => a + (b < 0 ? 0 : b));
+    if (total <= 0) return;
+    final radius = plot.shortestSide / 2;
+    final rect = Rect.fromCircle(center: plot.center, radius: radius);
+    var start = -90 * 3.1415926535 / 180;
+    for (final (i, v) in values.indexed) {
+      if (v <= 0) continue;
+      final sweep = v / total * 2 * 3.1415926535;
+      canvas.drawArc(
+        rect,
+        start,
+        sweep,
+        true,
+        Paint()..color = _chartPalette[i % _chartPalette.length],
+      );
+      start += sweep;
+    }
+  }
+
+  void _paintLegend(Canvas canvas, Size size) {
+    const style = TextStyle(fontSize: 7, color: Colors.black87);
+    final entries = element.kind == DeckChartKind.pie
+        ? [
+            for (final (i, cat) in element.categories.indexed)
+              (cat, _chartPalette[i % _chartPalette.length]),
+          ]
+        : [
+            for (final (i, s) in element.series.indexed)
+              (s.name, _seriesColor(i)),
+          ];
+    var x = 18.0;
+    final y = size.height - 9;
+    for (final (label, color) in entries) {
+      canvas.drawRect(Rect.fromLTWH(x, y, 6, 6), Paint()..color = color);
+      final tp = TextPainter(
+        text: TextSpan(text: label, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      tp.paint(canvas, Offset(x + 8, y - 1));
+      x += 12 + tp.width + 6;
+      if (x > size.width) break;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ChartPainter oldDelegate) =>
+      oldDelegate.element != element;
 }
 
 class _DeckTable extends StatelessWidget {

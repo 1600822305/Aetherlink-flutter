@@ -1500,7 +1500,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'description':
                 'deck.json 源对象（也接受 JSON 字符串）。顶层：layout(16x9/4x3)、'
                 'title、slides[]；每页：background(6位hex)、elements[]（type: '
-                'text/shape/image/table，坐标单位英寸）',
+                'text/shape/image/table/chart，坐标单位英寸）',
           },
         },
         'required': ['deck'],
@@ -1510,7 +1510,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'pptx_render',
       description:
           '把 deck.json 源渲染成原生可编辑的 .pptx 文件写入工作区（文本框/形状/'
-          '图片/表格都是原生 PowerPoint 对象，不是截图）。导出前自动运行 QA：'
+          '图片/表格/图表都是原生 PowerPoint 对象，不是截图）。导出前自动运行 QA：'
           '有 error 时默认拒绝导出并返回报告（可传 force=true 强制）。'
           '纯 Dart 端上生成、后台 isolate 执行，不依赖任何外部运行时。'
           '执行前会请用户确认。',
