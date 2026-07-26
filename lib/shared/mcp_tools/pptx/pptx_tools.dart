@@ -37,6 +37,13 @@ Future<McpToolResult> runPptxTool(
         return await _render(ref, args);
       case 'pptx_read':
         return await _read(ref, args);
+      case 'pptx_styles':
+        return fileEditorOk({
+          'styles': builtinDeckStyleCatalog(),
+          'usage':
+              '在 deck.json 顶层加 "style": "<id>" 套用；元素可省略颜色，'
+              '背景/文字/卡片/图表配色自动推导；也可传内联风格对象自定义',
+        });
     }
     return fileEditorError('未知的工具: $toolName');
   } on DeckParseException catch (e) {

@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'deck_layout_engine.dart';
+import 'deck_style.dart';
+
 /// Thrown when a deck.json source is structurally invalid. [message] is a
 /// model-facing, actionable description (which field, what was expected).
 class DeckParseException implements Exception {
@@ -45,6 +48,10 @@ extension type const DeckColor._(String hex) {
     return DeckColor._(v.toUpperCase());
   }
 
+  /// Trusted compile-time constructor for built-in style palettes; the hex
+  /// must already be 6-digit uppercase.
+  const DeckColor.raw(String hex) : this._(hex);
+
   String get value => hex;
 }
 
@@ -88,7 +95,11 @@ class DeckTextRun {
     this.font,
   });
 
-  factory DeckTextRun.fromJson(Map<String, Object?> json, String where) {
+  factory DeckTextRun.fromJson(
+    Map<String, Object?> json,
+    String where, {
+    DeckStyle? style,
+  }) {
     final text = json['text'];
     if (text is! String) {
       throw DeckParseException('$where 的 run 缺少字符串字段 "text"');
@@ -102,8 +113,11 @@ class DeckTextRun {
       bold: json['bold'] == true,
       italic: json['italic'] == true,
       size: (size as num?)?.toDouble(),
-      color: json['color'] == null ? null : DeckColor(json['color'] as String),
-      font: json['font'] as String?,
+      // 风格推导：省略颜色/字体时用风格的正文色与字体栈。
+      color: json['color'] == null
+          ? style?.textPrimary
+          : DeckColor(json['color'] as String),
+      font: (json['font'] as String?) ?? style?.bodyFont,
     );
   }
 
@@ -126,7 +140,11 @@ class DeckParagraph {
     this.align,
   });
 
-  factory DeckParagraph.fromJson(Map<String, Object?> json, String where) {
+  factory DeckParagraph.fromJson(
+    Map<String, Object?> json,
+    String where, {
+    DeckStyle? style,
+  }) {
     final rawRuns = json['runs'];
     if (rawRuns is! List || rawRuns.isEmpty) {
       throw DeckParseException('$where 的段落缺少非空数组 "runs"');
@@ -142,7 +160,11 @@ class DeckParagraph {
     return DeckParagraph(
       runs: [
         for (final (i, r) in rawRuns.indexed)
-          DeckTextRun.fromJson(_asMap(r, '$where.runs[$i]'), '$where.runs[$i]'),
+          DeckTextRun.fromJson(
+            _asMap(r, '$where.runs[$i]'),
+            '$where.runs[$i]',
+            style: style,
+          ),
       ],
       bullet: json['bullet'] == true,
       indentLevel: indent,
@@ -166,16 +188,20 @@ sealed class DeckElement {
 
   final DeckFrame frame;
 
-  static DeckElement fromJson(Map<String, Object?> json, String where) {
+  static DeckElement fromJson(
+    Map<String, Object?> json,
+    String where, {
+    DeckStyle? style,
+  }) {
     final type = json['type'];
     return switch (type) {
-      'text' => DeckTextElement.fromJson(json, where),
+      'text' => DeckTextElement.fromJson(json, where, style: style),
       'shape' => DeckShapeElement.fromJson(json, where),
       'image' => DeckImageElement.fromJson(json, where),
       'table' => DeckTableElement.fromJson(json, where),
-      'chart' => DeckChartElement.fromJson(json, where),
+      'chart' => DeckChartElement.fromJson(json, where, style: style),
       _ => throw DeckParseException(
-        '$where 的 type 必须是 text/shape/image/table/chart：收到 "$type"',
+        '$where 的 type 必须是 text/shape/image/table/chart/infographic：收到 "$type"',
       ),
     };
   }
@@ -191,7 +217,11 @@ class DeckTextElement extends DeckElement {
     this.lineSpacing,
   });
 
-  factory DeckTextElement.fromJson(Map<String, Object?> json, String where) {
+  factory DeckTextElement.fromJson(
+    Map<String, Object?> json,
+    String where, {
+    DeckStyle? style,
+  }) {
     final rawParas = json['paragraphs'];
     if (rawParas is! List || rawParas.isEmpty) {
       throw DeckParseException('$where 缺少非空数组 "paragraphs"');
@@ -211,6 +241,7 @@ class DeckTextElement extends DeckElement {
           DeckParagraph.fromJson(
             _asMap(p, '$where.paragraphs[$i]'),
             '$where.paragraphs[$i]',
+            style: style,
           ),
       ],
       valign: valign,
@@ -236,7 +267,8 @@ enum DeckShapeKind {
   rect('rect'),
   roundRect('roundRect'),
   ellipse('ellipse'),
-  line('line');
+  line('line'),
+  pie('pie');
 
   const DeckShapeKind(this.preset);
 
@@ -248,8 +280,9 @@ enum DeckShapeKind {
     'roundRect' => DeckShapeKind.roundRect,
     'ellipse' => DeckShapeKind.ellipse,
     'line' => DeckShapeKind.line,
+    'pie' => DeckShapeKind.pie,
     _ => throw DeckParseException(
-      '$where 的 shape 必须是 rect/roundRect/ellipse/line：收到 "$raw"',
+      '$where 的 shape 必须是 rect/roundRect/ellipse/line/pie：收到 "$raw"',
     ),
   };
 }
@@ -264,6 +297,8 @@ class DeckShapeElement extends DeckElement {
     this.lineColor,
     this.lineWidth,
     this.radius,
+    this.angleStart,
+    this.angleEnd,
   });
 
   factory DeckShapeElement.fromJson(Map<String, Object?> json, String where) {
@@ -279,9 +314,19 @@ class DeckShapeElement extends DeckElement {
     if (radius != null && (radius is! num || radius < 0 || radius > 0.5)) {
       throw DeckParseException('$where 的 radius 必须在 0-0.5 之间（相对短边比例）');
     }
+    final kind = DeckShapeKind.parse(json['shape'] as String?, where);
+    final angleStart = json['angleStart'];
+    final angleEnd = json['angleEnd'];
+    if (kind == DeckShapeKind.pie && (angleStart is! num || angleEnd is! num)) {
+      throw DeckParseException(
+        '$where 的 pie 形状需要数值 "angleStart"/"angleEnd"（角度，0=3 点钟方向顺时针）',
+      );
+    }
     return DeckShapeElement(
       frame: DeckFrame.fromJson(json, where),
-      kind: DeckShapeKind.parse(json['shape'] as String?, where),
+      kind: kind,
+      angleStart: (angleStart as num?)?.toDouble(),
+      angleEnd: (angleEnd as num?)?.toDouble(),
       fill: json['fill'] == null ? null : DeckColor(json['fill'] as String),
       fillTransparency: transparency,
       lineColor: json['lineColor'] == null
@@ -305,6 +350,10 @@ class DeckShapeElement extends DeckElement {
   /// Corner radius for [DeckShapeKind.roundRect], as a 0-0.5 fraction of the
   /// shorter side.
   final double? radius;
+
+  /// Wedge angles (degrees, 0 = 3 o'clock, clockwise) for [DeckShapeKind.pie].
+  final double? angleStart;
+  final double? angleEnd;
 }
 
 /// An embedded picture (`<p:pic>`), sourced from base64 PNG/JPEG data.
@@ -440,17 +489,33 @@ class DeckTableElement extends DeckElement {
   int get columnCount => rows.first.length;
 }
 
-/// Chart kinds the writer maps to native OOXML chart parts.
+/// Chart kinds the writer maps to native OOXML chart parts（9 种原生，
+/// PowerPoint 可改数据重算）.
 enum DeckChartKind {
   bar,
   line,
-  pie;
+  pie,
+  doughnut,
+  area,
+  scatter,
+  stackedBar,
+  horizontalBar,
+  radar;
 
   static DeckChartKind parse(String? raw, String where) => switch (raw) {
     'bar' => DeckChartKind.bar,
     'line' => DeckChartKind.line,
     'pie' => DeckChartKind.pie,
-    _ => throw DeckParseException('$where 的 chart 必须是 bar/line/pie：收到 "$raw"'),
+    'doughnut' => DeckChartKind.doughnut,
+    'area' => DeckChartKind.area,
+    'scatter' => DeckChartKind.scatter,
+    'stackedBar' => DeckChartKind.stackedBar,
+    'horizontalBar' => DeckChartKind.horizontalBar,
+    'radar' => DeckChartKind.radar,
+    _ => throw DeckParseException(
+      '$where 的 chart 必须是 bar/line/pie/doughnut/area/scatter/'
+      'stackedBar/horizontalBar/radar：收到 "$raw"',
+    ),
   };
 }
 
@@ -474,9 +539,15 @@ class DeckChartElement extends DeckElement {
     required this.categories,
     required this.series,
     this.title,
+    this.palette,
+    this.textColor,
   });
 
-  factory DeckChartElement.fromJson(Map<String, Object?> json, String where) {
+  factory DeckChartElement.fromJson(
+    Map<String, Object?> json,
+    String where, {
+    DeckStyle? style,
+  }) {
     final kind = DeckChartKind.parse(json['chart'] as String?, where);
     final rawCats = json['categories'];
     if (rawCats is! List ||
@@ -489,8 +560,12 @@ class DeckChartElement extends DeckElement {
     if (rawSeries is! List || rawSeries.isEmpty) {
       throw DeckParseException('$where 缺少非空数组 "series"');
     }
-    if (kind == DeckChartKind.pie && rawSeries.length > 1) {
-      throw DeckParseException('$where 饼图只支持 1 个 series');
+    if ((kind == DeckChartKind.pie || kind == DeckChartKind.doughnut) &&
+        rawSeries.length > 1) {
+      throw DeckParseException('$where 饼图/环形图只支持 1 个 series');
+    }
+    if (kind == DeckChartKind.radar && categories.length < 3) {
+      throw DeckParseException('$where 雷达图至少需要 3 个 categories（维度）');
     }
     final series = <DeckChartSeries>[];
     for (final (i, rawSer) in rawSeries.indexed) {
@@ -526,6 +601,8 @@ class DeckChartElement extends DeckElement {
       categories: categories,
       series: series,
       title: json['title'] as String?,
+      palette: style?.accents,
+      textColor: style?.textPrimary,
     );
   }
 
@@ -535,34 +612,67 @@ class DeckChartElement extends DeckElement {
 
   /// Optional chart title shown above the plot area.
   final String? title;
+
+  /// Style-derived default series palette; null = writer default.
+  final List<DeckColor>? palette;
+
+  /// Style-derived axis/legend/title text color; null = Office default.
+  final DeckColor? textColor;
 }
 
 /// One slide: background + z-ordered elements + optional speaker notes.
 class DeckSlide {
   const DeckSlide({required this.elements, this.background, this.notes});
 
-  factory DeckSlide.fromJson(Map<String, Object?> json, String where) {
+  factory DeckSlide.fromJson(
+    Map<String, Object?> json,
+    String where, {
+    DeckLayout canvas = DeckLayout.layout16x9,
+    DeckStyle? style,
+  }) {
     final rawElements = json['elements'];
-    if (rawElements is! List) {
-      throw DeckParseException('$where 缺少数组 "elements"');
+    final rawLayout = json['layout'];
+    if (rawElements is! List && rawLayout == null) {
+      throw DeckParseException('$where 缺少数组 "elements"（或布局声明 "layout"）');
     }
     final rawNotes = json['notes'];
     if (rawNotes != null && rawNotes is! String) {
       throw DeckParseException('$where 的 "notes" 必须是字符串（演讲者备注）');
     }
     final notes = (rawNotes as String?)?.trim();
+    final elements = <DeckElement>[];
+    // 布局引擎：页级 layout 声明编译成绝对定位元素；仍可与 elements 混用
+    // （layout 元素在前，elements 叠加在后）。
+    if (rawLayout != null) {
+      elements.addAll(
+        buildLayoutElements(
+          _asMap(rawLayout, '$where.layout'),
+          canvas,
+          style,
+          where,
+        ),
+      );
+    }
+    if (rawElements is List) {
+      for (final (i, e) in rawElements.indexed) {
+        final map = _asMap(e, '$where.elements[$i]');
+        if (map['type'] == 'infographic') {
+          elements.addAll(
+            buildInfographicElements(map, style, '$where.elements[$i]'),
+          );
+        } else {
+          elements.add(
+            DeckElement.fromJson(map, '$where.elements[$i]', style: style),
+          );
+        }
+      }
+    }
     return DeckSlide(
       background: json['background'] == null
-          ? null
+          ? style?.background
           : DeckColor(json['background'] as String),
       notes: notes == null || notes.isEmpty ? null : notes,
-      elements: [
-        for (final (i, e) in rawElements.indexed)
-          DeckElement.fromJson(
-            _asMap(e, '$where.elements[$i]'),
-            '$where.elements[$i]',
-          ),
-      ],
+      elements: elements,
     );
   }
 
@@ -576,7 +686,12 @@ class DeckSlide {
 /// The whole deck source — the structured JSON the agent produces and both
 /// the PPTX writer and the HTML preview renderer consume.
 class DeckDocument {
-  const DeckDocument({required this.layout, required this.slides, this.title});
+  const DeckDocument({
+    required this.layout,
+    required this.slides,
+    this.title,
+    this.style,
+  });
 
   /// Parses and validates a deck.json object (or JSON string via
   /// [DeckDocument.parse]). Throws [DeckParseException] with an actionable
@@ -586,12 +701,20 @@ class DeckDocument {
     if (rawSlides is! List || rawSlides.isEmpty) {
       throw DeckParseException('deck 缺少非空数组 "slides"');
     }
+    final layout = DeckLayout.parse(json['layout'] as String?);
+    final style = DeckStyle.resolve(json['style'], 'deck.style');
     return DeckDocument(
-      layout: DeckLayout.parse(json['layout'] as String?),
+      layout: layout,
+      style: style,
       title: json['title'] as String?,
       slides: [
         for (final (i, s) in rawSlides.indexed)
-          DeckSlide.fromJson(_asMap(s, 'slides[$i]'), 'slides[$i]'),
+          DeckSlide.fromJson(
+            _asMap(s, 'slides[$i]'),
+            'slides[$i]',
+            canvas: layout,
+            style: style,
+          ),
       ],
     );
   }
@@ -610,6 +733,9 @@ class DeckDocument {
   final DeckLayout layout;
   final String? title;
   final List<DeckSlide> slides;
+
+  /// Deck-wide visual style（内置 id 或内联对象）; null = 无风格推导.
+  final DeckStyle? style;
 }
 
 Map<String, Object?> _asMap(Object? value, String where) {

@@ -601,10 +601,18 @@ class _SlideBuilder {
 
   String _shapeXml(DeckShapeElement element) {
     final id = _nextShapeId++;
-    final avLst =
+    var avLst =
         element.kind == DeckShapeKind.roundRect && element.radius != null
         ? '<a:gd name="adj" fmla="val ${(element.radius! * 100000).round()}"/>'
         : '';
+    if (element.kind == DeckShapeKind.pie) {
+      // OOXML pie 角度单位是 1/60000 度，0 = 3 点钟方向顺时针。
+      final start = ((element.angleStart ?? 0) % 360 * 60000).round();
+      final end = ((element.angleEnd ?? 270) % 360 * 60000).round();
+      avLst =
+          '<a:gd name="adj1" fmla="val $start"/>'
+          '<a:gd name="adj2" fmla="val $end"/>';
+    }
     final fill = element.fill == null
         ? '<a:noFill/>'
         : _solidFill(element.fill!, transparency: element.fillTransparency);
@@ -781,12 +789,22 @@ String _chartPartXml(DeckChartElement element) {
       '<c:pt idx="0"><c:v>${_esc(series.name)}</c:v></c:pt>'
       '</c:strCache></c:strRef></c:tx>';
 
+  final palette = element.palette == null
+      ? _chartPalette
+      : [for (final c in element.palette!) c.value];
+
   String serColor(DeckChartSeries series, int serIndex) =>
-      series.color?.value ?? _chartPalette[serIndex % _chartPalette.length];
+      series.color?.value ?? palette[serIndex % palette.length];
+
+  String catColor(int catIndex) => palette[catIndex % palette.length];
 
   final String plot;
   switch (element.kind) {
     case DeckChartKind.bar:
+    case DeckChartKind.stackedBar:
+    case DeckChartKind.horizontalBar:
+      final stacked = element.kind == DeckChartKind.stackedBar;
+      final horizontal = element.kind == DeckChartKind.horizontalBar;
       final sers = [
         for (final (i, s) in element.series.indexed)
           '<c:ser><c:idx val="$i"/><c:order val="$i"/>'
@@ -795,10 +813,13 @@ String _chartPartXml(DeckChartElement element) {
               '$catRef${valRef(s, i)}</c:ser>',
       ].join();
       plot =
-          '<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/>'
-          '<c:varyColors val="0"/>$sers<c:gapWidth val="150"/>'
+          '<c:barChart><c:barDir val="${horizontal ? 'bar' : 'col'}"/>'
+          '<c:grouping val="${stacked ? 'stacked' : 'clustered'}"/>'
+          '<c:varyColors val="0"/>$sers'
+          '<c:gapWidth val="${stacked ? 60 : 150}"/>'
+          '${stacked ? '<c:overlap val="100"/>' : ''}'
           '<c:axId val="111111111"/><c:axId val="222222222"/></c:barChart>'
-          '$_chartAxesXml';
+          '${horizontal ? _chartAxesHorizontalXml : _chartAxesXml}';
     case DeckChartKind.line:
       final sers = [
         for (final (i, s) in element.series.indexed)
@@ -814,26 +835,101 @@ String _chartPartXml(DeckChartElement element) {
           '<c:axId val="111111111"/><c:axId val="222222222"/></c:lineChart>'
           '$_chartAxesXml';
     case DeckChartKind.pie:
+    case DeckChartKind.doughnut:
       final series = element.series.first;
       final points = [
         for (var i = 0; i < catCount; i++)
           '<c:dPt><c:idx val="$i"/><c:bubble3D val="0"/>'
-              '<c:spPr><a:solidFill><a:srgbClr val="${_chartPalette[i % _chartPalette.length]}"/></a:solidFill></c:spPr></c:dPt>',
+              '<c:spPr><a:solidFill><a:srgbClr val="${catColor(i)}"/></a:solidFill></c:spPr></c:dPt>',
+      ].join();
+      final ser =
+          '<c:ser><c:idx val="0"/><c:order val="0"/>'
+          '${serTx(series, 0)}$points$catRef${valRef(series, 0)}</c:ser>';
+      plot = element.kind == DeckChartKind.pie
+          ? '<c:pieChart><c:varyColors val="1"/>$ser'
+                '<c:firstSliceAng val="0"/></c:pieChart>'
+          : '<c:doughnutChart><c:varyColors val="1"/>$ser'
+                '<c:firstSliceAng val="0"/><c:holeSize val="55"/></c:doughnutChart>';
+    case DeckChartKind.area:
+      final sers = [
+        for (final (i, s) in element.series.indexed)
+          '<c:ser><c:idx val="$i"/><c:order val="$i"/>'
+              '${serTx(s, i)}'
+              '<c:spPr><a:solidFill><a:srgbClr val="${serColor(s, i)}"><a:alpha val="60000"/></a:srgbClr></a:solidFill>'
+              '<a:ln w="19050"><a:solidFill><a:srgbClr val="${serColor(s, i)}"/></a:solidFill></a:ln></c:spPr>'
+              '$catRef${valRef(s, i)}</c:ser>',
       ].join();
       plot =
-          '<c:pieChart><c:varyColors val="1"/>'
-          '<c:ser><c:idx val="0"/><c:order val="0"/>'
-          '${serTx(series, 0)}$points$catRef${valRef(series, 0)}</c:ser>'
-          '<c:firstSliceAng val="0"/></c:pieChart>';
+          '<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>'
+          '$sers<c:axId val="111111111"/><c:axId val="222222222"/></c:areaChart>'
+          '$_chartAxesXml';
+    case DeckChartKind.radar:
+      final sers = [
+        for (final (i, s) in element.series.indexed)
+          '<c:ser><c:idx val="$i"/><c:order val="$i"/>'
+              '${serTx(s, i)}'
+              '<c:spPr><a:ln w="25400"><a:solidFill><a:srgbClr val="${serColor(s, i)}"/></a:solidFill></a:ln></c:spPr>'
+              '<c:marker><c:symbol val="circle"/><c:size val="5"/></c:marker>'
+              '$catRef${valRef(s, i)}</c:ser>',
+      ].join();
+      plot =
+          '<c:radarChart><c:radarStyle val="marker"/><c:varyColors val="0"/>'
+          '$sers<c:axId val="111111111"/><c:axId val="222222222"/></c:radarChart>'
+          '$_chartAxesXml';
+    case DeckChartKind.scatter:
+      // x 轴取自 categories：能解析为数字则用数值，否则用 1..n 序号。
+      final xs = [
+        for (final (i, cat) in element.categories.indexed)
+          double.tryParse(cat) ?? (i + 1).toDouble(),
+      ];
+      final xRef =
+          '<c:xVal><c:numRef>'
+          '<c:f>Sheet1!\$A\$2:\$A\$${catCount + 1}</c:f>'
+          '<c:numCache><c:formatCode>General</c:formatCode>'
+          '<c:ptCount val="$catCount"/>'
+          '${[for (final (i, x) in xs.indexed) '<c:pt idx="$i"><c:v>$x</c:v></c:pt>'].join()}'
+          '</c:numCache></c:numRef></c:xVal>';
+      String yRef(DeckChartSeries s, int serIndex) {
+        final col = _chartColumn(serIndex);
+        return '<c:yVal><c:numRef>'
+            '<c:f>Sheet1!\$$col\$2:\$$col\$${catCount + 1}</c:f>'
+            '<c:numCache><c:formatCode>General</c:formatCode>'
+            '<c:ptCount val="$catCount"/>'
+            '${[for (final (i, v) in s.values.indexed) '<c:pt idx="$i"><c:v>$v</c:v></c:pt>'].join()}'
+            '</c:numCache></c:numRef></c:yVal>';
+      }
+
+      final sers = [
+        for (final (i, s) in element.series.indexed)
+          '<c:ser><c:idx val="$i"/><c:order val="$i"/>'
+              '${serTx(s, i)}'
+              '<c:spPr><a:ln><a:noFill/></a:ln></c:spPr>'
+              '<c:marker><c:symbol val="circle"/><c:size val="6"/>'
+              '<c:spPr><a:solidFill><a:srgbClr val="${serColor(s, i)}"/></a:solidFill></c:spPr></c:marker>'
+              '$xRef${yRef(s, i)}</c:ser>',
+      ].join();
+      plot =
+          '<c:scatterChart><c:scatterStyle val="lineMarker"/><c:varyColors val="0"/>'
+          '$sers<c:axId val="111111111"/><c:axId val="222222222"/></c:scatterChart>'
+          '$_scatterAxesXml';
   }
 
+  final textFill = element.textColor == null
+      ? ''
+      : '<a:solidFill><a:srgbClr val="${element.textColor!.value}"/></a:solidFill>';
   final title = element.title == null
       ? '<c:autoTitleDeleted val="1"/>'
       : '<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/>'
-            '<a:p><a:pPr><a:defRPr sz="1400" b="1"/></a:pPr>'
+            '<a:p><a:pPr><a:defRPr sz="1400" b="1">$textFill</a:defRPr></a:pPr>'
             '<a:r><a:t>${_esc(element.title!)}</a:t></a:r></a:p>'
             '</c:rich></c:tx><c:overlay val="0"/></c:title>'
             '<c:autoTitleDeleted val="0"/>';
+  // 风格下：图表区透明融入幻灯片背景，轴/图例/标题文字用风格正文色。
+  final chartSpaceProps = element.textColor == null
+      ? ''
+      : '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>'
+            '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>'
+            '<a:defRPr>$textFill</a:defRPr></a:pPr><a:endParaRPr lang="zh-CN"/></a:p></c:txPr>';
 
   return '$_xmlDecl'
       '<c:chartSpace xmlns:c="$_nsC" xmlns:a="$_nsA" xmlns:r="$_nsR">'
@@ -841,8 +937,32 @@ String _chartPartXml(DeckChartElement element) {
       '<c:plotArea><c:layout/>$plot</c:plotArea>'
       '<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>'
       '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/>'
-      '</c:chart></c:chartSpace>';
+      '</c:chart>$chartSpaceProps</c:chartSpace>';
 }
+
+/// Two value axes for scatter charts.
+const String _scatterAxesXml =
+    '<c:valAx><c:axId val="111111111"/>'
+    '<c:scaling><c:orientation val="minMax"/></c:scaling>'
+    '<c:delete val="0"/><c:axPos val="b"/>'
+    '<c:crossAx val="222222222"/></c:valAx>'
+    '<c:valAx><c:axId val="222222222"/>'
+    '<c:scaling><c:orientation val="minMax"/></c:scaling>'
+    '<c:delete val="0"/><c:axPos val="l"/>'
+    '<c:majorGridlines/>'
+    '<c:crossAx val="111111111"/></c:valAx>';
+
+/// Axes for horizontal bar charts（类别轴在左，数值轴在底）.
+const String _chartAxesHorizontalXml =
+    '<c:catAx><c:axId val="111111111"/>'
+    '<c:scaling><c:orientation val="minMax"/></c:scaling>'
+    '<c:delete val="0"/><c:axPos val="l"/>'
+    '<c:crossAx val="222222222"/></c:catAx>'
+    '<c:valAx><c:axId val="222222222"/>'
+    '<c:scaling><c:orientation val="minMax"/></c:scaling>'
+    '<c:delete val="0"/><c:axPos val="b"/>'
+    '<c:majorGridlines/>'
+    '<c:crossAx val="111111111"/></c:valAx>';
 
 /// Category (bottom) + value (left) axes shared by bar/line charts.
 const String _chartAxesXml =
