@@ -187,7 +187,7 @@ bool toolRouteIsReadOnly(ToolRoute route) => switch (route) {
   WebSearchToolRoute() => true,
   MemorySearchToolRoute() => true,
   BridgeToolRoute() => false,
-  PptxToolRoute() => route.toolName == 'pptx_check',
+  PptxToolRoute() => const {'pptx_check', 'pptx_read'}.contains(route.toolName),
   TerminalToolRoute() => false,
   RemoteToolRoute() => false,
   StdioToolRoute() => false,

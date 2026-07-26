@@ -40,6 +40,14 @@ class DeckPreview extends StatelessWidget {
           ),
         for (final (index, slide) in deck.slides.indexed) ...[
           _SlideCanvas(deck: deck, slide: slide),
+          if (slide.notes != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '备注：${slide.notes}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 12),
             child: Text(

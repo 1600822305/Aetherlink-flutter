@@ -28,6 +28,11 @@ String renderDeckHtml(DeckDocument deck) {
     ..write('.el{position:absolute;box-sizing:border-box;}')
     ..write('table.deck{border-collapse:collapse;width:100%;height:100%;}')
     ..write('table.deck td{padding:2px 6px;vertical-align:middle;}')
+    ..write(
+      '.notes{width:${pageW}px;box-sizing:border-box;margin-top:-16px;'
+      'padding:8px 12px;background:#222;color:#bbb;font-size:13px;'
+      'white-space:pre-wrap;}',
+    )
     ..write('</style></head><body>');
   for (final slide in deck.slides) {
     final bg = slide.background;
@@ -44,6 +49,9 @@ String renderDeckHtml(DeckDocument deck) {
       });
     }
     buf.write('</div>');
+    if (slide.notes != null) {
+      buf.write('<div class="notes">备注：${_esc(slide.notes!)}</div>');
+    }
   }
   buf.write('</body></html>');
   return buf.toString();

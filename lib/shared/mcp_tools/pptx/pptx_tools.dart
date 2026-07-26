@@ -32,13 +32,17 @@ Future<McpToolResult> runPptxTool(
   try {
     switch (toolName) {
       case 'pptx_check':
-        return _check(args);
+        return await _check(args);
       case 'pptx_render':
         return await _render(ref, args);
+      case 'pptx_read':
+        return await _read(ref, args);
     }
     return fileEditorError('未知的工具: $toolName');
   } on DeckParseException catch (e) {
     return fileEditorError('deck 源无效：${e.message}');
+  } on PptxReadException catch (e) {
+    return fileEditorError('pptx 读取失败：${e.message}');
   } on FileEditorError catch (e) {
     return fileEditorError(e.message);
   } catch (e) {
@@ -68,15 +72,26 @@ Map<String, Object?> _qaSummary(List<DeckQaIssue> issues) => {
       .toList(),
 };
 
-McpToolResult _check(Map<String, Object?> args) {
+Future<McpToolResult> _check(Map<String, Object?> args) async {
   final deck = _parseDeckArg(args);
   final issues = runDeckQa(deck);
+  // deck_validate：实际构建一次 pptx 包并做结构自检（内容类型覆盖/
+  // 关系完整性/图表与备注引用），对齐 validate.py 的检查面。
+  final deckJson = jsonEncode(_deckToTransferable(args));
+  final structureIssues = await Isolate.run(() {
+    final bytes = buildPptxBytes(DeckDocument.parse(deckJson));
+    return [for (final i in validatePptxPackage(bytes)) i.toJson()];
+  });
+  final hasErrors =
+      issues.any((i) => i.severity == DeckQaSeverity.error) ||
+      structureIssues.isNotEmpty;
   return fileEditorOk({
     'valid': true,
     'slides': deck.slides.length,
     'qa': _qaSummary(issues),
-    'message': issues.any((i) => i.severity == DeckQaSeverity.error)
-        ? 'deck 结构合法，但有布局错误需要修正后再导出'
+    'structure': {'errors': structureIssues},
+    'message': hasErrors
+        ? 'deck 结构合法，但有错误需要修正后再导出'
         : 'deck 通过校验，可以调用 pptx_render 导出',
   });
 }
@@ -103,6 +118,15 @@ Future<McpToolResult> _render(Ref ref, Map<String, Object?> args) async {
   final bytes = await Isolate.run(
     () => buildPptxBytes(DeckDocument.parse(deckJson)),
   );
+  final structureIssues = [
+    for (final i in validatePptxPackage(bytes)) i.toJson(),
+  ];
+  if (structureIssues.isNotEmpty && !force) {
+    return fileEditorError(
+      '导出的 pptx 包结构自检未通过，未写入文件（可传 force=true 强制）：\n'
+      '${jsonEncode(structureIssues)}',
+    );
+  }
 
   final pptxPath = await _writeBytes(ref, args, path, bytes);
   String? previewPath;
@@ -123,6 +147,53 @@ Future<McpToolResult> _render(Ref ref, Map<String, Object?> args) async {
     'slides': deck.slides.length,
     'sizeBytes': bytes.length,
     'qa': _qaSummary(issues),
+    'structure': {'errors': structureIssues},
+  });
+}
+
+/// 单文件读取上限：超大 pptx（内嵌视频等）直接拒绝，避免把内存打爆。
+const int _kMaxReadBytes = 50 * 1024 * 1024;
+
+Future<McpToolResult> _read(Ref ref, Map<String, Object?> args) async {
+  final path = requireString(args, 'path');
+  final lower = path.toLowerCase();
+  if (!lower.endsWith('.pptx') && !lower.endsWith('.potx')) {
+    throw const FileEditorError('path 必须以 .pptx 或 .potx 结尾');
+  }
+  final format = optionalString(args, 'format') ?? 'markdown';
+  if (format != 'markdown' && format != 'deck') {
+    throw const FileEditorError('format 只支持 markdown / deck');
+  }
+  final resolved = await resolvePathArg(ref, args, path);
+  final List<int> raw;
+  try {
+    raw = await resolved.backend.readFileBytes(resolved.path);
+  } catch (e) {
+    throw FileEditorError('读取文件失败：$path（$e）');
+  }
+  if (raw.length > _kMaxReadBytes) {
+    throw FileEditorError('文件过大（${raw.length} 字节，上限 $_kMaxReadBytes），无法读取');
+  }
+  final bytes = Uint8List.fromList(raw);
+  final result = await Isolate.run(() => readPptxBytes(bytes));
+  final structureIssues = [
+    for (final i in validatePptxPackage(bytes)) i.toJson(),
+  ];
+  return fileEditorOk({
+    'path': path,
+    'slides': result.slides.length,
+    if (result.title != null) 'title': result.title,
+    'canvas':
+        '${result.slideWidthInches.toStringAsFixed(2)}×'
+        '${result.slideHeightInches.toStringAsFixed(2)} 英寸',
+    if (format == 'markdown') 'markdown': pptxToMarkdown(result),
+    if (format == 'deck') 'deck': pptxToDeckSkeleton(result),
+    'structure': {
+      'errors': structureIssues,
+      'message': structureIssues.isEmpty
+          ? '包结构完整'
+          : '包结构有 ${structureIssues.length} 处问题（不影响内容提取）',
+    },
   });
 }
 

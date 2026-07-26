@@ -137,9 +137,10 @@ const List<McpServer> kBuiltinMcpServers = [
     type: McpServerType.inMemory,
     category: McpServerCategory.builtin,
     description:
-        'AI PPT 工具，把结构化 deck.json 源渲染成原生可编辑的 .pptx 写入工作区'
-        '（文本/形状/图片/表格/图表均为原生 OOXML 对象），内置布局 QA（溢出/密度/字号）'
-        '与 HTML 预览导出。纯 Dart 端上生成，零外部运行时。',
+        'AI PPT 工具：把结构化 deck.json 源渲染成原生可编辑的 .pptx 写入工作区'
+        '（文本/形状/图片/表格/图表均为原生 OOXML 对象，支持演讲者备注），读取'
+        '已有 .pptx 提取文本/表格/图表/备注，内置布局 QA（溢出/密度/字号）、'
+        '包结构自检与 HTML 预览导出。纯 Dart 端上生成，零外部运行时。',
     provider: 'AetherAI',
     tags: ['PPT', '幻灯片', '演示文稿', 'PPTX', '生成', '工具'],
   ),
