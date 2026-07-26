@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '1.0.0',
+  version: '1.1.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -30,6 +30,9 @@ const Skill kPptSkill = Skill(
 2. 写大纲（每页一句话），再逐页展开成 deck.json。
 3. `pptx_check` 自检 → 按返回的 errors/warnings 修改源 → 重查。
 4. 通过后 `pptx_render` 导出（路径如 `演示文稿/主题.pptx`）。
+5. 同时用 file-editor 的 `write` 把 deck 源存为同名 `主题.deck.json`：
+   用户在工作区点开它可直接预览幻灯片（编辑器右上角「PPT 预览」），
+   后续修改也从这份源迭代。
 
 ## deck.json 源格式
 
