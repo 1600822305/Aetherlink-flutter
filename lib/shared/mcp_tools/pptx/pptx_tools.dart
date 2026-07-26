@@ -15,7 +15,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_pptx/aetherlink_pptx.dart';
 
+import 'package:aetherlink_flutter/app/di/media_generation_access.dart';
+import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_write_handlers.dart';
 
@@ -38,6 +42,8 @@ Future<McpToolResult> runPptxTool(
         return await _render(ref, args);
       case 'pptx_edit':
         return await _edit(ref, args);
+      case 'pptx_illustrate':
+        return await _illustrate(ref, args);
       case 'pptx_read':
         return await _read(ref, args);
       case 'pptx_styles':
@@ -442,6 +448,98 @@ Map<String, Object?> _applyOp(
   }
   result['slides'] = slides;
   return result;
+}
+
+/// AI 配图：用已配置的图像生成模型把 prompt 生成为图片存进工作区，
+/// 之后用 image 元素的 src 引用；无可用图像模型时返回明确错误，
+/// 技能侧降级为色块/形状装饰。
+Future<McpToolResult> _illustrate(Ref ref, Map<String, Object?> args) async {
+  final prompt = requireString(args, 'prompt');
+  final path = requireString(args, 'path');
+  final lower = path.toLowerCase();
+  if (!lower.endsWith('.png') &&
+      !lower.endsWith('.jpg') &&
+      !lower.endsWith('.jpeg')) {
+    throw const FileEditorError('path 必须以 .png / .jpg / .jpeg 结尾');
+  }
+
+  final providers = await ref.read(appModelProvidersProvider.future);
+  final candidates = <CurrentModel>[
+    for (final provider in providers)
+      for (final model in provider.models)
+        if (isGenerateImageModel(model))
+          CurrentModel(provider: provider, model: model),
+  ];
+  if (candidates.isEmpty) {
+    throw const FileEditorError(
+      '没有配置任何图像生成模型：无法 AI 配图。'
+      '请降级为色块/形状装饰，或引导用户在模型设置里添加图像生成模型',
+    );
+  }
+  final wanted = optionalString(args, 'model')?.trim().toLowerCase();
+  CurrentModel selected = candidates.first;
+  if (wanted != null && wanted.isNotEmpty) {
+    final match = candidates
+        .where(
+          (c) =>
+              c.model.id.toLowerCase() == wanted ||
+              c.model.name.toLowerCase() == wanted,
+        )
+        .firstOrNull;
+    if (match == null) {
+      throw FileEditorError(
+        '没有名为「$wanted」的图像生成模型；可用：'
+        '${candidates.map((c) => c.model.name).join('、')}',
+      );
+    }
+    selected = match;
+  }
+
+  final gateway = ref.read(appMediaGenerationGatewayProvider);
+  final List<String> urls;
+  try {
+    urls = await gateway.generateImages(
+      model: effectiveModelFor(selected),
+      prompt: prompt,
+    );
+  } catch (e) {
+    throw FileEditorError('图像生成失败（模型 ${selected.model.name}）：$e');
+  }
+  if (urls.isEmpty) {
+    throw FileEditorError('图像生成模型 ${selected.model.name} 未返回任何图片');
+  }
+
+  final url = urls.first;
+  final List<int> bytes;
+  if (url.startsWith('data:')) {
+    final comma = url.indexOf(',');
+    if (comma < 0) throw const FileEditorError('生成结果 data URL 格式无效');
+    try {
+      bytes = base64Decode(url.substring(comma + 1).trim());
+    } on FormatException {
+      throw const FileEditorError('生成结果 data URL 不是合法 base64');
+    }
+  } else {
+    bytes = await _loadImage(ref, args, url);
+  }
+  if (detectImageFormat(Uint8List.fromList(bytes)) == null) {
+    throw const FileEditorError('生成结果不是 PNG/JPEG 图片，无法嵌入 pptx');
+  }
+
+  final saved = await _writeBytes(
+    ref,
+    args,
+    path,
+    Uint8List.fromList(bytes),
+    overwrite: true,
+  );
+  return fileEditorOk({
+    'message': '配图已生成，在 image 元素里用 "src": "$path" 引用',
+    'path': saved,
+    'model': selected.model.name,
+    'sizeBytes': bytes.length,
+    if (urls.length > 1) 'extraUrls': urls.sublist(1),
+  });
 }
 
 /// 单文件读取上限：超大 pptx（内嵌视频等）直接拒绝，避免把内存打爆。

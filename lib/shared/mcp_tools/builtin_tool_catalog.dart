@@ -1630,6 +1630,36 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'required': ['source', 'ops'],
       },
     ),
+    McpToolDefinition(
+      name: 'pptx_illustrate',
+      description:
+          'AI 配图：用已配置的图像生成模型把 prompt 生成为图片并保存到工作区，'
+          '之后在 deck.json 的 image 元素里用 "src": "<路径>" 引用。'
+          '没有配置任何图像生成模型时返回错误（此时降级为色块/形状装饰）。'
+          '配图 prompt 建议贴合所选风格（见 pptx_styles）。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'prompt': {
+            'type': 'string',
+            'description': '配图描述（建议含风格关键词、构图、配色，避免要求文字入图）',
+          },
+          'path': {
+            'type': 'string',
+            'description': '保存路径（工作区相对路径，以 .png/.jpg/.jpeg 结尾，已存在则覆盖）',
+          },
+          'model': {
+            'type': 'string',
+            'description': '可选：指定图像生成模型（id 或名称）；默认用第一个可用的图像模型',
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+        },
+        'required': ['prompt', 'path'],
+      },
+    ),
   ],
 };
 
