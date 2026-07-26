@@ -25,7 +25,9 @@ class WorkbenchFocusTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isLoading = ref.watch(
-      agentTaskEventsProvider(task.id).select((a) => a.isLoading && !a.hasValue),
+      agentTaskEventsProvider(
+        task.id,
+      ).select((a) => a.isLoading && !a.hasValue),
     );
     if (isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -438,12 +440,18 @@ class _ToolFocus extends ConsumerWidget {
           child: DevinDiffLinesLazy(rows: rows, followTail: streaming),
         );
       } else {
-        final detail = _tailLines(
+        var detail = _tailLines(
           event.resultDetail == null
               ? event.resultSummary
               : _readableResult(event.resultDetail!),
           _kTerminalTailLines,
         );
+        // 非编辑/终端类工具（如 pptx_render 的 deck JSON）参数仍在
+        // 流式生成时，直接跟随原始参数文本尾部，保持与其他工具一致
+        // 的实时反馈；执行完成后切回结果展示。
+        if (detail.isEmpty && args != null && args.isNotEmpty) {
+          detail = _tailLines(args, _kStreamingTailLines);
+        }
         body = _MonoPane(text: detail.isEmpty ? '（暂无输出）' : detail);
       }
     }

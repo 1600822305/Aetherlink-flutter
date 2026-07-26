@@ -325,10 +325,7 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     '还没有最近打开的工作区，先去工作区页打开一个',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: cs.onSurfaceVariant,
-                    ),
+                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                   ),
                 ),
             ],
@@ -397,8 +394,8 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
       avatar: selected
           ? Icon(LucideIcons.check, size: 14, color: cs.primary)
           : icon != null
-              ? Icon(icon, size: 13, color: cs.onSurface.withValues(alpha: 0.6))
-              : null,
+          ? Icon(icon, size: 13, color: cs.onSurface.withValues(alpha: 0.6))
+          : null,
       label: Text(label),
       labelStyle: TextStyle(
         fontSize: 12,
@@ -449,6 +446,7 @@ String _toolGroupLabel(AgentToolGroup g) => switch (g) {
   AgentToolGroup.webSearch => '网络搜索',
   AgentToolGroup.knowledgeBase => '知识库',
   AgentToolGroup.skills => '技能',
+  AgentToolGroup.pptx => 'PPT 生成',
 };
 
 Widget _label(ThemeData theme, String text) => Text(

@@ -158,12 +158,11 @@ class AgentSettingsTab extends ConsumerWidget {
   }
 }
 
-
 String _formatK(int tokens) => tokens >= 1000000
     ? '${(tokens / 1000000).toStringAsFixed(tokens % 1000000 == 0 ? 0 : 1)}M'
     : tokens >= 1000
-        ? '${(tokens / 1000).toStringAsFixed(tokens % 1000 == 0 ? 0 : 1)}k'
-        : '$tokens';
+    ? '${(tokens / 1000).toStringAsFixed(tokens % 1000 == 0 ? 0 : 1)}k'
+    : '$tokens';
 
 String _modeLabel(AgentSessionMode mode) => switch (mode) {
   AgentSessionMode.code => 'Code',
@@ -178,6 +177,7 @@ String _toolGroupLabel(AgentToolGroup g) => switch (g) {
   AgentToolGroup.webSearch => '网搜',
   AgentToolGroup.knowledgeBase => '知识库',
   AgentToolGroup.skills => '技能',
+  AgentToolGroup.pptx => 'PPT',
 };
 
 /// 可折叠分组（对齐聊天设置 tab 的手风琴分组形态）。
@@ -336,9 +336,7 @@ class _SelectRow<T> extends StatelessWidget {
                   checkmarkColor: cs.primary,
                   side: v == value
                       ? BorderSide(color: cs.primary)
-                      : BorderSide(
-                          color: cs.onSurface.withValues(alpha: 0.15),
-                        ),
+                      : BorderSide(color: cs.onSurface.withValues(alpha: 0.15)),
                   onSelected: (_) => onChanged(v),
                 ),
             ],

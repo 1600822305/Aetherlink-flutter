@@ -34,7 +34,11 @@ const List<AgentProfile> kBuiltinAgentProfiles = [
     name: 'PPT 文档',
     emoji: '📊',
     systemPrompt: '你是一名文档/演示专家……',
-    tools: {AgentToolGroup.fileEditor, AgentToolGroup.skills},
+    tools: {
+      AgentToolGroup.fileEditor,
+      AgentToolGroup.skills,
+      AgentToolGroup.pptx,
+    },
     builtin: true,
   ),
 ];

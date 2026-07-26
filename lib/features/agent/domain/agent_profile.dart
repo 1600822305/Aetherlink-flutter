@@ -3,7 +3,14 @@
 library;
 
 /// 档案可勾选的工具分组，决定该智能体每轮可见的工具清单。
-enum AgentToolGroup { fileEditor, terminal, webSearch, knowledgeBase, skills }
+enum AgentToolGroup {
+  fileEditor,
+  terminal,
+  webSearch,
+  knowledgeBase,
+  skills,
+  pptx,
+}
 
 /// 一个智能体档案 = 名称/图标 + 专长系统提示段 + 工具集 + 绑定工作区 +
 /// 权限偏好。内置预设（编程/网络研究/PPT 文档）不可删可复制。

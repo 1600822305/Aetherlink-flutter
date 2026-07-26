@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_permission_rules.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_skill_visibility.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/context_breakdown.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
@@ -324,7 +325,9 @@ DynamicToolCatalog _catalogFor(
 
   if (groups.contains(AgentToolGroup.fileEditor)) {
     addServer(kFileEditorServerName, FileEditorToolRoute.new);
-    // PPT 生成与文件编辑同组：都是工作区文件产出，导出走 HITL 审批。
+  }
+  // PPT 独立工具组：编辑智能体时可单独开关，不随文件编辑组强制注入。
+  if (groups.contains(AgentToolGroup.pptx)) {
     addServer(kPptxServerName, PptxToolRoute.new);
   }
   if (groups.contains(AgentToolGroup.terminal) && !readOnly) {
@@ -871,7 +874,13 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     try {
       skills = await ref.read(skillsProvider.future);
     } catch (_) {}
-    final enabled = skills.where((s) => s.enabled).toList();
+    // 与工具动态注入同步：档案没开对应工具分组（如网搜/PPT）的内置
+    // 技能不列入，避免模型读到技能却调不到工具。
+    final enabled = skills
+        .where(
+          (s) => s.enabled && builtinSkillAvailableFor(s.id, _profile.tools),
+        )
+        .toList();
     // 项目级技能（绑定工作区的 .aetherlink/.agents/.claude/.cursor
     // skills 目录）：只随该工作区的任务动态加载，不进全局技能库。
     List<Skill> project = const [];
