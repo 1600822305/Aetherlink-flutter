@@ -14,7 +14,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -33,6 +32,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/session_terminal.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/terminal_extra_keys.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -60,34 +60,6 @@ class _TerminalTab {
     outSub = null;
     await session?.close();
     session = null;
-  }
-}
-
-/// AI 长驻会话的联动视图：接入会话池里的会话，回放历史缓冲 +
-/// 订阅实时输出；键入直接写进会话 stdin（用户可接管）。关闭视图只
-/// 断开订阅，不关会话本身（会话生命周期归会话池 / AI 管）。
-class _AiSessionView {
-  _AiSessionView(this.session, {required String Function(String) transform}) {
-    // 缓冲里就是 PTY 原始字节（含 \r\n 与 ANSI 序列），直接回放。
-    terminal.write(session.snapshot());
-    _sub = session.chunks.listen((chunk) {
-      terminal.write(chunk);
-    });
-    terminal.onOutput = (data) {
-      if (session.alive) session.writeInput(transform(data));
-    };
-  }
-
-  final PooledWorkspaceSession session;
-  final Terminal terminal = Terminal(maxLines: 10000);
-  final TerminalController controller = TerminalController();
-  final FocusNode focusNode = FocusNode();
-  StreamSubscription<String>? _sub;
-
-  Future<void> detach() async {
-    focusNode.dispose();
-    await _sub?.cancel();
-    _sub = null;
   }
 }
 
@@ -157,7 +129,7 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
   int _nextTabNumber = 1;
 
   /// 已接入的 AI 会话视图（按 sessionId）；[_activeAi] 非空时展示 AI 会话。
-  final Map<String, _AiSessionView> _aiViews = {};
+  final Map<String, SessionTerminalAttachment> _aiViews = {};
   String? _activeAi;
   WorkspaceSessionPoolManager? _poolManager;
 
@@ -255,7 +227,8 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
     setState(() {
       _aiViews.putIfAbsent(
         session.id,
-        () => _AiSessionView(session, transform: _extraKeys.transform),
+        () =>
+            SessionTerminalAttachment(session, transform: _extraKeys.transform),
       );
       _activeAi = session.id;
     });
@@ -373,33 +346,6 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
     } else {
       node.requestFocus();
     }
-  }
-
-  /// 复制当前选区（长按拖拽选中后点复制键）。
-  Future<void> _copySelection(
-    Terminal terminal,
-    TerminalController controller,
-  ) async {
-    final range = controller.selection;
-    if (range == null) {
-      AppToast.info(context, '先长按选中要复制的内容');
-      return;
-    }
-    final text = terminal.buffer.getText(range);
-    controller.clearSelection();
-    await Clipboard.setData(ClipboardData(text: text));
-    if (mounted) AppToast.info(context, '已复制');
-  }
-
-  /// 粘贴剪贴板（走 bracketed paste，多行命令不会被逐行执行）。
-  Future<void> _pasteClipboard(Terminal terminal) async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text;
-    if (text == null || text.isEmpty) {
-      if (mounted) AppToast.info(context, '剪贴板为空');
-      return;
-    }
-    terminal.paste(text);
   }
 
   /// 扫描终端缓冲里的 `path:line` 引用（编译报错 / grep -n / 堆栈），
@@ -700,38 +646,19 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
     );
   }
 
-  /// AI 会话的 tab chip：机器人图标 + 会话名，点按接入实时围观。
+  /// AI 会话的 tab chip：点按接入实时围观，长按可手动关闭会话释放池位。
   Widget _aiChip(PooledWorkspaceSession session) {
-    final selected = _activeAi == session.id;
-    return GestureDetector(
+    return SessionChip(
+      session: session,
+      selected: _activeAi == session.id,
       onTap: () => _openAiSession(session),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white12 : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: selected ? Colors.white38 : Colors.white12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              LucideIcons.bot,
-              size: 13,
-              color: session.busy ? Colors.amberAccent : Colors.greenAccent,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'AI · ${session.name}',
-              style: TextStyle(
-                fontSize: 13,
-                color: selected ? Colors.white : Colors.white60,
-              ),
-            ),
-          ],
-        ),
-      ),
+      onClose: () => _closeAiSession(session),
     );
+  }
+
+  Future<void> _closeAiSession(PooledWorkspaceSession session) async {
+    await _poolManager?.close(session.id);
+    if (mounted) _refreshAiViews();
   }
 
   Widget _tabChip(int index) {
@@ -798,7 +725,7 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
     if (aiView != null) {
       return Column(
         children: [
-          _AiSessionStatusBar(session: aiView.session),
+          AiSessionStatusBar(session: aiView.session),
           Expanded(
             child: TerminalView(
               aiView.terminal,
@@ -811,8 +738,12 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
           TerminalExtraKeysBar(
             controller: _extraKeys,
             terminal: aiView.terminal,
-            onCopy: () => _copySelection(aiView.terminal, aiView.controller),
-            onPaste: () => _pasteClipboard(aiView.terminal),
+            onCopy: () => copyTerminalSelection(
+              context,
+              aiView.terminal,
+              aiView.controller,
+            ),
+            onPaste: () => pasteClipboardToTerminal(context, aiView.terminal),
             onFontAdjust: ref.read(terminalFontSizeProvider.notifier).adjust,
             onJumpToFile: () => _jumpToFileLink(aiView.terminal),
             onToggleKeyboard: () => _toggleKeyboard(aiView.focusNode),
@@ -844,8 +775,9 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
           TerminalExtraKeysBar(
             controller: _extraKeys,
             terminal: tab.terminal,
-            onCopy: () => _copySelection(tab.terminal, tab.controller),
-            onPaste: () => _pasteClipboard(tab.terminal),
+            onCopy: () =>
+                copyTerminalSelection(context, tab.terminal, tab.controller),
+            onPaste: () => pasteClipboardToTerminal(context, tab.terminal),
             onFontAdjust: ref.read(terminalFontSizeProvider.notifier).adjust,
             onJumpToFile: () => _jumpToFileLink(tab.terminal),
             onToggleKeyboard: () => _toggleKeyboard(tab.focusNode),
@@ -878,68 +810,6 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
             label: Text(tab.error == null ? '启动终端' : '重试'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// AI 会话围观视图顶部的状态条：实时显示会话是否被 AI 命令占用，
-/// 让用户知道此刻键入会不会打进 AI 正在跑的命令；忙时提供一键中断。
-class _AiSessionStatusBar extends StatelessWidget {
-  const _AiSessionStatusBar({required this.session});
-
-  final PooledWorkspaceSession session;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: session.busyListenable,
-      builder: (context, busy, _) => Container(
-        height: 30,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        color: busy ? const Color(0xFF3A2E12) : const Color(0xFF16281B),
-        child: Row(
-          children: [
-            Icon(
-              busy ? LucideIcons.loader : LucideIcons.check,
-              size: 13,
-              color: busy ? Colors.amberAccent : Colors.greenAccent,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                busy ? 'AI 命令执行中 · 此刻键入会打进该命令的 stdin' : '会话空闲 · 可直接键入接管',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: busy ? Colors.amberAccent : Colors.white60,
-                ),
-              ),
-            ),
-            if (busy)
-              GestureDetector(
-                onTap: () {
-                  try {
-                    session.interrupt();
-                  } on WorkspaceSessionException catch (e) {
-                    AppToast.info(context, e.message);
-                  }
-                },
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    '中断',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }
