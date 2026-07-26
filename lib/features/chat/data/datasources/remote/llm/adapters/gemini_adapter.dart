@@ -189,7 +189,7 @@ class GeminiAdapter implements LlmGateway {
       );
       return response.data!.stream;
     } on DioException catch (e) {
-      throw networkFailureFromDio(e);
+      throw await networkFailureFromStreamingDio(e);
     }
   }
 

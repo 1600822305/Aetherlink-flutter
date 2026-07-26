@@ -96,7 +96,7 @@ const Map<String, List<SettingsToolMeta>> kSettingsToolMeta = {
       permission: SettingsToolPermission.confirm,
       description: '从供应商中删除指定模型（需要用户确认）',
     ),
-    // mcp_manage 按 action 分级审批（list 免审，其余走确认），
+    // manage_mcp 按 action 分级审批（list 免审，其余走确认），
     // 见 tool_confirmation 的 mcpManageNeedsConfirmation。
     SettingsToolMeta(
       name: kMcpManageToolName,

@@ -356,7 +356,7 @@ DynamicToolCatalog _catalogFor(
       definitions.addAll(browserDefs);
     }
   }
-  // MCP 自管理：单一 mcp_manage 工具（最小 schema，config 格式与流程
+  // MCP 自管理：单一 manage_mcp 工具（最小 schema，config 格式与流程
   // 在内置技能「MCP 服务器管理」，模型按需 read_skill）。写操作走
   // HITL 审批；Ask/Plan 只读模式不暴露。
   if (!readOnly) {

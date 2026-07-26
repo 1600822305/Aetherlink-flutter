@@ -129,8 +129,10 @@ class AnthropicAdapter implements LlmGateway {
     };
 
     final headers = <String, dynamic>{
-      if (isOAuth) 'Authorization': 'Bearer ${model.apiKey}'
-      else 'x-api-key': model.apiKey ?? '',
+      if (isOAuth)
+        'Authorization': 'Bearer ${model.apiKey}'
+      else
+        'x-api-key': model.apiKey ?? '',
       'anthropic-version': model.apiVersion ?? '2023-06-01',
       if (isOAuth) 'anthropic-beta': _kOAuthBeta,
       ...?model.extraHeaders,
@@ -283,7 +285,7 @@ class AnthropicAdapter implements LlmGateway {
       );
       return response.data!.stream;
     } on DioException catch (e) {
-      throw networkFailureFromDio(e);
+      throw await networkFailureFromStreamingDio(e);
     }
   }
 

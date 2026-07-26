@@ -246,6 +246,13 @@ String buildFunctionCallToolName(String serverName, String toolName) {
 
   name = name.replaceAll(RegExp('[_-]{2,}'), '_');
 
+  // Anthropic 把 `mcp_` 单下划线前缀视为伪装的 Claude Code MCP 工具名
+  // （官方格式是 `mcp__server__tool` 双下划线），OAuth 通道会整个请求
+  // 400，避开该前缀。
+  if (name.startsWith('mcp_')) {
+    name = 'ext_$name';
+  }
+
   if (name.length > 63) {
     name = name.substring(0, 63);
   }
