@@ -137,6 +137,93 @@ Future<String> materializeWriteTarget(WriteTarget target, String content) async 
   return target.backend.createFile(parent, target.fileName!, content: content);
 }
 
+/// Creates [target]'s missing directories then the file itself with raw
+/// [bytes], returning the new file's (opaque) path.
+Future<String> materializeWriteTargetBytes(
+  WriteTarget target,
+  List<int> bytes,
+) async {
+  var parent = target.parentPath!;
+  for (final dir in target.missingDirs) {
+    parent = await target.backend.createDirectory(parent, dir);
+  }
+  return target.backend.createFileBytes(parent, target.fileName!, bytes);
+}
+
+/// Resolves a write [path] to its [WriteTarget]. Injected so callers can bind
+/// `ref`/`args` once (see [resolveWriteTarget]) and tests can supply an
+/// in-memory workspace.
+typedef WriteTargetResolver = Future<WriteTarget> Function(String path);
+
+/// 覆盖写时暂存新内容的兄弟文件后缀。
+const String kTempWriteSuffix = '.aetherlink-tmp';
+
+/// Writes raw [bytes] to [path], creating missing parent directories.
+///
+/// When [path] already exists this throws unless [overwrite] is set. Because
+/// no backend exposes a binary overwrite primitive, overwriting goes through
+/// **write-temp-then-swap**: the new content lands in a sibling temp file
+/// first, and only once it is fully on disk is the old file deleted and the
+/// temp renamed into place. A failure while generating or writing therefore
+/// leaves the old file untouched, instead of destroying it up front the way
+/// delete-then-recreate does.
+Future<String> writeBytesAtPath(
+  WriteTargetResolver resolve,
+  String path,
+  List<int> bytes, {
+  bool overwrite = false,
+}) async {
+  final target = await resolve(path);
+  final existing = target.existing;
+  if (existing == null) return materializeWriteTargetBytes(target, bytes);
+  if (!overwrite) {
+    throw FileEditorError(
+      '目标文件已存在：$path。请换一个文件名，或先用 @aether/file-editor 的 '
+      'delete_file 删除旧文件。',
+    );
+  }
+
+  // 临时文件必须是「可按名新建」的兄弟路径。不透明句柄（SAF content://）
+  // 无法凭空构造新建位，此时宁可拒绝覆盖，也不先删掉旧文件。
+  final WriteTarget temp;
+  try {
+    temp = await _resolveTempTarget(resolve, path);
+  } on FileEditorError {
+    throw FileEditorError(
+      '无法安全覆盖 $path：不透明句柄路径下无法先写临时文件。'
+      '请改用工作区相对路径，或先用 @aether/file-editor 的 delete_file 删除旧文件。',
+    );
+  }
+
+  final backend = target.backend;
+  final finalName = existing.name;
+  final tempPath = await materializeWriteTargetBytes(temp, bytes);
+  // 新内容已完整落盘，旧文件仍在——后续任一步失败都不会丢数据。
+  await backend.delete(existing.path);
+  try {
+    return await backend.rename(tempPath, finalName);
+  } catch (e) {
+    throw FileEditorError(
+      '新内容已写入临时文件 $tempPath，但改名为 $finalName 失败：$e。'
+      '内容没有丢失，请手动把该临时文件改名。',
+    );
+  }
+}
+
+/// Resolves the temp sibling write slot for [path], clearing any leftover from
+/// an interrupted earlier swap.
+Future<WriteTarget> _resolveTempTarget(
+  WriteTargetResolver resolve,
+  String path,
+) async {
+  final tempPath = '$path$kTempWriteSuffix';
+  final target = await resolve(tempPath);
+  final stale = target.existing;
+  if (stale == null) return target;
+  await target.backend.delete(stale.path);
+  return resolve(tempPath);
+}
+
 /// Resolves a `write` [path] argument to a [WriteTarget] — the counterpart of
 /// [resolvePathArg] that tolerates a not-yet-existing target (create-or-
 /// overwrite semantics). Opaque `content://` handles must already exist (a
