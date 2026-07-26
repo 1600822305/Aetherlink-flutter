@@ -5,6 +5,7 @@
 // 整块替换以保证 O(n) 内存可控），与 UI 分离，可单测/复用。
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -32,7 +33,7 @@ List<DiffLine> computeLineDiff(
   String oldText,
   String newText, {
   int context = 2,
-  int maxLcsCells = 4000000,
+  int maxLcsCells = 1000000,
 }) {
   final a = oldText.split('\n');
   final b = newText.split('\n');
@@ -74,14 +75,19 @@ List<DiffLine> computeLineDiff(
   var oldLine = 1;
   var newLine = 1;
 
-  void emitEqualRun(List<String> lines, {required bool leading, required bool trailing}) {
+  void emitEqualRun(
+    List<String> lines, {
+    required bool leading,
+    required bool trailing,
+  }) {
     if (lines.isEmpty) return;
     final head = leading ? 0 : context;
     final tail = trailing ? 0 : context;
     if (lines.length <= head + tail + 1) {
       for (final l in lines) {
-        rows.add(DiffLine(DiffLineKind.context, l,
-            oldLine: oldLine, newLine: newLine));
+        rows.add(
+          DiffLine(DiffLineKind.context, l, oldLine: oldLine, newLine: newLine),
+        );
         oldLine++;
         newLine++;
       }
@@ -91,8 +97,14 @@ List<DiffLine> computeLineDiff(
       final nearHead = !leading && i < context;
       final nearTail = !trailing && i >= lines.length - context;
       if (nearHead || nearTail) {
-        rows.add(DiffLine(DiffLineKind.context, lines[i],
-            oldLine: oldLine, newLine: newLine));
+        rows.add(
+          DiffLine(
+            DiffLineKind.context,
+            lines[i],
+            oldLine: oldLine,
+            newLine: newLine,
+          ),
+        );
       } else if (rows.isEmpty || rows.last.kind != DiffLineKind.skip) {
         rows.add(const DiffLine(DiffLineKind.skip, ''));
       }
@@ -133,7 +145,7 @@ List<DiffLine> computeLineDiff(
 List<(int, String)> _lcsOps(List<String> a, List<String> b) {
   final n = a.length;
   final m = b.length;
-  final dp = List.generate(n + 1, (_) => List<int>.filled(m + 1, 0));
+  final dp = List.generate(n + 1, (_) => Uint32List(m + 1));
   for (var i = n - 1; i >= 0; i--) {
     for (var j = m - 1; j >= 0; j--) {
       dp[i][j] = a[i] == b[j]
@@ -225,8 +237,11 @@ class _ReadOnlyDiffSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 14, 8, 4),
             child: Row(
               children: [
-                Icon(LucideIcons.fileDiff,
-                    size: 18, color: theme.colorScheme.primary),
+                Icon(
+                  LucideIcons.fileDiff,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -291,11 +306,8 @@ Future<DiffResolution?> showConflictDiffSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (context) => _ConflictDiffSheet(
-      fileName: fileName,
-      local: local,
-      disk: disk,
-    ),
+    builder: (context) =>
+        _ConflictDiffSheet(fileName: fileName, local: local, disk: disk),
   );
 }
 
@@ -315,8 +327,9 @@ class _ConflictDiffSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final rows = computeLineDiff(local, disk);
     final changes = rows
-        .where((r) =>
-            r.kind == DiffLineKind.added || r.kind == DiffLineKind.removed)
+        .where(
+          (r) => r.kind == DiffLineKind.added || r.kind == DiffLineKind.removed,
+        )
         .length;
     final numStyle = TextStyle(
       fontFamily: 'monospace',
@@ -333,8 +346,11 @@ class _ConflictDiffSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 14, 8, 4),
             child: Row(
               children: [
-                Icon(LucideIcons.fileDiff,
-                    size: 18, color: theme.colorScheme.primary),
+                Icon(
+                  LucideIcons.fileDiff,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -417,15 +433,15 @@ Widget _diffRow(ThemeData theme, DiffLine row, TextStyle numStyle) {
   }
   final (bg, fg, sign) = switch (row.kind) {
     DiffLineKind.removed => (
-        theme.colorScheme.errorContainer.withValues(alpha: 0.45),
-        theme.colorScheme.onErrorContainer,
-        '-',
-      ),
+      theme.colorScheme.errorContainer.withValues(alpha: 0.45),
+      theme.colorScheme.onErrorContainer,
+      '-',
+    ),
     DiffLineKind.added => (
-        Colors.green.withValues(alpha: 0.18),
-        theme.colorScheme.onSurface,
-        '+',
-      ),
+      Colors.green.withValues(alpha: 0.18),
+      theme.colorScheme.onSurface,
+      '+',
+    ),
     _ => (Colors.transparent, theme.colorScheme.onSurfaceVariant, ' '),
   };
   final lineNo = row.kind == DiffLineKind.added ? row.newLine : row.oldLine;
@@ -440,17 +456,15 @@ Widget _diffRow(ThemeData theme, DiffLine row, TextStyle numStyle) {
           child: Text('$lineNo', style: numStyle, textAlign: TextAlign.right),
         ),
         const SizedBox(width: 8),
-        Text(sign,
-            style: numStyle.copyWith(color: fg, fontWeight: FontWeight.bold)),
+        Text(
+          sign,
+          style: numStyle.copyWith(color: fg, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
             row.text,
-            style: TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 12,
-              color: fg,
-            ),
+            style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: fg),
           ),
         ),
       ],

@@ -158,7 +158,9 @@ String _readableResult(String raw) {
 
 /// 从（可能未闭合的）参数 JSON 里提取 [key] 字符串值的已生成前缀，
 /// 用于工具参数仍在流式生成时的实时预览；找不到该字段返回 null。
-String? _partialStringField(String raw, String key) {
+/// [tailChars] 限定只解码值的尾部窗口：预览只展示尾部几百行，
+/// 没必要每个 delta 都从头重解码整个值（那是累计平方级开销）。
+String? _partialStringField(String raw, String key, {int? tailChars}) {
   final marker = '"$key"';
   var i = raw.indexOf(marker);
   if (i < 0) return null;
@@ -168,6 +170,15 @@ String? _partialStringField(String raw, String key) {
   if (i < 0) return null;
   final sb = StringBuffer();
   var j = i + 1;
+  if (tailChars != null && raw.length - j > tailChars) {
+    j = raw.length - tailChars;
+    // 窗口起点可能落在转义序列中间：前面连续反斜杠为奇数时后移一位对齐。
+    var bs = 0;
+    while (j - 1 - bs > i && raw[j - 1 - bs] == r'\') {
+      bs++;
+    }
+    if (bs.isOdd) j++;
+  }
   while (j < raw.length) {
     final c = raw[j];
     if (c == r'\') {
@@ -213,9 +224,9 @@ List<({String? search, String replace})> _editPairsOf(String? raw) {
   } catch (_) {
     final search = _partialStringField(raw, 'search');
     final replace =
-        _partialStringField(raw, 'replace') ??
-        _partialStringField(raw, 'content') ??
-        _partialStringField(raw, 'file_text');
+        _partialStringField(raw, 'replace', tailChars: _kStreamingTailChars) ??
+        _partialStringField(raw, 'content', tailChars: _kStreamingTailChars) ??
+        _partialStringField(raw, 'file_text', tailChars: _kStreamingTailChars);
     if (search == null && replace == null) return const [];
     return [(search: search, replace: replace ?? '')];
   }
@@ -251,15 +262,49 @@ List<({String? search, String replace})> _editPairsOf(String? raw) {
 /// 流式生成期间 diff 预览只保留的尾部行数（跟随最新内容，控制重建成本）。
 const int _kStreamingTailLines = 300;
 
+/// 流式预览解码值的尾部窗口字符数（足够盖住尾部 300 行）。
+const int _kStreamingTailChars = 32000;
+
+/// 终端输出展示的尾部行数上限（全量 SelectableText 对百 KB 级输出
+/// 每次重建都要全文本 layout）。
+const int _kTerminalTailLines = 500;
+
+String _tailLines(String text, int maxLines) {
+  var idx = text.length;
+  var count = 0;
+  while (count < maxLines && idx > 0) {
+    final nl = text.lastIndexOf('\n', idx - 1);
+    if (nl < 0) return text;
+    idx = nl;
+    count++;
+  }
+  if (idx <= 0) return text;
+  return '……（前面输出已省略）${text.substring(idx)}';
+}
+
 /// 单个 search/replace 对的 diff 行。整文件写入（search 为空）时全部是
-/// 新增行，直接构造，不跑 LCS diff 算法（流式高频重建下省掉无谓开销）。
-List<DiffLine> _diffRowsOf(({String? search, String replace}) p) {
+/// 新增行，直接构造；[streaming] 期间 search/replace 也不跑 LCS（O(n·m)
+/// 且每个 delta 都会重算），直接按删除块 + 新增块展示，完成后才算精确 diff。
+List<DiffLine> _diffRowsOf(
+  ({String? search, String replace}) p, {
+  bool streaming = false,
+}) {
   final search = p.search;
   if (search == null || search.isEmpty) {
     final lines = p.replace.split('\n');
     return [
       for (var i = 0; i < lines.length; i++)
         DiffLine(DiffLineKind.added, lines[i], newLine: i + 1),
+    ];
+  }
+  if (streaming) {
+    final removed = search.split('\n');
+    final added = p.replace.split('\n');
+    return [
+      for (var i = 0; i < removed.length; i++)
+        DiffLine(DiffLineKind.removed, removed[i], oldLine: i + 1),
+      for (var i = 0; i < added.length; i++)
+        DiffLine(DiffLineKind.added, added[i], newLine: i + 1),
     ];
   }
   return computeLineDiff(search, p.replace);
@@ -368,9 +413,12 @@ class _ToolFocus extends ConsumerWidget {
         final c = _partialStringField(args, 'command');
         if (c != null && c.isNotEmpty) cmd = c;
       }
-      final out = event.resultDetail == null
-          ? event.resultSummary
-          : _readableResult(event.resultDetail!);
+      final out = _tailLines(
+        event.resultDetail == null
+            ? event.resultSummary
+            : _readableResult(event.resultDetail!),
+        _kTerminalTailLines,
+      );
       body = _MonoPane(text: '\$ $cmd\n$out', dark: true);
     } else {
       final pairs = _editPairsOf(args);
@@ -383,7 +431,7 @@ class _ToolFocus extends ConsumerWidget {
         var rows = <DiffLine>[
           for (var i = 0; i < pairs.length; i++) ...[
             if (i > 0) const DiffLine(DiffLineKind.skip, ''),
-            ..._diffRowsOf(pairs[i]),
+            ..._diffRowsOf(pairs[i], streaming: streaming),
           ],
         ];
         if (streaming && rows.length > _kStreamingTailLines) {
@@ -402,9 +450,12 @@ class _ToolFocus extends ConsumerWidget {
           child: DevinDiffLinesLazy(rows: rows, followTail: streaming),
         );
       } else {
-        final detail = event.resultDetail == null
-            ? event.resultSummary
-            : _readableResult(event.resultDetail!);
+        final detail = _tailLines(
+          event.resultDetail == null
+              ? event.resultSummary
+              : _readableResult(event.resultDetail!),
+          _kTerminalTailLines,
+        );
         body = _MonoPane(text: detail.isEmpty ? '（暂无输出）' : detail);
       }
     }

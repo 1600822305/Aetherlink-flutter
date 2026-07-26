@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -302,6 +303,23 @@ final _fileDiffProvider = FutureProvider.autoDispose
       return loadAgentFileDiff(ref, workspaceId, snapshot, change);
     });
 
+/// 行内 diff 行的缓存：LCS 只在内容变化时算一次（而非每次 rebuild），
+/// 大文件丢到 isolate 算，不卡主线程。
+final _fileDiffRowsProvider = FutureProvider.autoDispose
+    .family<List<DiffLine>, (String?, AgentChangesSnapshot, AgentFileChange)>((
+      ref,
+      args,
+    ) async {
+      final diff = await ref.watch(_fileDiffProvider(args).future);
+      if (diff.oldText.length + diff.newText.length > 100000) {
+        return compute(_diffRowsInIsolate, (diff.oldText, diff.newText));
+      }
+      return computeLineDiff(diff.oldText, diff.newText);
+    });
+
+List<DiffLine> _diffRowsInIsolate((String, String) texts) =>
+    computeLineDiff(texts.$1, texts.$2);
+
 (String, Color) _statusBadge(BuildContext context, GitFileStatus status) {
   final theme = Theme.of(context);
   return switch (status) {
@@ -494,7 +512,9 @@ class _InlineDiff extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final async = ref.watch(_fileDiffProvider((workspaceId, snapshot, change)));
+    final async = ref.watch(
+      _fileDiffRowsProvider((workspaceId, snapshot, change)),
+    );
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       decoration: BoxDecoration(
@@ -523,8 +543,7 @@ class _InlineDiff extends ConsumerWidget {
             ),
           ),
         ),
-        data: (diff) {
-          final rows = computeLineDiff(diff.oldText, diff.newText);
+        data: (rows) {
           if (rows.isEmpty) {
             return Padding(
               padding: const EdgeInsets.all(12),
