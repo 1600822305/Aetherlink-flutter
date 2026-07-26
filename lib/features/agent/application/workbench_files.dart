@@ -121,14 +121,38 @@ String _unescapeJsonString(String raw) {
 }
 
 /// 从任务事件流推导文件列表：同一路径按最新事件去重，最新的排最前。
-List<AgentFileEntry> deriveAgentFiles(List<AgentEvent> events) {
-  final byPath = <String, AgentFileEntry>{};
-  for (final event in events) {
-    if (event is! ToolCallEvent) continue;
-    if (!_isWriteTool(event.toolName)) continue;
+List<AgentFileEntry> deriveAgentFiles(List<AgentEvent> events) =>
+    AgentFilesFold().fold(events);
+
+/// 增量版推导：事件流基本 append-only，只有未完结的写入工具事件
+/// 会原地变更（running/waitingApproval → success/failure）。已完结的
+/// 前缀只折叠一次进 `_prefixByPath`，每次 delta 只从「第一个未完结
+/// 写入事件」处重扫到末尾，把每帧 O(全部事件) 降到 O(尾部未完结段)。
+/// 无变化时返回同一个列表实例，便于上层用 identical 短路重建。
+class AgentFilesFold {
+  final _prefixByPath = <String, AgentFileEntry>{};
+
+  /// `[0, _prefixCount)` 已折叠进 `_prefixByPath`，不再重扫。
+  var _prefixCount = 0;
+
+  /// 上一次结果是否含尾部未完结段的叠加（尾部消失时需重算）。
+  var _hadPendingTail = false;
+  List<AgentEvent>? _lastEvents;
+  List<AgentFileEntry> _result = const [];
+
+  static bool _isPendingWrite(AgentEvent event) =>
+      event is ToolCallEvent &&
+      _isWriteTool(event.toolName) &&
+      (event.state == AgentToolCallState.running ||
+          event.state == AgentToolCallState.waitingApproval);
+
+  /// 把单个事件折叠进 map；返回是否真的改写了 map。
+  static bool _foldEvent(Map<String, AgentFileEntry> byPath, AgentEvent event) {
+    if (event is! ToolCallEvent) return false;
+    if (!_isWriteTool(event.toolName)) return false;
     final args = event.argsDetail;
     final path = filePathOfArgs(args) ?? _pathOfSummary(event.argSummary);
-    if (path == null) continue;
+    if (path == null) return false;
     final state = switch (event.state) {
       AgentToolCallState.running ||
       AgentToolCallState.waitingApproval =>
@@ -137,7 +161,7 @@ List<AgentFileEntry> deriveAgentFiles(List<AgentEvent> events) {
       _ => AgentFileState.failed,
     };
     final existing = byPath[path];
-    if (existing != null && existing.seq > event.seq) continue;
+    if (existing != null && existing.seq > event.seq) return false;
     byPath[path] = AgentFileEntry(
       path: path,
       state: state,
@@ -148,8 +172,42 @@ List<AgentFileEntry> deriveAgentFiles(List<AgentEvent> events) {
               ? fileContentOfArgs(args)
               : null,
     );
+    return true;
   }
-  return byPath.values.toList()..sort((a, b) => b.seq.compareTo(a.seq));
+
+  List<AgentFileEntry> fold(List<AgentEvent> events) {
+    if (identical(events, _lastEvents)) return _result;
+    _lastEvents = events;
+    var changed = false;
+    if (events.length < _prefixCount) {
+      // 事件被删减（清空/回滚）：无法增量，整体重扫。
+      changed = _prefixByPath.isNotEmpty;
+      _prefixByPath.clear();
+      _prefixCount = 0;
+    }
+    // 把已完结的事件继续折叠进前缀，遇到第一个未完结写入事件停下。
+    while (_prefixCount < events.length &&
+        !_isPendingWrite(events[_prefixCount])) {
+      changed = _foldEvent(_prefixByPath, events[_prefixCount]) || changed;
+      _prefixCount++;
+    }
+    if (_prefixCount == events.length) {
+      if (changed || _hadPendingTail) _result = _sorted(_prefixByPath);
+      _hadPendingTail = false;
+      return _result;
+    }
+    // 尾部含未完结写入事件：在前缀快照上重放尾部（流式正文每帧在变）。
+    final byPath = Map.of(_prefixByPath);
+    for (var i = _prefixCount; i < events.length; i++) {
+      _foldEvent(byPath, events[i]);
+    }
+    _hadPendingTail = true;
+    _result = _sorted(byPath);
+    return _result;
+  }
+
+  static List<AgentFileEntry> _sorted(Map<String, AgentFileEntry> byPath) =>
+      byPath.values.toList()..sort((a, b) => b.seq.compareTo(a.seq));
 }
 
 /// argSummary 通常是路径尾段或完整相对路径；仅当它像单个路径时可用。
