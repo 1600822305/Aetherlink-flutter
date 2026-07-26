@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/workspace/application/editor_auto_sa
 import 'package:aetherlink_flutter/features/workspace/application/workspace_file_history.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/deck_preview.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_body.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_edit_ops.dart';
@@ -114,6 +115,12 @@ class _FileEditorState extends ConsumerState<FileEditor>
     final n = widget.entry.name.toLowerCase();
     return n.endsWith('.md') || n.endsWith('.markdown') || n.endsWith('.mdx');
   }
+
+  // PPT deck 源预览态（*.deck.json）：与 Markdown 预览共用 _previewMd 开关，
+  // 渲染当前缓冲区（未保存的编辑也实时可见）。
+  bool get _inDeckPreview =>
+      _previewMd && _isDeckSource && _hasTextBody && !_isMarkdown;
+  bool get _isDeckSource => isDeckSourceFileName(widget.entry.name);
 
   @override
   void initState() {
@@ -512,10 +519,10 @@ class _FileEditorState extends ConsumerState<FileEditor>
             actions: _headerActions(),
             onTapTitle: _showPathPanel,
           ),
-          if (_hasTextBody && !_inMdPreview)
+          if (_hasTextBody && !_inMdPreview && !_inDeckPreview)
             EditorToolbar(children: _toolbarButtons(dirty)),
           Divider(height: 1, color: theme.dividerColor),
-          if (_hasTextBody && !_inMdPreview && _showFind)
+          if (_hasTextBody && !_inMdPreview && !_inDeckPreview && _showFind)
             FindReplaceBar(
               matchCount: _find.matches.length,
               currentIndex: _find.index,
@@ -547,8 +554,10 @@ class _FileEditorState extends ConsumerState<FileEditor>
               }),
             ),
           Expanded(
-            child: _inMdPreview &&
-                    ref.watch(workspacePreviewBackendProvider) != null
+            child: _inDeckPreview
+                ? DeckPreview(content: _controller.text)
+                : _inMdPreview &&
+                      ref.watch(workspacePreviewBackendProvider) != null
                 ? MarkdownPreview(
                     entry: widget.entry,
                     backend: ref.watch(workspacePreviewBackendProvider)!,
@@ -556,33 +565,33 @@ class _FileEditorState extends ConsumerState<FileEditor>
                     fontSize: _fontSize,
                   )
                 : EditorContent(
-              ready: _ready,
-              controller: _controller,
-              focusNode: _focus,
-              editing: _editing,
-              fontSize: _fontSize,
-              onFontSize: (v) => setState(() => _fontSize = v),
-              onRetry: () => setState(() => _ready = _load()),
-              placeholderBuilder: _placeholder,
-              findMatches: _showFind ? _find.matches : const [],
-              findIndex: _showFind ? _find.index : -1,
-              jumpLine: _jumpLine,
-              jumpToken: _jumpToken,
-              language: editorSettings.syntaxHighlight
-                  ? languageForFileName(widget.entry.name)
-                  : null,
-              commentPrefix: lineCommentForLanguage(
-                languageForFileName(widget.entry.name),
-              ),
-              undoController: _undo,
-              indentUnit: editorSettings.indentUnit,
-              softWrap: editorSettings.softWrap,
-              autoClosePairs: editorSettings.autoClosePairs,
-              autoIndent: editorSettings.autoIndent,
-              currentLineHighlight: editorSettings.currentLineHighlight,
-            ),
+                    ready: _ready,
+                    controller: _controller,
+                    focusNode: _focus,
+                    editing: _editing,
+                    fontSize: _fontSize,
+                    onFontSize: (v) => setState(() => _fontSize = v),
+                    onRetry: () => setState(() => _ready = _load()),
+                    placeholderBuilder: _placeholder,
+                    findMatches: _showFind ? _find.matches : const [],
+                    findIndex: _showFind ? _find.index : -1,
+                    jumpLine: _jumpLine,
+                    jumpToken: _jumpToken,
+                    language: editorSettings.syntaxHighlight
+                        ? languageForFileName(widget.entry.name)
+                        : null,
+                    commentPrefix: lineCommentForLanguage(
+                      languageForFileName(widget.entry.name),
+                    ),
+                    undoController: _undo,
+                    indentUnit: editorSettings.indentUnit,
+                    softWrap: editorSettings.softWrap,
+                    autoClosePairs: editorSettings.autoClosePairs,
+                    autoIndent: editorSettings.autoIndent,
+                    currentLineHighlight: editorSettings.currentLineHighlight,
+                  ),
           ),
-          if (_hasTextBody && !_inMdPreview)
+          if (_hasTextBody && !_inMdPreview && !_inDeckPreview)
             EditorStatusBar(
               controller: _controller,
               onTapCaret: _promptJumpToLine,
