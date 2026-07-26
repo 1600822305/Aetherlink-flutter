@@ -5,7 +5,10 @@
 // `file_editor_support.dart`. Names/params mirror the original AetherLink
 // `@aether/file-editor` server 1:1.
 
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_text_ops.dart'
@@ -463,6 +466,68 @@ const String _kFileUnchangedNote =
   return (content: text, note: note);
 }
 
+/// 工具大输出落盘目录（agent_tool_outputs/，见 agent_runtime_access 的
+/// _spillLargeOutput）里的文件走宿主文件系统直读：这是应用私有目录里的
+/// 宿主绝对路径，不属于任何工作区，交给工作区后端路由会被错误地拼到
+/// PRoot rootfs / 远端上（PathNotFoundException）。命中时返回结果，
+/// 否则返回 null 走正常的工作区解析。
+Future<Map<String, Object?>?> _tryReadSpillFile(
+  String rawPath,
+  int? startLine,
+  int? endLine, {
+  required bool withLineNumbers,
+}) async {
+  if (!rawPath.contains('/agent_tool_outputs/')) return null;
+  final docs = await getApplicationDocumentsDirectory();
+  if (!rawPath.startsWith('${docs.path}/agent_tool_outputs/')) return null;
+
+  final file = File(rawPath);
+  if (!await file.exists()) {
+    throw FileEditorError('文件不存在: $rawPath（落盘的工具输出可能已随任务清理被删除）');
+  }
+  final content = await file.readAsString();
+  if (startLine != null || endLine != null) {
+    final lines = content.split('\n');
+    final total = lines.length;
+    final start = startLine ?? 1;
+    final end = (endLine ?? total) > total ? total : endLine ?? total;
+    if (start < 1) {
+      throw FileEditorError('无效的 start_line: $start（必须 ≥ 1）');
+    }
+    if (start > total) {
+      throw FileEditorError('无效的 start_line: $start（文件共 $total 行）');
+    }
+    if (end < start) {
+      throw FileEditorError('无效的行范围: start_line=$start 大于 end_line=$end');
+    }
+    final guarded = _guardContent(lines.sublist(start - 1, end).join('\n'));
+    return {
+      'path': rawPath,
+      'startLine': start,
+      'endLine': end,
+      'totalLines': total,
+      'content': withLineNumbers
+          ? numberLines(guarded.content, startAt: start)
+          : guarded.content,
+      if (guarded.note != null) 'truncation': guarded.note,
+      if (withLineNumbers) 'note': _kLineNumbersNote,
+    };
+  }
+  if (content.length > kMaxWholeReadBytes) {
+    throw FileEditorError(
+      '文件过大（${content.length} 字符，整文件读取上限 $kMaxWholeReadBytes 字节），'
+      '未读取。请用 start_line/end_line 分段读取。',
+    );
+  }
+  final guarded = _guardContent(content);
+  return {
+    'path': rawPath,
+    'content': withLineNumbers ? numberLines(guarded.content) : guarded.content,
+    if (guarded.note != null) 'truncation': guarded.note,
+    if (withLineNumbers) 'note': _kLineNumbersNote,
+  };
+}
+
 Future<Map<String, Object?>> _readOne(
   Ref ref,
   Map<String, Object?> args,
@@ -472,6 +537,13 @@ Future<Map<String, Object?>> _readOne(
   bool withLineNumbers = true,
   String sessionKey = '',
 }) async {
+  final spill = await _tryReadSpillFile(
+    rawPath,
+    startLine,
+    endLine,
+    withLineNumbers: withLineNumbers,
+  );
+  if (spill != null) return spill;
   final resolved = await resolvePathArg(ref, args, rawPath);
   final backend = resolved.backend;
   final path = resolved.path;
