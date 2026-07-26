@@ -358,6 +358,77 @@ void main() {
       );
     });
 
+    test('删掉带图表的页时回收孤儿 chart 部件（包自检不再报孤儿）', () {
+      final deck = DeckDocument.parse(
+        jsonEncode({
+          'layout': '16x9',
+          'slides': [
+            {
+              'elements': [
+                {
+                  'type': 'chart',
+                  'chart': 'bar',
+                  'x': 1,
+                  'y': 1,
+                  'w': 8,
+                  'h': 4,
+                  'categories': ['A', 'B'],
+                  'series': [
+                    {
+                      'name': 'S1',
+                      'values': [1, 2],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              'elements': [
+                {
+                  'type': 'text',
+                  'x': 1,
+                  'y': 1,
+                  'w': 6,
+                  'h': 1,
+                  'paragraphs': [
+                    {
+                      'runs': [
+                        {'text': '保留页'},
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final pkg = PptxPackage.open(buildPptxBytes(deck));
+      expect(pkg.hasPart('ppt/charts/chart1.xml'), isTrue);
+
+      deleteSlide(pkg, 0);
+      final reopened = _roundTrip(pkg); // _roundTrip 断言包自检为空
+
+      expect(reopened.hasPart('ppt/charts/chart1.xml'), isFalse);
+      expect(describePptxOutline(reopened), hasLength(1));
+    });
+
+    test('删掉复制页时不回收仍被原页引用的图片', () {
+      final pkg = _openFixture();
+      duplicateSlide(pkg, 1); // 第 1 页带图片，复制后两页共用媒体部件
+      final mediaBefore = pkg.partNames
+          .where((p) => p.startsWith('ppt/media/'))
+          .toSet();
+
+      deleteSlide(pkg, 2); // 删掉副本
+      final reopened = _roundTrip(pkg);
+
+      final mediaAfter = reopened.partNames
+          .where((p) => p.startsWith('ppt/media/'))
+          .toSet();
+      expect(mediaAfter, mediaBefore, reason: '共享图片不能被误回收');
+    });
+
     test('不允许删掉最后一页', () {
       final pkg = _openFixture();
       deleteSlide(pkg, 2);

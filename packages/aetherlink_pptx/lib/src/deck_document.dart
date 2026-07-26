@@ -198,7 +198,7 @@ sealed class DeckElement {
       'text' => DeckTextElement.fromJson(json, where, style: style),
       'shape' => DeckShapeElement.fromJson(json, where),
       'image' => DeckImageElement.fromJson(json, where),
-      'table' => DeckTableElement.fromJson(json, where),
+      'table' => DeckTableElement.fromJson(json, where, style: style),
       'chart' => DeckChartElement.fromJson(json, where, style: style),
       _ => throw DeckParseException(
         '$where 的 type 必须是 text/shape/image/table/chart/infographic：收到 "$type"',
@@ -422,7 +422,11 @@ class DeckTableElement extends DeckElement {
     this.borderColor,
   });
 
-  factory DeckTableElement.fromJson(Map<String, Object?> json, String where) {
+  factory DeckTableElement.fromJson(
+    Map<String, Object?> json,
+    String where, {
+    DeckStyle? style,
+  }) {
     final rawRows = json['rows'];
     if (rawRows is! List || rawRows.isEmpty) {
       throw DeckParseException('$where 缺少非空数组 "rows"');
@@ -440,8 +444,20 @@ class DeckTableElement extends DeckElement {
       final cells = <DeckTableCell>[];
       for (final (c, rawCell) in rawRow.indexed) {
         final cellWhere = '$where.rows[$r][$c]';
+        // 风格推导：省略颜色/字体的单元格文字用风格正文色与字体栈，
+        // 与 DeckTextElement 一致（否则深色风格下表格文字落回默认黑色）。
         if (rawCell is String) {
-          cells.add(DeckTableCell(runs: [DeckTextRun(text: rawCell)]));
+          cells.add(
+            DeckTableCell(
+              runs: [
+                DeckTextRun(
+                  text: rawCell,
+                  color: style?.textPrimary,
+                  font: style?.bodyFont,
+                ),
+              ],
+            ),
+          );
           continue;
         }
         final map = _asMap(rawCell, cellWhere);
@@ -459,9 +475,16 @@ class DeckTableElement extends DeckElement {
                       DeckTextRun.fromJson(
                         _asMap(run, '$cellWhere.runs[$i]'),
                         '$cellWhere.runs[$i]',
+                        style: style,
                       ),
                   ]
-                : [DeckTextRun(text: (map['text'] ?? '').toString())],
+                : [
+                    DeckTextRun(
+                      text: (map['text'] ?? '').toString(),
+                      color: style?.textPrimary,
+                      font: style?.bodyFont,
+                    ),
+                  ],
             fill: map['fill'] == null ? null : DeckColor(map['fill'] as String),
             align: align,
           ),

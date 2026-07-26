@@ -44,6 +44,43 @@ void main() {
       expect(run.color, style.textPrimary);
     });
 
+    test('表格单元格文字继承风格正文色与字体（深色风格不落回黑字）', () {
+      final deck = DeckDocument.fromJson(
+        _deck([
+          {
+            'elements': [
+              {
+                'type': 'table',
+                'x': 1,
+                'y': 1,
+                'w': 8,
+                'h': 2,
+                'rows': [
+                  ['表头', '数值'],
+                  [
+                    {'text': '行一'},
+                    {
+                      'runs': [
+                        {'text': '42'},
+                      ],
+                    },
+                  ],
+                ],
+              },
+            ],
+          },
+        ], style: 'dark_tech'),
+      );
+      final style = deck.style!;
+      final table = deck.slides.first.elements.first as DeckTableElement;
+      for (final row in table.rows) {
+        for (final cell in row) {
+          expect(cell.runs.first.color, style.textPrimary);
+          expect(cell.runs.first.font, style.bodyFont);
+        }
+      }
+    });
+
     test('显式颜色不被风格覆盖', () {
       final deck = DeckDocument.fromJson(
         _deck([

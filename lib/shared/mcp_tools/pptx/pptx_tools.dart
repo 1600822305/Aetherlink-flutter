@@ -279,12 +279,15 @@ Future<McpToolResult> _render(Ref ref, Map<String, Object?> args) async {
   }
 
   final deckJson = jsonEncode(deckRaw);
-  final bytes = await Isolate.run(
-    () => buildPptxBytes(DeckDocument.parse(deckJson)),
-  );
-  final structureIssues = [
-    for (final i in validatePptxPackage(bytes)) i.toJson(),
-  ];
+  final built = await Isolate.run(() {
+    final bytes = buildPptxBytes(DeckDocument.parse(deckJson));
+    return (
+      bytes: bytes,
+      structure: [for (final i in validatePptxPackage(bytes)) i.toJson()],
+    );
+  });
+  final bytes = built.bytes;
+  final structureIssues = built.structure;
   if (structureIssues.isNotEmpty && !force) {
     return fileEditorError(
       '导出的 pptx 包结构自检未通过，未写入文件（可传 force=true 强制）：\n'
@@ -348,7 +351,8 @@ Future<McpToolResult> _edit(Ref ref, Map<String, Object?> args) async {
     deckRaw = applyDeckEditOp(deckRaw, op.cast<String, Object?>(), 'ops[$i]');
   }
 
-  deckRaw = await _resolveImageSources(ref, args, deckRaw);
+  // 结构校验 + QA 用未展开的源（src 引用是合法结构）；写回也保留 src，
+  // 避免把 base64 膨胀进 .deck.json——只有导出 pptx 时才展开图片。
   final deck = DeckDocument.fromJson(deckRaw);
   final issues = runDeckQa(deck);
   final force = optionalBool(args, 'force');
@@ -372,18 +376,23 @@ Future<McpToolResult> _edit(Ref ref, Map<String, Object?> args) async {
     if (!export.toLowerCase().endsWith('.pptx')) {
       throw const FileEditorError('export 必须以 .pptx 结尾');
     }
-    final deckJson = jsonEncode(deckRaw);
-    final bytes = await Isolate.run(
-      () => buildPptxBytes(DeckDocument.parse(deckJson)),
-    );
-    structureIssues = [for (final i in validatePptxPackage(bytes)) i.toJson()];
+    final resolvedRaw = await _resolveImageSources(ref, args, deckRaw);
+    final deckJson = jsonEncode(resolvedRaw);
+    final built = await Isolate.run(() {
+      final bytes = buildPptxBytes(DeckDocument.parse(deckJson));
+      return (
+        bytes: bytes,
+        structure: [for (final i in validatePptxPackage(bytes)) i.toJson()],
+      );
+    });
+    structureIssues = built.structure;
     if (structureIssues.isNotEmpty && !force) {
       return fileEditorError(
         'deck 源已写回，但导出包结构自检未通过、未写 pptx（可传 force=true）：\n'
         '${jsonEncode(structureIssues)}',
       );
     }
-    pptxPath = await _writeBytes(ref, args, export, bytes, overwrite: true);
+    pptxPath = await _writeBytes(ref, args, export, built.bytes, overwrite: true);
   }
 
   return fileEditorOk({
@@ -589,10 +598,12 @@ Future<McpToolResult> _read(Ref ref, Map<String, Object?> args) async {
     throw FileEditorError('文件过大（${raw.length} 字节，上限 $_kMaxReadBytes），无法读取');
   }
   final bytes = Uint8List.fromList(raw);
-  final result = await Isolate.run(() => readPptxBytes(bytes));
-  final structureIssues = [
-    for (final i in validatePptxPackage(bytes)) i.toJson(),
-  ];
+  final (result, structureIssues) = await Isolate.run(
+    () => (
+      readPptxBytes(bytes),
+      [for (final i in validatePptxPackage(bytes)) i.toJson()],
+    ),
+  );
   return fileEditorOk({
     'path': path,
     'slides': result.slides.length,
@@ -698,16 +709,16 @@ Future<McpToolResult> _modify(Ref ref, Map<String, Object?> args) async {
         _applyPptxOp(pkg, (raw as Map).cast<String, Object?>(), 'ops[$i]', images[i]),
       );
     }
+    final saved = pkg.save();
     return (
-      bytes: pkg.save(),
+      bytes: saved,
       applied: applied,
       slides: pkg.slidePaths().length,
+      structure: [for (final i in validatePptxPackage(saved)) i.toJson()],
     );
   });
 
-  final structureIssues = [
-    for (final i in validatePptxPackage(result.bytes)) i.toJson(),
-  ];
+  final structureIssues = result.structure;
   final force = optionalBool(args, 'force');
   if (structureIssues.isNotEmpty && !force) {
     return fileEditorError(

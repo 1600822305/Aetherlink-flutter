@@ -606,6 +606,8 @@ int duplicateSlide(PptxPackage pkg, int slide, {int? at}) {
 }
 
 /// 删除第 [slide] 页，连带它独占的 notesSlide。至少要留一页。
+/// 该页独占的 chart/media/embeddings 部件一并回收，避免留下孤儿部件
+/// （包结构自检会把无引用的 chart 报错）。
 void deleteSlide(PptxPackage pkg, int slide) {
   final paths = pkg.slidePaths();
   if (paths.length <= 1) {
@@ -613,6 +615,12 @@ void deleteSlide(PptxPackage pkg, int slide) {
   }
   final path = pkg.slidePathAt(slide);
   final notesPath = pkg.notesPathOf(path);
+  // 先记下这一页引用的部件，删完后回收不再被任何关系引用的。
+  final slideDir = _dirname(path);
+  final reclaimCandidates = <String>{
+    for (final target in pkg.relsOf(path).values)
+      _resolvePath(slideDir, target),
+  };
 
   // presentation.xml：摘掉 sldId 并记下 rId。
   final presDoc = pkg.xml('ppt/presentation.xml');
@@ -630,6 +638,34 @@ void deleteSlide(PptxPackage pkg, int slide) {
     pkg.removePart(notesPath);
     pkg.removePart(PptxPackage.relsPathFor(notesPath));
     pkg.removeOverride(notesPath);
+  }
+
+  _reclaimOrphanParts(pkg, reclaimCandidates);
+}
+
+/// 回收 [candidates] 里不再被任何 .rels 引用的 chart/media/embeddings
+/// 部件，连同它们的 .rels、Override 与嵌套引用（如图表缓存工作簿）。
+/// 母版/版式等共享部件不在回收范围。
+void _reclaimOrphanParts(PptxPackage pkg, Set<String> candidates) {
+  for (final part in candidates) {
+    final reclaimable =
+        part.startsWith('ppt/charts/') ||
+        part.startsWith('ppt/media/') ||
+        part.startsWith('ppt/embeddings/');
+    if (!reclaimable || !pkg.hasPart(part)) continue;
+    if (_isMediaReferenced(pkg, part)) continue;
+    final nested = <String>{};
+    final relsPath = PptxPackage.relsPathFor(part);
+    if (pkg.hasPart(relsPath)) {
+      final dir = _dirname(part);
+      for (final target in pkg.relsOf(part).values) {
+        nested.add(_resolvePath(dir, target));
+      }
+    }
+    pkg.removePart(part);
+    pkg.removePart(relsPath);
+    pkg.removeOverride(part);
+    if (nested.isNotEmpty) _reclaimOrphanParts(pkg, nested);
   }
 }
 
