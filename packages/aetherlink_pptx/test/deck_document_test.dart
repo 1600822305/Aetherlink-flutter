@@ -53,6 +53,123 @@ void main() {
       expect(text.paragraphs.single.runs.single.color!.value, 'FFFFFF');
     });
 
+    test('批量收集：多页多元素的错误一次性全部返回', () {
+      try {
+        DeckDocument.parse(
+          jsonEncode({
+            'layout': '16x9',
+            'slides': [
+              {
+                'elements': [
+                  {'type': 'text', 'x': 1, 'y': 1, 'w': 4, 'h': 1},
+                  {'type': 'nope', 'x': 1, 'y': 1, 'w': 4, 'h': 1},
+                ],
+              },
+              {
+                'elements': [
+                  {
+                    'type': 'chart',
+                    'chart': 'bar',
+                    'x': 1,
+                    'y': 1,
+                    'w': 4,
+                    'h': 3,
+                    'categories': ['A'],
+                    'series': <Object?>[],
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+        fail('应该抛 DeckParseException');
+      } on DeckParseException catch (e) {
+        expect(e.messages, hasLength(3), reason: '三处错误要一次性全收集到');
+        expect(e.message, contains('slides[0].elements[0]'));
+        expect(e.message, contains('slides[0].elements[1]'));
+        expect(e.message, contains('slides[1].elements[0]'));
+      }
+    });
+
+    test('简写容错：顶层 text + fontSize 展开为 paragraphs/runs', () {
+      final deck = DeckDocument.parse(
+        jsonEncode({
+          'layout': '16x9',
+          'slides': [
+            {
+              'elements': [
+                {
+                  'type': 'text',
+                  'x': 1,
+                  'y': 1,
+                  'w': 8,
+                  'h': 1.5,
+                  'text': '第一行\n第二行',
+                  'fontSize': 24,
+                  'bold': true,
+                  'align': 'center',
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final text = deck.slides.first.elements.single as DeckTextElement;
+      expect(text.paragraphs, hasLength(2));
+      expect(text.paragraphs[0].runs.single.text, '第一行');
+      expect(text.paragraphs[0].runs.single.size, 24);
+      expect(text.paragraphs[0].runs.single.bold, isTrue);
+      expect(text.paragraphs[0].align, 'center');
+      expect(text.paragraphs[1].runs.single.text, '第二行');
+    });
+
+    test('别名容错：chartType 等价于 chart，run.fontSize 等价于 size', () {
+      final deck = DeckDocument.parse(
+        jsonEncode({
+          'layout': '16x9',
+          'slides': [
+            {
+              'elements': [
+                {
+                  'type': 'chart',
+                  'chartType': 'pie',
+                  'x': 1,
+                  'y': 1,
+                  'w': 6,
+                  'h': 4,
+                  'categories': ['A', 'B'],
+                  'series': [
+                    {
+                      'name': 'S',
+                      'values': [1, 2],
+                    },
+                  ],
+                },
+                {
+                  'type': 'text',
+                  'x': 1,
+                  'y': 5,
+                  'w': 6,
+                  'h': 1,
+                  'paragraphs': [
+                    {
+                      'runs': [
+                        {'text': '注', 'fontSize': 14},
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final chart = deck.slides.first.elements[0] as DeckChartElement;
+      expect(chart.kind, DeckChartKind.pie);
+      final text = deck.slides.first.elements[1] as DeckTextElement;
+      expect(text.paragraphs.single.runs.single.size, 14);
+    });
+
     test('rejects invalid JSON', () {
       expect(
         () => DeckDocument.parse('not json'),

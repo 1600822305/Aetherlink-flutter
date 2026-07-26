@@ -157,7 +157,10 @@ List<DeckQaIssue> runDeckQa(DeckDocument deck) {
       sameLayoutRun = 1;
     }
     prevContentLayout = contentLayout;
-    if (slide.elements.length > kQaMaxElementsPerSlide) {
+    // 布局引擎生成的页元素数由引擎保证（卡片会展开成多个原子元素，
+    // 用户无法控制），over_density 只对手写坐标页有意义。
+    if (slide.layoutType == null &&
+        slide.elements.length > kQaMaxElementsPerSlide) {
       issues.add(
         DeckQaIssue(
           severity: DeckQaSeverity.warning,

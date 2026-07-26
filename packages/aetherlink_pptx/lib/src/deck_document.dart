@@ -6,10 +6,19 @@ import 'deck_style.dart';
 
 /// Thrown when a deck.json source is structurally invalid. [message] is a
 /// model-facing, actionable description (which field, what was expected).
+/// 解析器按元素/幻灯片批量收集错误（像编译器），[messages] 是全部错误；
+/// [message] 把它们拼成一段，方便单条展示。
 class DeckParseException implements Exception {
-  DeckParseException(this.message);
+  DeckParseException(String message) : messages = [message];
 
-  final String message;
+  DeckParseException.all(this.messages)
+    : assert(messages.length > 0, 'messages 不能为空');
+
+  final List<String> messages;
+
+  String get message => messages.length == 1
+      ? messages.first
+      : '发现 ${messages.length} 处问题：\n${[for (final m in messages) '- $m'].join('\n')}';
 
   @override
   String toString() => 'DeckParseException: $message';
@@ -104,7 +113,8 @@ class DeckTextRun {
     if (text is! String) {
       throw DeckParseException('$where 的 run 缺少字符串字段 "text"');
     }
-    final size = json['size'];
+    // 别名容错：fontSize 是 LLM 最自然的写法，等价于 size。
+    final size = json['size'] ?? json['fontSize'];
     if (size != null && (size is! num || size <= 0)) {
       throw DeckParseException('$where 的 run.size 必须是正数（单位 pt）');
     }
@@ -222,9 +232,31 @@ class DeckTextElement extends DeckElement {
     String where, {
     DeckStyle? style,
   }) {
-    final rawParas = json['paragraphs'];
+    var rawParas = json['paragraphs'];
+    // 简写容错：顶层 "text" 字符串（可配 size/fontSize/bold/color/font/align）
+    // 自动展开成 paragraphs/runs —— 这是 LLM 最自然的写法。
+    if (rawParas == null && json['text'] is String) {
+      final size = json['size'] ?? json['fontSize'];
+      final runProps = <String, Object?>{
+        if (size != null) 'size': size,
+        if (json['bold'] == true) 'bold': true,
+        if (json['color'] is String) 'color': json['color'],
+        if (json['font'] is String) 'font': json['font'],
+      };
+      rawParas = [
+        for (final line in (json['text'] as String).split('\n'))
+          {
+            if (json['align'] is String) 'align': json['align'],
+            'runs': [
+              {'text': line, ...runProps},
+            ],
+          },
+      ];
+    }
     if (rawParas is! List || rawParas.isEmpty) {
-      throw DeckParseException('$where 缺少非空数组 "paragraphs"');
+      throw DeckParseException(
+        '$where 缺少非空数组 "paragraphs"（或简写字符串 "text"）',
+      );
     }
     final valign = json['valign'] as String?;
     if (valign != null && !const {'top', 'middle', 'bottom'}.contains(valign)) {
@@ -588,7 +620,11 @@ class DeckChartElement extends DeckElement {
     String where, {
     DeckStyle? style,
   }) {
-    final kind = DeckChartKind.parse(json['chart'] as String?, where);
+    // 别名容错：chartType 等价于 chart。
+    final kind = DeckChartKind.parse(
+      (json['chart'] ?? json['chartType']) as String?,
+      where,
+    );
     final rawCats = json['categories'];
     if (rawCats is! List ||
         rawCats.isEmpty ||
@@ -693,34 +729,46 @@ class DeckSlide {
     int? layoutCardTypeCount;
     // 布局引擎：页级 layout 声明编译成绝对定位元素；仍可与 elements 混用
     // （layout 元素在前，elements 叠加在后）。
+    // 批量收集：一个元素解析失败不中断整页，攒齐所有错误一次性抛出，
+    // 让 agent 一轮就能修完（编译器风格）。
+    final errors = <String>[];
     if (rawLayout != null) {
-      final layoutMap = _asMap(rawLayout, '$where.layout');
-      elements.addAll(buildLayoutElements(layoutMap, canvas, style, where));
-      // 保留布局元信息供 QA 的失败模式规则（节奏克隆/支撑坍缩）使用。
-      layoutType = layoutMap['type'] as String?;
-      final cards = layoutMap['cards'];
-      if (cards is List) {
-        layoutCardCount = cards.length;
-        layoutCardTypeCount = {
-          for (final c in cards)
-            if (c is Map) (c['type'] as String?) ?? 'text',
-        }.length;
+      try {
+        final layoutMap = _asMap(rawLayout, '$where.layout');
+        elements.addAll(buildLayoutElements(layoutMap, canvas, style, where));
+        // 保留布局元信息供 QA 的失败模式规则（节奏克隆/支撑坍缩）使用。
+        layoutType = layoutMap['type'] as String?;
+        final cards = layoutMap['cards'];
+        if (cards is List) {
+          layoutCardCount = cards.length;
+          layoutCardTypeCount = {
+            for (final c in cards)
+              if (c is Map) (c['type'] as String?) ?? 'text',
+          }.length;
+        }
+      } on DeckParseException catch (e) {
+        errors.addAll(e.messages);
       }
     }
     if (rawElements is List) {
       for (final (i, e) in rawElements.indexed) {
-        final map = _asMap(e, '$where.elements[$i]');
-        if (map['type'] == 'infographic') {
-          elements.addAll(
-            buildInfographicElements(map, style, '$where.elements[$i]'),
-          );
-        } else {
-          elements.add(
-            DeckElement.fromJson(map, '$where.elements[$i]', style: style),
-          );
+        try {
+          final map = _asMap(e, '$where.elements[$i]');
+          if (map['type'] == 'infographic') {
+            elements.addAll(
+              buildInfographicElements(map, style, '$where.elements[$i]'),
+            );
+          } else {
+            elements.add(
+              DeckElement.fromJson(map, '$where.elements[$i]', style: style),
+            );
+          }
+        } on DeckParseException catch (ex) {
+          errors.addAll(ex.messages);
         }
       }
     }
+    if (errors.isNotEmpty) throw DeckParseException.all(errors);
     return DeckSlide(
       background: json['background'] == null
           ? style?.background
@@ -766,19 +814,29 @@ class DeckDocument {
     }
     final layout = DeckLayout.parse(json['layout'] as String?);
     final style = DeckStyle.resolve(json['style'], 'deck.style');
-    return DeckDocument(
-      layout: layout,
-      style: style,
-      title: json['title'] as String?,
-      slides: [
-        for (final (i, s) in rawSlides.indexed)
+    // 批量收集：坏页不中断整个 deck 的解析，所有页的错误一次性返回。
+    final slides = <DeckSlide>[];
+    final errors = <String>[];
+    for (final (i, s) in rawSlides.indexed) {
+      try {
+        slides.add(
           DeckSlide.fromJson(
             _asMap(s, 'slides[$i]'),
             'slides[$i]',
             canvas: layout,
             style: style,
           ),
-      ],
+        );
+      } on DeckParseException catch (e) {
+        errors.addAll(e.messages);
+      }
+    }
+    if (errors.isNotEmpty) throw DeckParseException.all(errors);
+    return DeckDocument(
+      layout: layout,
+      style: style,
+      title: json['title'] as String?,
+      slides: slides,
     );
   }
 

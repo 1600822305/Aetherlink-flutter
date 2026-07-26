@@ -52,6 +52,22 @@ void main() {
       expect(issues, isEmpty);
     });
 
+    test('over_density 豁免布局引擎生成的页（grid 卡片展开元素多是引擎行为）', () {
+      final deck = _deckSlides([
+        _layoutSlide('grid', [
+          for (var i = 0; i < 4; i++)
+            {'type': 'data', 'value': '${i + 10}%', 'label': '指标$i', 'desc': '同比提升'},
+        ]),
+      ]);
+      expect(
+        deck.slides.first.elements.length,
+        greaterThan(kQaMaxElementsPerSlide),
+        reason: '前提：卡片展开后的原子元素数超过阈值，才能验证豁免',
+      );
+      final issues = runDeckQa(deck);
+      expect(issues.map((i) => i.rule), isNot(contains('over_density')));
+    });
+
     test('flags out-of-bounds elements as errors', () {
       final issues = runDeckQa(
         _deck([

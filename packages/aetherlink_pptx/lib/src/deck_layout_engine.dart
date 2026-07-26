@@ -854,6 +854,13 @@ List<DeckElement> _kpi(
   _Palette p,
   String where,
 ) {
+  if (json['items'] is List) {
+    throw DeckParseException(
+      '$where(kpi) 不支持 "items" 数组：一个 kpi 元素只显示一个指标'
+      '（"value" + 可选 "label"/"trend"）；多个指标请放多个 kpi 元素，'
+      '或改用 layout 卡片 type "data"/"big_number"',
+    );
+  }
   final value = _reqString(json, 'value', '$where(kpi)');
   final label = json['label'] as String?;
   final trend = json['trend'] as String?;
