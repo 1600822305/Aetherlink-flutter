@@ -15,7 +15,7 @@
 | M4 | 原生 OOXML 图表（bar/line/pie） | ✅ 已合并 | [#808](https://github.com/1600822305/Aetherlink-flutter/pull/808) |
 | — | 技能 1.3.0 专业设计规范（配色/版式/禁止清单） | ✅ 已合并 | [#809](https://github.com/1600822305/Aetherlink-flutter/pull/809) |
 | M5 | 读取已有 pptx + 演讲者备注 + 结构校验 | ✅ 已合并 | [#812](https://github.com/1600822305/Aetherlink-flutter/pull/812) |
-| M7 | 设计引擎：风格库 JSON + Bento 布局引擎 + 图表扩到 15 种 | ⬜ 未开始 | — |
+| M7 | 设计引擎：风格库 JSON + Bento 布局引擎 + 图表扩到 15 种 | ✅ 已合并 | [#815](https://github.com/1600822305/Aetherlink-flutter/pull/815) |
 | M8 | 工作流 2.0：9 步 pipeline + 失败模式 QA + AI 配图 | ⬜ 未开始 | — |
 | M6 | 模板导入 + 编辑已有 pptx | ⬜ 未开始 | — |
 
@@ -107,6 +107,7 @@
 - **布局引擎**：页级 `"layout": {"type": "hero_top", "cards": [...]}`，内置 7 种 Bento 布局（单焦点/50-50/2:1 非对称/三栏/主次/英雄式/混合网格）+ 封面/目录/章节/结束 4 种页型；卡片 6 类型（text/data/list/tags/process/big_number）自动排版。仍兼容现有绝对坐标元素（混用）。
 - **图表扩展**：原生 OOXML 新增 doughnut、area、scatter、stackedBar、horizontalBar、radar（共 9 种原生）；纯形状合成图表：progress、kpi 卡、waffle、timeline、funnel、gauge（导出后仍是可编辑形状组）。合计 15 种，附数据特征→图表决策矩阵。
 - **视觉自检**：预览页支持"整 deck 截图导出 PNG"，agent 生成后可读图自查（利用多模态）。
+- 实施记录（#815）：风格库内置在 `deck_style.dart`（12 风格 + 内联自定义，新增只读工具 `pptx_styles`）；布局引擎 `deck_layout_engine.dart`（4 页型 + 7 内容布局 + 6 卡片）；图表 9 原生 OOXML + 6 形状合成 infographic；shape 新增 pie；技能升 1.5.0。**遗留**：整 deck 截图导出 PNG（视觉自检）未做，并入 M8；另据 AI 使用反馈高优补齐：图片支持 URL/工作区路径引用、增量更新（只改一页/一元素，M6 pptx_edit 范围提前做）。
 
 ### M8 工作流 2.0：技能重写 + 配图 + 叙事（≈3 天）
 - 技能升 2.0：9 步 pipeline、中间产物落盘（outline.json/style 选择）、密度交替节奏、章节强调色递进、封面-结尾呼应、8 失败模式 + 修复顺序铁律（先内容→再支撑→再锚点→最后装饰）。
