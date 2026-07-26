@@ -13,9 +13,24 @@
 /// 命令自身读 stdin 时（`cat > f`、REPL、TUI）哨兵行会被它当输入吃掉：
 /// 既污染数据（哨兵写进文件）又永远等不到结束信号。包进命令组后
 /// 整段输入由 shell 解析器一次读完，stdin 里不再残留待处理行。
-String buildSentinelInput(String command, String nonce) {
+/// [splitStderr]（仅适合非交互命令）：命令组的 stderr 重定向到临时
+/// 文件，命令结束后先打 `__AETHER_ERR_<nonce>__` 分隔标记、再 cat 回来，
+/// 最后才是 DONE 哨兵——PTY 合流下唯一能把 stdout/stderr 分开的办法。
+/// 交互程序的 UI 往往写 stderr，分流后提示看不到，故不默认开。
+String buildSentinelInput(
+  String command,
+  String nonce, {
+  bool splitStderr = false,
+}) {
   final trimmed = command.trimRight();
-  return '{\n$trimmed\n}; printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$?"\n';
+  if (!splitStderr) {
+    return '{\n$trimmed\n}; printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$?"\n';
+  }
+  final err = '/tmp/.aether_stderr_$nonce';
+  return '{\n$trimmed\n} 2>"$err"; __aec=\$?; '
+      'printf \'\\n__AETHER_ERR_${nonce}__\\n\'; '
+      'cat "$err" 2>/dev/null; rm -f "$err"; '
+      'printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$__aec"\n';
 }
 
 /// 在 [output] 中扫描 [nonce] 对应的哨兵。命中时返回哨兵前的输出与退出码；
@@ -31,10 +46,26 @@ SentinelMatch? matchSentinel(String output, String nonce, {String? command}) {
   final match = marker.firstMatch(output);
   if (match == null) return null;
   var head = output.substring(0, match.start);
+  // splitStderr 模式：ERR 标记之后、DONE 之前是回读的 stderr。
+  // 只认真正独占一行的标记（printf 输出），回显里的字面量夹在
+  // 长命令行中不会命中。
+  String? stderr;
+  final errMarker = RegExp(
+    '^__AETHER_ERR_${RegExp.escape(nonce)}__\\r?\$',
+    multiLine: true,
+  ).firstMatch(head);
+  if (errMarker != null) {
+    stderr = head.substring(errMarker.end).trim();
+    head = head.substring(0, errMarker.start);
+  }
   if (command != null) head = stripSessionEcho(head, command, nonce);
   // 去掉哨兵行行首残留（printf 输出前置的 \n 已计入 head 尾部）。
   head = head.trimRight();
-  return SentinelMatch(output: head, exitCode: int.parse(match.group(1)!));
+  return SentinelMatch(
+    output: head,
+    exitCode: int.parse(match.group(1)!),
+    stderr: stderr,
+  );
 }
 
 /// 提示符前缀：busybox 默认 `# ` / `$ `，或注入 PS1 后的
@@ -47,10 +78,16 @@ final RegExp _promptPrefix = RegExp(r'^(\x1b\[[0-9;]*m|[^\n\x1b])*?[#$] ');
 /// 从 [head] 里剥掉 PTY 回显噪音：与输入行（命令各行 + 哨兵 printf 行）
 /// 相同的行（可带提示符前缀），以及只剩提示符的行。
 String stripSessionEcho(String head, String command, String nonce) {
+  final err = '/tmp/.aether_stderr_$nonce';
   final echoes = <String>{
     for (final l in command.trimRight().split('\n')) l.trimRight(),
     '{',
     '}; printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$?"',
+    // splitStderr 模式的尾行回显。
+    '} 2>"$err"; __aec=\$?; '
+        'printf \'\\n__AETHER_ERR_${nonce}__\\n\'; '
+        'cat "$err" 2>/dev/null; rm -f "$err"; '
+        'printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$__aec"',
     // 旧协议（哨兵单独一行）的回显，兼容历史缓冲。
     'printf \'\\n__AETHER_DONE_${nonce}_%s__\\n\' "\$?"',
   }..remove('');
@@ -80,12 +117,13 @@ String stripSessionEcho(String head, String command, String nonce) {
 }
 
 /// 逐块过滤 PTY 显示流里的哨兵噪音（终端页联动视图 / 回看缓冲用）：
-/// 丢掉所有含 `__AETHER_DONE_` 的行——哨兵结果行和回显的 printf 行都会命中。
+/// 丢掉所有含 `__AETHER_` 标记（DONE 哨兵 / ERR 分隔）的行——哨兵
+/// 结果行和回显的 printf 行都会命中。
 /// 块可能在行中间截断：若未完行有成为哨兵行的可能（已含标记、或行尾是
 /// 标记的前缀），先扣住等下一块再判；否则立即放行（提示符等无换行内容
 /// 不能卡住不显示）。
 class SentinelDisplayFilter {
-  static const String _marker = '__AETHER_DONE_';
+  static const String _marker = '__AETHER_';
 
   /// 无换行的未完行最多扣多久：超过即放行，防止异常长行永久卡住。
   static const int _holdLimit = 4096;
@@ -206,6 +244,15 @@ final List<RegExp> _interactivePromptPatterns = [
   ),
   // 分页器停顣（PAGER=cat 已兜底，命令自带分页时仍可能出现）。
   RegExp(r'--More--|\(END\)'),
+  // 「按回车 / 任意键继续」类提示。
+  RegExp(
+    r'\b(press|hit)\b[^\n]*\b(enter|return|any key)\b',
+    caseSensitive: false,
+  ),
+  // 带默认值的输入提示："Project name [my-app]:" / "Port (8080):"。
+  RegExp(r'(\[[^\[\]\n]+\]|\([^()\n]+\))\s*[:：]\s*$'),
+  // "Enter …:" 式输入提示。
+  RegExp(r'\benter\b[^\n]*[:：]\s*$', caseSensitive: false),
 ];
 
 /// [tail]（输出尾部）看起来是否停在一个交互提示上：剥 ANSI 后取最后
@@ -226,9 +273,16 @@ bool looksLikeInteractivePrompt(String tail) {
 }
 
 class SentinelMatch {
-  const SentinelMatch({required this.output, required this.exitCode});
+  const SentinelMatch({
+    required this.output,
+    required this.exitCode,
+    this.stderr,
+  });
 
   /// 哨兵之前的全部会话输出（含 PTY 回显）。
   final String output;
   final int exitCode;
+
+  /// splitStderr 模式下回读的 stderr；普通模式（合流）为 null。
+  final String? stderr;
 }

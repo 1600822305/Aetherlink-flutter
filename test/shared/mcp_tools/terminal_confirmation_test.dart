@@ -83,66 +83,91 @@ void main() {
 
     test('full 模式：纯只读命令免审批，其余全量审批', () {
       expect(
-        terminalToolNeedsConfirmation(
-          'terminal_execute',
-          const {'command': 'ls', 'workspace': 'ws-full'},
-          workspaces: workspaces,
-        ),
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'ls',
+          'workspace': 'ws-full',
+        }, workspaces: workspaces),
         isFalse,
       );
       expect(
-        terminalToolNeedsConfirmation(
-          'terminal_execute',
-          const {'command': 'rm -rf build', 'workspace': 'ws-full'},
-          workspaces: workspaces,
-        ),
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'rm -rf build',
+          'workspace': 'ws-full',
+        }, workspaces: workspaces),
         isTrue,
       );
     });
 
     test('project 模式 root 内只读命令免审批', () {
       expect(
-        terminalToolNeedsConfirmation(
-          'terminal_execute',
-          const {'command': 'ls -la', 'workspace': 'ws-proj'},
-          workspaces: workspaces,
-        ),
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'ls -la',
+          'workspace': 'ws-proj',
+        }, workspaces: workspaces),
         isFalse,
       );
       // 按名称 / 编号解析同样生效。
       expect(
-        terminalToolNeedsConfirmation(
-          'terminal_execute',
-          const {'command': 'cat pubspec.yaml', 'workspace': 'demo'},
-          workspaces: workspaces,
-        ),
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'cat pubspec.yaml',
+          'workspace': 'demo',
+        }, workspaces: workspaces),
         isFalse,
       );
       expect(
-        terminalToolNeedsConfirmation(
-          'terminal_execute',
-          const {'command': 'pwd', 'workspace': '1'},
-          workspaces: workspaces,
-        ),
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'pwd',
+          'workspace': '1',
+        }, workspaces: workspaces),
         isFalse,
       );
     });
 
     test('project 模式写操作与越界命令仍需审批', () {
       expect(
-        terminalToolNeedsConfirmation(
-          'terminal_execute',
-          const {'command': 'npm install', 'workspace': 'ws-proj'},
-          workspaces: workspaces,
-        ),
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'npm install',
+          'workspace': 'ws-proj',
+        }, workspaces: workspaces),
         isTrue,
       );
       expect(
-        terminalToolNeedsConfirmation(
-          'terminal_execute',
-          const {'command': 'cat /etc/passwd', 'workspace': 'ws-proj'},
-          workspaces: workspaces,
-        ),
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'cat /etc/passwd',
+          'workspace': 'ws-proj',
+        }, workspaces: workspaces),
+        isTrue,
+      );
+    });
+  });
+
+  group('cwd 纳入风险评级（project 模式）', () {
+    test('cwd 在 root 内不影响只读免审', () {
+      expect(
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'ls',
+          'cwd': '/root/projects/demo/lib',
+          'workspace': 'ws-proj',
+        }, workspaces: workspaces),
+        isFalse,
+      );
+    });
+
+    test('cwd 越出 root 时即使只读命令也需审批', () {
+      expect(
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'ls',
+          'cwd': '/etc',
+          'workspace': 'ws-proj',
+        }, workspaces: workspaces),
+        isTrue,
+      );
+      expect(
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'cat passwd',
+          'cwd': '/root/projects/demo/../..',
+          'workspace': 'ws-proj',
+        }, workspaces: workspaces),
         isTrue,
       );
     });
@@ -207,9 +232,7 @@ void main() {
         isFalse,
       );
       expect(
-        terminalCommandIsHighRisk('terminal_session', const {
-          'action': 'list',
-        }),
+        terminalCommandIsHighRisk('terminal_session', const {'action': 'list'}),
         isFalse,
       );
     });

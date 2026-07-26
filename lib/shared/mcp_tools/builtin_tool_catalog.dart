@@ -1372,6 +1372,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '默认目标是内置终端（应用内 Alpine Linux 沙箱）；传 workspace 参数可在'
           ' SSH / Termux 工作区的远端 shell 里执行。'
           '超时不杀命令——命令继续在会话里跑，可用 terminal_session action=output 回看。'
+          '明确的长任务（构建/下载/测试套件）可传 background=true 立即返回，'
+          '用 action=output 轮询进度（传上次返回的 cursor 作 since 只取新增输出）。'
           '不要用本工具启动 vim / top 等全屏交互程序；优先用非交互参数'
           '（-y / --yes / --no-edit / git -c core.pager=cat 等），避免命令停下来等输入。'
           '结果 waitingInput=true 表示命令疑似在等交互输入（未结束）：看 stdout 尾部'
@@ -1400,6 +1402,20 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
                 '超时毫秒数（可选，默认 120000，上限 600000；超时不杀命令，'
                 '命令继续在会话里跑，可用 terminal_session 回看进度）',
           },
+          'background': {
+            'type': 'boolean',
+            'description':
+                '后台执行（可选，默认 false）：命令提交后立即返回不等结果，'
+                '适合明确的长任务；用 terminal_session action=output 查进度，'
+                'busy=false 且 lastExitCode 非空即已结束（会话在结束前保持占用）',
+          },
+          'split_stderr': {
+            'type': 'boolean',
+            'description':
+                '分流 stderr（可选，默认 false：终端是 PTY 合流，stderr 混在 '
+                'stdout 里）：传 true 时结果的 stderr 字段为真实分流的错误输出；'
+                '仅适合非交互命令（交互程序的提示常写 stderr，分流后看不到）',
+          },
         },
         'required': ['command'],
       },
@@ -1410,7 +1426,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '管理长驻终端会话（新建会话不在这里：给 terminal_execute 传 session 名字即可自动创建），'
           '用 action 参数区分操作：'
           'list 列出所有会话（sessionId、名称、所属工作区、是否正忙）；'
-          'output 回看会话最近输出（如超时后查看长任务进度）；'
+          'output 回看会话输出（超时/后台命令查进度；结果带 cursor，下次传 '
+          'since=cursor 只取新增输出；busy=false 且 lastExitCode 非空即命令已结束）；'
           'write 往运行中进程写 stdin（交互式输入，如回答 [y/n]、REPL；也可用 keys '
           '发方向键/回车驱动选择器；执行前会请用户确认）；'
           'interrupt 发 Ctrl-C 中断会话里卡住/跑飞的前台命令（会话保活）；'
@@ -1437,6 +1454,13 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'tail_chars': {
             'type': 'number',
             'description': '返回末尾多少个字符（output 可选，默认 4000）',
+          },
+          'since': {
+            'type': 'number',
+            'description':
+                '增量游标（output 可选）：传上次 output 返回的 cursor，'
+                '只返回自那之后的新增输出（轮询长任务不重复读旧内容）；传了 '
+                'since 时忽略 tail_chars',
           },
           'input': {
             'type': 'string',

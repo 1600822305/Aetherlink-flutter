@@ -80,8 +80,24 @@ bool terminalToolNeedsConfirmation(
   if (workspace == null || workspace.scope != WorkspaceScope.project) {
     return !isReadOnlyCommand(command);
   }
+  // cwd 也是风险输入：实际执行时会先 cd 过去，目录越出工作区 root
+  // 时即使命令本身只读也不能免审（否则 `cwd=/etc && cat passwd`
+  // 绕过作用域评级）。
+  final cwd = args['cwd']?.toString().trim();
+  if (cwd != null && cwd.isNotEmpty && !_cwdInsideRoot(cwd, workspace.root)) {
+    return true;
+  }
   return evaluateCommandRisk(command, root: workspace.root) !=
       CommandRisk.safeInRoot;
+}
+
+bool _cwdInsideRoot(String cwd, String root) {
+  final r = root.endsWith('/') && root != '/'
+      ? root.substring(0, root.length - 1)
+      : root;
+  if (r == '/') return true;
+  if (cwd.split('/').contains('..')) return false;
+  return cwd == r || cwd.startsWith('$r/');
 }
 
 /// 高危终端调用（提权/换根、命中黑名单、递归强删，见
@@ -317,11 +333,15 @@ Future<McpToolResult> _execute(
     1,
     kTerminalMaxTimeoutMs,
   );
+  final background = args['background'] == true;
+  final splitStderr = args['split_stderr'] == true;
   final result = await session.exec(
     effective,
     timeout: Duration(milliseconds: timeoutMs),
     cancelSignal: cancelSignal,
     onOutput: onOutput,
+    background: background,
+    splitStderr: splitStderr,
   );
   return fileEditorOk({
     'command': command,
@@ -332,7 +352,14 @@ Future<McpToolResult> _execute(
     'timedOut': result.timedOut,
     'canceled': result.canceled,
     'waitingInput': result.waitingInput,
-    if (result.waitingInput)
+    if (result.background) 'background': true,
+    if (result.background)
+      'hint':
+          '命令已在后台提交到会话里跑（会话在其结束前保持占用）：用 '
+          'terminal_session action=output 查看进度（busy=false 且 '
+          'lastExitCode 非空即已结束）；需要并行执行其他命令请传新的 '
+          'session 名字。'
+    else if (result.waitingInput)
       'hint':
           '命令疑似在等交互输入（未结束，仍在会话里跑，会话保持占用）：'
           '看 stdout 尾部的提示，用 terminal_session action=write 往 stdin '
@@ -346,7 +373,12 @@ Future<McpToolResult> _execute(
     else if (result.canceled)
       'hint': '命令被用户中断（已向会话发 Ctrl-C），会话仍可继续使用。',
     'stdout': _clipExecOutput(result.output),
-    'stderr': '',
+    // PTY 是合并流：split_stderr=true 时才有真实分流的 stderr，
+    // 否则 stderr 已混在 stdout 里。
+    'stderr': result.stderr == null ? '' : _clipExecOutput(result.stderr!),
+    if (!splitStderr)
+      'stderrNote':
+          'PTY 合流：stderr 已合并在 stdout 里；需要分流时传 split_stderr=true（仅适合非交互命令）。',
   });
 }
 
@@ -431,6 +463,7 @@ Future<McpToolResult> _sessionList(Ref ref, Map<String, Object?> args) async {
           'workspace': s.workspaceLabel,
           if (s.workspaceId != null) 'workspaceId': s.workspaceId,
           'busy': s.busy,
+          if (s.lastExitCode != null) 'lastExitCode': s.lastExitCode,
           'createdAt': s.createdAt.toIso8601String(),
           'lastUsedAt': s.lastUsedAt.toIso8601String(),
         },
@@ -460,12 +493,26 @@ Future<McpToolResult> _sessionOutput(Ref ref, Map<String, Object?> args) async {
       '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
     );
   }
-  final tail = optionalInt(args, 'tail_chars') ?? 4000;
+  // 传 since（上次返回的 cursor）时只返回新增输出；否则返回尾部。
+  final since = optionalInt(args, 'since');
+  final String output;
+  final int cursor;
+  if (since != null) {
+    final r = session.outputSince(since);
+    output = r.output;
+    cursor = r.cursor;
+  } else {
+    final tail = optionalInt(args, 'tail_chars') ?? 4000;
+    output = session.tailOutput(tail > 0 ? tail : 4000);
+    cursor = session.outputCursor;
+  }
   return fileEditorOk({
     'sessionId': session.id,
     'workspace': session.workspaceLabel,
     'busy': session.busy,
-    'output': session.tailOutput(tail > 0 ? tail : 4000),
+    if (session.lastExitCode != null) 'lastExitCode': session.lastExitCode,
+    'cursor': cursor,
+    'output': output,
   });
 }
 

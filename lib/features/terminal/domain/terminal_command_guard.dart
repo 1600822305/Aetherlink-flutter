@@ -21,32 +21,38 @@ final List<_BlockedPattern> _kBlockedPatterns = [
     ),
     '递归删除根目录 / 家目录',
   ),
-  _BlockedPattern(
-    RegExp(r'\bmkfs(\.\w+)?\b'),
-    '格式化文件系统',
-  ),
-  _BlockedPattern(
-    RegExp(r'\bdd\b[^\n]*\bof=/dev/'),
-    '直接写块设备',
-  ),
-  _BlockedPattern(
-    RegExp(r'>\s*/dev/(sd[a-z]|block/)'),
-    '重定向覆盖块设备',
-  ),
-  _BlockedPattern(
-    RegExp(r':\(\)\s*\{\s*:\|\s*:\s*&\s*\}\s*;\s*:'),
-    'fork 炸弹',
-  ),
+  _BlockedPattern(RegExp(r'\bmkfs(\.\w+)?\b'), '格式化文件系统'),
+  _BlockedPattern(RegExp(r'\bdd\b[^\n]*\bof=/dev/'), '直接写块设备'),
+  _BlockedPattern(RegExp(r'>\s*/dev/(sd[a-z]|block/)'), '重定向覆盖块设备'),
+  _BlockedPattern(RegExp(r':\(\)\s*\{\s*:\|\s*:\s*&\s*\}\s*;\s*:'), 'fork 炸弹'),
   _BlockedPattern(
     RegExp(r'\bchmod\s+(-[a-zA-Z]*R[a-zA-Z]*\s+)?[0-7]{3,4}\s+/\s*$'),
     '递归改根目录权限',
   ),
 ];
 
+/// `sh -c '…'` / `bash -c "…"` 类间接执行：把内层命令串拆出来
+/// 递归过一遍黑名单，否则 `sh -c 'rm -rf /'` 直接绕过拦截。
+final RegExp _kShellDashC = RegExp(
+  r'''\b(?:sh|bash|ash|dash|zsh|busybox\s+sh)\s+(?:-\S+\s+)*-c\s+(?:'([^']*)'|"([^"]*)"|(\S+))''',
+);
+
+Iterable<String> _innerShellCommands(String command) sync* {
+  for (final m in _kShellDashC.allMatches(command)) {
+    final inner = m.group(1) ?? m.group(2) ?? m.group(3);
+    if (inner != null && inner.trim().isNotEmpty) yield inner;
+  }
+}
+
 /// [command] 命中黑名单时返回拦截原因；安全时返回 null。
+/// 含 `sh -c '…'` 时对内层命令串递归检查。
 String? blockedCommandReason(String command) {
   for (final blocked in _kBlockedPatterns) {
     if (blocked.pattern.hasMatch(command)) return blocked.reason;
+  }
+  for (final inner in _innerShellCommands(command)) {
+    final reason = blockedCommandReason(inner);
+    if (reason != null) return reason;
   }
   return null;
 }
@@ -56,13 +62,28 @@ final RegExp _kRecursiveForceDeletePattern = RegExp(
   r'\brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*|--recursive\s+--force|--force\s+--recursive)\b',
 );
 
+/// 下载内容直接管道进 shell（`curl … | sh` / `wget … | bash`）：
+/// 执行的内容静态看不见，按高危处理。
+final RegExp _kPipeToShellPattern = RegExp(
+  r'\|\s*(?:sudo\s+)?(?:busybox\s+)?(?:sh|bash|ash|dash|zsh)\b',
+);
+
+/// `… | xargs rm`：删除目标来自上游输出，静态评不了范围，按高危处理。
+final RegExp _kXargsDeletePattern = RegExp(
+  r'\bxargs\b[^\n|;&]*\b(rm|rmdir|shred|unlink)\b',
+);
+
 /// 高危命令：提权/换根（su/sudo/chroot/proot）、命中命令黑名单、
-/// 递归强制删除。这类命令强制逐条 HITL 审批，白名单/免确认窗口/
+/// 递归强制删除、管道进 shell、xargs 删除；`sh -c '…'` 内层命令
+/// 同标准递归评级。这类命令强制逐条 HITL 审批，白名单/免确认窗口/
 /// auto 模式均不覆盖。
 bool isHighRiskCommand(String command) =>
     blockedCommandReason(command) != null ||
     _kScopeEscapePattern.hasMatch(command) ||
-    _kRecursiveForceDeletePattern.hasMatch(command);
+    _kRecursiveForceDeletePattern.hasMatch(command) ||
+    _kPipeToShellPattern.hasMatch(command) ||
+    _kXargsDeletePattern.hasMatch(command) ||
+    _innerShellCommands(command).any(isHighRiskCommand);
 
 /// 项目模式下一条命令的风险评级（双作用域设计稿 §3.2）。
 ///
@@ -74,11 +95,45 @@ enum CommandRisk { safeInRoot, needsApproval, escapesRoot }
 
 /// root 内免审批的只读命令白名单（首个词条匹配；管道/连接的每一段都要命中）。
 const Set<String> _kSafeReadOnlyCommands = {
-  'ls', 'cat', 'head', 'tail', 'wc', 'pwd', 'echo', 'printf', 'stat',
-  'file', 'du', 'df', 'grep', 'egrep', 'fgrep', 'rg', 'find', 'which',
-  'whoami', 'id', 'env', 'printenv', 'date', 'uname', 'basename',
-  'dirname', 'realpath', 'readlink', 'sort', 'uniq', 'cut', 'tr', 'diff',
-  'md5sum', 'sha1sum', 'sha256sum', 'tree', 'less', 'more',
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'pwd',
+  'echo',
+  'printf',
+  'stat',
+  'file',
+  'du',
+  'df',
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'find',
+  'which',
+  'whoami',
+  'id',
+  'env',
+  'printenv',
+  'date',
+  'uname',
+  'basename',
+  'dirname',
+  'realpath',
+  'readlink',
+  'sort',
+  'uniq',
+  'cut',
+  'tr',
+  'diff',
+  'md5sum',
+  'sha1sum',
+  'sha256sum',
+  'tree',
+  'less',
+  'more',
 };
 
 /// 命令里出现这些即认为可能改变作用域/身份，直接 escapesRoot。
@@ -89,9 +144,7 @@ final RegExp _kScopeEscapePattern = RegExp(
 /// 命令替换 / 进程替换：`$(...)`、反引号、`<(...)`、`>(...)`、
 /// `${...}` 带命令的扩展。静态解析看不穿内层实际执行的命令，
 /// 首词白名单/路径启发式对它们失效，一律不当只读、不免审。
-final RegExp _kCommandSubstitutionPattern = RegExp(
-  r'\$\(|`|<\(|>\(',
-);
+final RegExp _kCommandSubstitutionPattern = RegExp(r'\$\(|`|<\(|>\(');
 
 bool _hasCommandSubstitution(String command) =>
     _kCommandSubstitutionPattern.hasMatch(command);
@@ -115,14 +168,17 @@ CommandRisk evaluateCommandRisk(String command, {required String root}) {
   if (_hasCommandSubstitution(command)) return CommandRisk.escapesRoot;
 
   // `~` / $HOME 引用：root 本身是（或在）家目录下才算界内。
-  if (RegExp(r'(^|[\s=:"' r"'])(~($|[/\s])|\$HOME\b|\$\{HOME\})")
-      .hasMatch(command)) {
+  if (RegExp(
+    r'(^|[\s=:"'
+    r"'])(~($|[/\s])|\$HOME\b|\$\{HOME\})",
+  ).hasMatch(command)) {
     return CommandRisk.escapesRoot;
   }
 
   // 绝对路径词条越出 root 即越界（/dev/null 这类哑设备除外）。
-  for (final match
-      in RegExp(r'''(^|[\s=:"'])(/[^\s;&|"')]*)''').allMatches(command)) {
+  for (final match in RegExp(
+    r'''(^|[\s=:"'])(/[^\s;&|"')]*)''',
+  ).allMatches(command)) {
     final path = match.group(2)!;
     if (path == '/dev/null') continue;
     if (!_pathInsideRoot(path, normalizedRoot)) {
@@ -159,8 +215,7 @@ bool isReadOnlyCommand(String command) {
   if (_kScopeEscapePattern.hasMatch(command)) return false;
   // 命令替换内层可执行任意命令（如 `cat $(curl … | sh)`），不算只读。
   if (_hasCommandSubstitution(command)) return false;
-  final segments =
-      _splitSegments(command).toList(growable: false);
+  final segments = _splitSegments(command).toList(growable: false);
   if (segments.isEmpty) return false;
   final allSafe = segments.every((segment) {
     final words = segment.trim().split(RegExp(r'\s+'));
@@ -171,8 +226,9 @@ bool isReadOnlyCommand(String command) {
   // 任意命令，同样不算只读。
   return allSafe &&
       !command.contains('>') &&
-      !RegExp(r'\s-(delete|exec|execdir|ok|okdir|o|fprint|fprintf|fls|fprint0)\b')
-          .hasMatch(command);
+      !RegExp(
+        r'\s-(delete|exec|execdir|ok|okdir|o|fprint|fprintf|fls|fprint0)\b',
+      ).hasMatch(command);
 }
 
 bool _pathInsideRoot(String path, String root) {

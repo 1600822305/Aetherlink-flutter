@@ -16,6 +16,15 @@ void main() {
       expect(input, startsWith('{\ncd /tmp\necho hi\n}; printf'));
     });
 
+    test('splitStderr redirects stderr and replays it between markers', () {
+      final input = buildSentinelInput('make', 'e1', splitStderr: true);
+      expect(input, startsWith('{\nmake\n} 2>"/tmp/.aether_stderr_e1"'));
+      expect(input, contains('__AETHER_ERR_e1__'));
+      expect(input, contains('cat "/tmp/.aether_stderr_e1"'));
+      expect(input, contains('rm -f "/tmp/.aether_stderr_e1"'));
+      expect(input, endsWith('"\$__aec"\n'));
+    });
+
     test('sentinel shares the command line (stdin-reading commands cannot '
         'swallow it as input)', () {
       final input = buildSentinelInput('cat > notes.txt', 'x1');
@@ -83,6 +92,23 @@ void main() {
       const raw = 'value: 42\r\n__AETHER_DONE_n2_0__\r\n';
       final match = matchSentinel(raw, 'n2', command: 'get-value');
       expect(match!.output.trim(), 'value: 42');
+    });
+
+    test('splitStderr: splits stdout / stderr around the ERR marker', () {
+      const raw =
+          'building...\r\n'
+          '__AETHER_ERR_e1__\r\n'
+          'warning: deprecated API\r\n'
+          '\r\n__AETHER_DONE_e1_2__\r\n';
+      final match = matchSentinel(raw, 'e1');
+      expect(match!.exitCode, 2);
+      expect(match.output.trim(), 'building...');
+      expect(match.stderr, 'warning: deprecated API');
+    });
+
+    test('without ERR marker stderr is null (merged stream)', () {
+      final match = matchSentinel('out\n__AETHER_DONE_x_0__', 'x');
+      expect(match!.stderr, isNull);
     });
   });
 
@@ -247,6 +273,16 @@ void main() {
       expect(looksLikeInteractivePrompt('Select an option: '), isTrue);
       expect(looksLikeInteractivePrompt('--More--'), isTrue);
       expect(looksLikeInteractivePrompt('(END)'), isTrue);
+    });
+
+    test('按键继续 / 带默认值提示 / Enter …: 命中', () {
+      expect(looksLikeInteractivePrompt('Press ENTER to continue'), isTrue);
+      expect(looksLikeInteractivePrompt('Hit any key to abort'), isTrue);
+      expect(looksLikeInteractivePrompt('Project name [my-app]:'), isTrue);
+      expect(looksLikeInteractivePrompt('Port (8080): '), isTrue);
+      expect(looksLikeInteractivePrompt('Enter the target branch: '), isTrue);
+      expect(looksLikeInteractivePrompt('build finished in 3s'), isFalse);
+      expect(looksLikeInteractivePrompt('[INFO] compiled 12 files'), isFalse);
     });
   });
 

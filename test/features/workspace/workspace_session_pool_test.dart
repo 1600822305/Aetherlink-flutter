@@ -189,6 +189,57 @@ void main() {
     await future;
   });
 
+  test('background exec 立即返回，哨兵回来后释放 busy 并记录退出码', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    final result = await session.exec('make -j', background: true);
+    expect(result.background, isTrue);
+    expect(result.exitCode, isNull);
+    expect(session.busy, isTrue);
+    expect(session.lastExitCode, isNull);
+    final nonce = _nonceOf(shell);
+    shell.emit('built\n__AETHER_DONE_${nonce}_3__\n');
+    await Future<void>.delayed(Duration.zero);
+    expect(session.busy, isFalse);
+    expect(session.lastExitCode, 3);
+    expect(session.tailOutput(), contains('built'));
+  });
+
+  test('splitStderr exec 把 stderr 分流到结果字段', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    final future = session.exec('make', splitStderr: true);
+    await Future<void>.delayed(Duration.zero);
+    expect(shell.written.toString(), contains('__AETHER_ERR_'));
+    final nonce = _nonceOf(shell);
+    shell.emit(
+      'building\n__AETHER_ERR_${nonce}__\nwarn: x\n'
+      '\n__AETHER_DONE_${nonce}_0__\n',
+    );
+    final result = await future;
+    expect(result.output.trim(), 'building');
+    expect(result.stderr, 'warn: x');
+  });
+
+  test('outputSince 增量游标：只取新增输出，cursor 单调递增', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    shell.emit('first\n');
+    await Future<void>.delayed(Duration.zero);
+    final r1 = session.outputSince(0);
+    expect(r1.output, 'first\n');
+    shell.emit('second\n');
+    await Future<void>.delayed(Duration.zero);
+    final r2 = session.outputSince(r1.cursor);
+    expect(r2.output, 'second\n');
+    expect(r2.cursor, greaterThan(r1.cursor));
+    // 无新增时返回空串，cursor 不变。
+    final r3 = session.outputSince(r2.cursor);
+    expect(r3.output, isEmpty);
+    expect(r3.cursor, r2.cursor);
+    expect(session.outputCursor, r2.cursor);
+  });
+
   test('markWaitingInputAll 传 sessionRef 只标记目标会话', () async {
     final manager = WorkspaceSessionPoolManager();
     final p = manager.poolFor(backend);

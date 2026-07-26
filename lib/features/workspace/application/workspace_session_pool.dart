@@ -48,6 +48,8 @@ class WorkspaceSessionExecResult {
     this.timedOut = false,
     this.canceled = false,
     this.waitingInput = false,
+    this.background = false,
+    this.stderr,
   });
 
   final String output;
@@ -62,6 +64,13 @@ class WorkspaceSessionExecResult {
   /// 命令疑似在等交互输入（自动检测或用户手动标记）：命令未结束、
   /// 仍在前台跑，可用 [PooledWorkspaceSession.writeInput] 写 stdin 回答。
   final bool waitingInput;
+
+  /// 主动后台执行：命令已提交到会话里跑，调用立即返回（不等结果），
+  /// 结束后退出码可由 [PooledWorkspaceSession.lastExitCode] 查到。
+  final bool background;
+
+  /// splitStderr 模式下分流出的 stderr；合流模式为 null。
+  final String? stderr;
 }
 
 /// exec 被用户中断（Ctrl-C 已发出）时的内部信号，用于跳出等哨兵的 await。
@@ -125,6 +134,17 @@ class PooledWorkspaceSession {
   bool get alive => _alive;
   bool get busy => _busy;
 
+  /// 最近一条已结束命令的退出码（含超时/后台提交后才结束的）；
+  /// 从未跑完过命令时为 null。配合 busy 可查后台命令是否结束。
+  int? lastExitCode;
+
+  /// 回看缓冲开头在全量输出流中的偏移（截断丢弃的部分），
+  /// 用于增量游标：cursor = _streamBase + 缓冲长度，单调递增。
+  int _streamBase = 0;
+
+  /// 当前输出流游标；下次用 [outputSince] 传回可只取新增输出。
+  int get outputCursor => _streamBase + _buffer.length;
+
   /// 当前 exec 的「标记为等交互」触发器；无 exec 在等时为 null。
   void Function()? _flagWaitingInput;
 
@@ -154,6 +174,15 @@ class PooledWorkspaceSession {
     return text.length <= tail ? text : text.substring(text.length - tail);
   }
 
+  /// 自游标 [since]（上次返回的 [outputCursor]）以来的新增输出。
+  /// [since] 早于缓冲开头（头部已被截断丢弃）时从缓冲开头返。
+  ({String output, int cursor}) outputSince(int since) {
+    final text = _buffer.toString();
+    final cursor = _streamBase + text.length;
+    final start = (since - _streamBase).clamp(0, text.length);
+    return (output: text.substring(start), cursor: cursor);
+  }
+
   /// 向会话发 Ctrl-C（SIGINT）中断当前前台命令，会话本身保活。
   /// 命令响应 SIGINT 退出后 shell 回到提示符，哨兵（若仍在同一命令
   /// 列表里）会随之打印，busy 自然释放。
@@ -177,9 +206,13 @@ class PooledWorkspaceSession {
       var cut = text.length - kSessionBufferLimit ~/ 2;
       final nl = text.indexOf('\n', cut);
       if (nl >= 0 && nl + 1 < text.length) cut = nl + 1;
+      const marker = '…（缓冲已截断，更早输出已丢弃）\r\n';
+      // 截掉 cut 个、补进 marker.length 个：基偏移同步调整，
+      // 保证 outputCursor 截断前后连续。
+      _streamBase += cut - marker.length;
       _buffer
         ..clear()
-        ..write('…（缓冲已截断，更早输出已丢弃）\r\n')
+        ..write(marker)
         ..write(text.substring(cut));
     }
     if (!_chunks.isClosed) _chunks.add(visible);
@@ -189,11 +222,20 @@ class PooledWorkspaceSession {
   /// 后台跑，之后可用 [tailOutput] 回看。[onOutput] 提供时每到一块输出即
   /// 回调（实时输出）；[cancelSignal] 完成时向会话发 Ctrl-C 中断当前命令
   /// （会话保活），结果 `canceled = true`。
+  ///
+  /// [background] 为 true 时命令提交后立即返回（background = true，
+  /// 不等结果），会话保持 busy 直到哨兵回来；结果通过 [outputSince] /
+  /// [tailOutput] 回看，退出码落在 [lastExitCode]。
+  ///
+  /// [splitStderr] 为 true 时（仅适合非交互命令）stderr 分流到结果的
+  /// stderr 字段，见 [buildSentinelInput]。
   Future<WorkspaceSessionExecResult> exec(
     String command, {
     Duration timeout = const Duration(seconds: 120),
     Future<void>? cancelSignal,
     void Function(String chunk)? onOutput,
+    bool background = false,
+    bool splitStderr = false,
   }) async {
     if (!_alive) {
       throw const WorkspaceSessionException('会话已结束，请新建会话');
@@ -203,6 +245,7 @@ class PooledWorkspaceSession {
     }
     _busy = true;
     lastUsedAt = DateTime.now();
+    lastExitCode = null;
     final nonce = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
     final collected = StringBuffer();
     final done = Completer<SentinelMatch>();
@@ -251,6 +294,9 @@ class PooledWorkspaceSession {
         }),
       );
     }
+    unawaited(
+      done.future.then((m) => lastExitCode = m.exitCode, onError: (_) {}),
+    );
     final sub = _raw.stream.listen((chunk) {
       collected.write(chunk);
       lastChunkAt = DateTime.now();
@@ -270,11 +316,33 @@ class PooledWorkspaceSession {
       if (match != null && !done.isCompleted) done.complete(match);
     });
     try {
-      _shell.write(utf8.encode(buildSentinelInput(command, nonce)));
+      _shell.write(
+        utf8.encode(
+          buildSentinelInput(command, nonce, splitStderr: splitStderr),
+        ),
+      );
+      if (background) {
+        // 主动后台：不等哨兵，保持 busy，后台等哨兵回来才释放。
+        releaseInFinally = false;
+        unawaited(
+          done.future.then<void>((_) {}, onError: (_) {}).whenComplete(() {
+            _busy = false;
+            lastUsedAt = DateTime.now();
+            _failPendingExec = null;
+            sub.cancel();
+          }),
+        );
+        return const WorkspaceSessionExecResult(
+          output: '',
+          exitCode: null,
+          background: true,
+        );
+      }
       final match = await done.future.timeout(timeout);
       return WorkspaceSessionExecResult(
         output: match.output,
         exitCode: match.exitCode,
+        stderr: match.stderr,
       );
     } on TimeoutException {
       // 命令还在前台跑：保持 busy，后台等哨兵回来才释放。否则池会把
