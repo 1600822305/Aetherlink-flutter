@@ -40,179 +40,173 @@ class AgentHomePage extends ConsumerWidget {
     }
 
     // 顶栏 chrome 与主聊天同款：纸面 surface、无阴影、1px 底分隔线。
-    return Scaffold(
-      drawer: const AgentSidebar(),
-      appBar: AppBar(
-        backgroundColor: theme.colorScheme.surface,
-        foregroundColor: theme.colorScheme.onSurface,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
-        titleSpacing: 0,
-        leading: Builder(
-          builder: (context) => IconButton(
-            tooltip: '打开侧边栏',
-            icon: const Icon(LucideIcons.menu, size: 20),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
+    // 任务态时顶栏归聊天页所有（随 PageView 整屏横滑，工作台页有自己的
+    // 精简顶栏，不再叠两层）；草稿/空态仍用 Scaffold.appBar。
+    final showShell = task != null && task.status != AgentTaskStatus.draft;
+    final appBar = AppBar(
+      backgroundColor: theme.colorScheme.surface,
+      foregroundColor: theme.colorScheme.onSurface,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+      titleSpacing: 0,
+      leading: Builder(
+        builder: (context) => IconButton(
+          tooltip: '打开侧边栏',
+          icon: const Icon(LucideIcons.menu, size: 20),
+          onPressed: () => Scaffold.of(context).openDrawer(),
         ),
-        // 模型选择器放在标题行最右（与话题名持平），状态行单独在下。
-        title: task == null
-            ? Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      profile == null
-                          ? '智能体'
-                          : '${profile.emoji} ${profile.name}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: theme.colorScheme.onSurface,
-                      ),
+      ),
+      // 模型选择器放在标题行最右（与话题名持平），状态行单独在下。
+      title: task == null
+          ? Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    profile == null
+                        ? '智能体'
+                        : '${profile.emoji} ${profile.name}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  const _TopBarModelSelector(),
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          task.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const _TopBarModelSelector(),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  AgentStatusLine(task: task),
-                ],
-              ),
-        // 三点下拉菜单（决策 30）：智能体专属能力入口。当前有
-        // 「技能」「MCP」「权限规则」「Hooks」，记忆/工作流后续逐项加入。
-        actions: [
-          Builder(
-            builder: (context) => PopupMenuButton<String>(
-              tooltip: '更多',
-              icon: const Icon(LucideIcons.ellipsisVertical, size: 20),
-              position: PopupMenuPosition.under,
-              // 秒开：去掉弹出/收起过渡动画。
-              popUpAnimationStyle: AnimationStyle.noAnimation,
-              onSelected: (value) {
-                if (value == 'skills') showAgentSkillsPage(context);
-                if (value == 'mcp') showAgentMcpPage(context);
-                if (value == 'permissions') {
-                  showAgentPermissionRulesPage(context);
-                }
-                if (value == 'hooks') showAgentHooksPage(context);
-                if (value == 'settings') {
-                  context.push('${AppRouter.settingsPath}?mode=agent');
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'skills',
-                  child: Row(
-                    children: [
-                      Icon(
-                        LucideIcons.sparkles,
-                        size: 16,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.7,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text('技能'),
-                    ],
-                  ),
                 ),
-                PopupMenuItem(
-                  value: 'mcp',
-                  child: Row(
-                    children: [
-                      Icon(
-                        LucideIcons.plug,
-                        size: 16,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.7,
+                const SizedBox(width: 8),
+                const _TopBarModelSelector(),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        task.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: theme.colorScheme.onSurface,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      const Text('MCP'),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    const _TopBarModelSelector(),
+                  ],
                 ),
-                PopupMenuItem(
-                  value: 'permissions',
-                  child: Row(
-                    children: [
-                      Icon(
-                        LucideIcons.shieldCheck,
-                        size: 16,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.7,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text('权限规则'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'hooks',
-                  child: Row(
-                    children: [
-                      Icon(
-                        LucideIcons.webhook,
-                        size: 16,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.7,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text('Hooks'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'settings',
-                  child: Row(
-                    children: [
-                      Icon(
-                        LucideIcons.settings,
-                        size: 16,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.7,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text('设置'),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: 2),
+                AgentStatusLine(task: task),
               ],
             ),
+      // 三点下拉菜单（决策 30）：智能体专属能力入口。当前有
+      // 「技能」「MCP」「权限规则」「Hooks」，记忆/工作流后续逐项加入。
+      actions: [
+        Builder(
+          builder: (context) => PopupMenuButton<String>(
+            tooltip: '更多',
+            icon: const Icon(LucideIcons.ellipsisVertical, size: 20),
+            position: PopupMenuPosition.under,
+            // 秒开：去掉弹出/收起过渡动画。
+            popUpAnimationStyle: AnimationStyle.noAnimation,
+            onSelected: (value) {
+              if (value == 'skills') showAgentSkillsPage(context);
+              if (value == 'mcp') showAgentMcpPage(context);
+              if (value == 'permissions') {
+                showAgentPermissionRulesPage(context);
+              }
+              if (value == 'hooks') showAgentHooksPage(context);
+              if (value == 'settings') {
+                context.push('${AppRouter.settingsPath}?mode=agent');
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'skills',
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.sparkles,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text('技能'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'mcp',
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.plug,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text('MCP'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'permissions',
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.shieldCheck,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text('权限规则'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'hooks',
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.webhook,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text('Hooks'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.settings,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text('设置'),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: task != null && task.status != AgentTaskStatus.draft
-          ? AgentTaskShell(task: task)
+        ),
+      ],
+    );
+    return Scaffold(
+      drawer: const AgentSidebar(),
+      appBar: showShell ? null : appBar,
+      body: showShell
+          ? AgentTaskShell(task: task, topBar: appBar)
           : profile != null
           // 空白草稿话题与无话题选中同款空态；草稿把 task 传给输入栏，
           // 第一条消息落在该话题上而不是另建新任务。
