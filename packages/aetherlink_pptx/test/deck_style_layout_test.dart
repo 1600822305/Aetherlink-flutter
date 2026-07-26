@@ -429,4 +429,43 @@ void main() {
     expect(validatePptxPackage(bytes), isEmpty);
     expect(runDeckQa(deck).where((i) => i.rule == 'out_of_bounds'), isEmpty);
   });
+
+  test('image src 引用：解析为未展开元素，writer 拒绝导出', () {
+    final deck = DeckDocument.fromJson(
+      _deck([
+        {
+          'elements': [
+            {
+              'type': 'image',
+              'x': 1,
+              'y': 1,
+              'w': 3,
+              'h': 2,
+              'src': 'https://example.com/a.png',
+            },
+          ],
+        },
+      ]),
+    );
+    final image = deck.slides.first.elements.single as DeckImageElement;
+    expect(image.isResolved, isFalse);
+    expect(image.src, 'https://example.com/a.png');
+    expect(() => buildPptxBytes(deck), throwsA(isA<DeckParseException>()));
+    expect(renderDeckHtml(deck), contains('src 未展开'));
+  });
+
+  test('image 缺 data 和 src 时报错', () {
+    expect(
+      () => DeckDocument.fromJson(
+        _deck([
+          {
+            'elements': [
+              {'type': 'image', 'x': 1, 'y': 1, 'w': 3, 'h': 2},
+            ],
+          },
+        ]),
+      ),
+      throwsA(isA<DeckParseException>()),
+    );
+  });
 }
