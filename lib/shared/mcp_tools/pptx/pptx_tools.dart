@@ -11,6 +11,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_pptx/aetherlink_pptx.dart';
@@ -325,7 +326,7 @@ Future<McpToolResult> _edit(Ref ref, Map<String, Object?> args) async {
   var deckRaw = Map<String, Object?>.from(decoded.cast<String, Object?>());
   for (final (i, op) in ops.indexed) {
     if (op is! Map) throw FileEditorError('ops[$i] 必须是对象');
-    deckRaw = _applyOp(deckRaw, op.cast<String, Object?>(), 'ops[$i]');
+    deckRaw = applyDeckEditOp(deckRaw, op.cast<String, Object?>(), 'ops[$i]');
   }
 
   deckRaw = await _resolveImageSources(ref, args, deckRaw);
@@ -387,7 +388,10 @@ int _opIndex(Map<String, Object?> op, String key, int max, String where) {
   return v;
 }
 
-Map<String, Object?> _applyOp(
+/// 对 deck JSON 应用一条 `pptx_edit` 操作，返回新的 deck（不改入参）。
+/// [where] 是出错时定位到第几条 op 的前缀。
+@visibleForTesting
+Map<String, Object?> applyDeckEditOp(
   Map<String, Object?> deck,
   Map<String, Object?> op,
   String where,
@@ -596,30 +600,17 @@ Object _deckToTransferable(Map<String, Object?> args) {
   return jsonDecode(raw as String) as Object;
 }
 
+/// 落盘 [bytes]。覆盖已存在的文件时走 write-temp-then-swap，
+/// 详见 [writeBytesAtPath]——生成或写入失败都不会丢掉旧导出。
 Future<String> _writeBytes(
   Ref ref,
   Map<String, Object?> args,
   String path,
   Uint8List bytes, {
   bool overwrite = false,
-}) async {
-  var target = await resolveWriteTarget(ref, args, path);
-  final existing = target.existing;
-  if (existing != null) {
-    if (!overwrite) {
-      throw FileEditorError(
-        '目标文件已存在：$path。请换一个文件名，或先用 @aether/file-editor 的 '
-        'delete_file 删除旧文件。',
-      );
-    }
-    // 覆盖旧导出：后端没有二进制 overwrite，用删除 + 重建实现；
-    // 删除后重解析拿到创建目标（parentPath/fileName）。
-    await target.backend.delete(existing.path);
-    target = await resolveWriteTarget(ref, args, path);
-  }
-  var parent = target.parentPath!;
-  for (final dir in target.missingDirs) {
-    parent = await target.backend.createDirectory(parent, dir);
-  }
-  return target.backend.createFileBytes(parent, target.fileName!, bytes);
-}
+}) => writeBytesAtPath(
+  (p) => resolveWriteTarget(ref, args, p),
+  path,
+  bytes,
+  overwrite: overwrite,
+);
