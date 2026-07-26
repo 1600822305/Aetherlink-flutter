@@ -1512,8 +1512,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '把 deck.json 源渲染成原生可编辑的 .pptx 文件写入工作区（文本框/形状/'
           '图片/表格/图表都是原生 PowerPoint 对象，不是截图）。导出前自动运行 QA：'
           '有 error 时默认拒绝导出并返回报告（可传 force=true 强制）。'
-          '纯 Dart 端上生成、后台 isolate 执行，不依赖任何外部运行时。'
-          '执行前会请用户确认。',
+          '纯 Dart 端上生成、后台 isolate 执行，不依赖任何外部运行时。',
       inputSchema: {
         'type': 'object',
         'properties': {

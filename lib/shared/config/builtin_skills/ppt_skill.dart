@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '1.3.0',
+  version: '1.3.1',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -21,7 +21,7 @@ const Skill kPptSkill = Skill(
 （文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。两个工具：
 
 - `pptx_check`：校验 deck 源 + 布局 QA（不写文件，免审批）。
-- `pptx_render`：QA 通过后导出 .pptx 到工作区（需用户确认）；
+- `pptx_render`：QA 通过后导出 .pptx 到工作区；
   可传 `preview: true` 同时导出 .preview.html 预览。
 
 ## 标准工作流
