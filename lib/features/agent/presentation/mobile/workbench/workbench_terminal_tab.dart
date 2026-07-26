@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -7,10 +5,14 @@ import 'package:xterm/xterm.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_terminal_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/session_terminal.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/terminal_extra_keys.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 工作台「终端」tab（UI 稿 §4.3）：实时围观任务绑定工作区里的 AI 终端
 /// 会话——回放会话回看缓冲 + 订阅实时输出，键入直接写进会话 stdin
-/// （用户可接管）。多会话时顶部 chips 切换；关闭视图只断订阅不关会话
+/// （用户可接管）。与工作区终端页共用一套会话联动组件（状态条 / 按键条 /
+/// 会话 chip），并支持手动新建 / 关闭会话；关闭视图只断订阅不关会话
 /// （会话生命周期归会话池 / AI 管）。
 class WorkbenchTerminalTab extends ConsumerStatefulWidget {
   const WorkbenchTerminalTab({required this.task, super.key});
@@ -22,33 +24,12 @@ class WorkbenchTerminalTab extends ConsumerStatefulWidget {
       _WorkbenchTerminalTabState();
 }
 
-/// 单个 AI 会话的联动视图：xterm 缓冲 + 输出订阅（与会话同生命周期无关，
-/// detach 只断订阅）。
-class _SessionView {
-  _SessionView(this.session) {
-    // 缓冲里就是 PTY 原始字节（含 \r\n 与 ANSI 序列），直接回放。
-    terminal.write(session.snapshot());
-    _sub = session.chunks.listen(terminal.write);
-    terminal.onOutput = (data) {
-      if (session.alive) session.writeInput(data);
-    };
-  }
-
-  final PooledWorkspaceSession session;
-  final Terminal terminal = Terminal(maxLines: 10000);
-  final TerminalController controller = TerminalController();
-  StreamSubscription<String>? _sub;
-
-  Future<void> detach() async {
-    await _sub?.cancel();
-    _sub = null;
-  }
-}
-
 class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
-  final Map<String, _SessionView> _views = {};
+  final Map<String, SessionTerminalAttachment> _views = {};
   String? _activeId;
   WorkspaceSessionPoolManager? _manager;
+  final TerminalExtraKeysController _extraKeys = TerminalExtraKeysController();
+  bool _creating = false;
 
   @override
   void initState() {
@@ -64,6 +45,7 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
     for (final view in _views.values) {
       view.detach();
     }
+    _extraKeys.dispose();
     super.dispose();
   }
 
@@ -86,8 +68,42 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
     });
   }
 
-  _SessionView _viewFor(PooledWorkspaceSession session) =>
-      _views.putIfAbsent(session.id, () => _SessionView(session));
+  SessionTerminalAttachment _viewFor(PooledWorkspaceSession session) =>
+      _views.putIfAbsent(
+        session.id,
+        () =>
+            SessionTerminalAttachment(session, transform: _extraKeys.transform),
+      );
+
+  Future<void> _createSession() async {
+    if (_creating) return;
+    setState(() => _creating = true);
+    try {
+      final session = await createAgentTerminalSession(
+        ref,
+        widget.task.workspaceId,
+      );
+      if (mounted) setState(() => _activeId = session.id);
+    } on WorkspaceSessionException catch (e) {
+      if (mounted) AppToast.info(context, e.message);
+    } catch (e) {
+      if (mounted) AppToast.info(context, '新建会话失败：$e');
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _closeSession(PooledWorkspaceSession session) async {
+    await _manager?.close(session.id);
+  }
+
+  void _toggleKeyboard(FocusNode node) {
+    if (node.hasFocus) {
+      node.unfocus();
+    } else {
+      node.requestFocus();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -96,10 +112,8 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
     if (sessions.isEmpty) {
       return _empty(context);
     }
-    final active = sessions
-            .where((s) => s.id == _activeId)
-            .firstOrNull ??
-        sessions.first;
+    final active =
+        sessions.where((s) => s.id == _activeId).firstOrNull ?? sessions.first;
     final view = _viewFor(active);
     return Container(
       color: const Color(0xFF14161B),
@@ -107,61 +121,60 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
         top: false,
         child: Column(
           children: [
-            if (sessions.length > 1)
-              SizedBox(
-                height: 36,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  itemCount: sessions.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 6),
-                  itemBuilder: (context, index) =>
-                      _chip(sessions[index], selected: sessions[index].id == active.id),
-                ),
+            SizedBox(
+              height: 36,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      itemCount: sessions.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 6),
+                      itemBuilder: (context, index) => SessionChip(
+                        session: sessions[index],
+                        selected: sessions[index].id == active.id,
+                        onTap: () =>
+                            setState(() => _activeId = sessions[index].id),
+                        onClose: () => _closeSession(sessions[index]),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '新建会话',
+                    icon: const Icon(
+                      LucideIcons.plus,
+                      size: 18,
+                      color: Colors.white70,
+                    ),
+                    onPressed: _creating ? null : _createSession,
+                  ),
+                ],
               ),
+            ),
+            AiSessionStatusBar(session: active),
             Expanded(
               child: TerminalView(
                 view.terminal,
                 controller: view.controller,
+                focusNode: view.focusNode,
                 textStyle: const TerminalStyle(fontSize: 13),
                 padding: const EdgeInsets.all(8),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// AI 会话 chip：机器人图标（忙碌琥珀色 / 空闲绿色）+ 会话名。
-  Widget _chip(PooledWorkspaceSession session, {required bool selected}) {
-    return GestureDetector(
-      onTap: () => setState(() => _activeId = session.id),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white12 : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? Colors.white38 : Colors.white12,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              LucideIcons.bot,
-              size: 13,
-              color: session.busy ? Colors.amberAccent : Colors.greenAccent,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'AI · ${session.name}',
-              style: TextStyle(
-                fontSize: 13,
-                color: selected ? Colors.white : Colors.white60,
+            TerminalExtraKeysBar(
+              controller: _extraKeys,
+              terminal: view.terminal,
+              onCopy: () => copyTerminalSelection(
+                context,
+                view.terminal,
+                view.controller,
               ),
+              onPaste: () => pasteClipboardToTerminal(context, view.terminal),
+              onToggleKeyboard: () => _toggleKeyboard(view.focusNode),
             ),
           ],
         ),
@@ -182,6 +195,12 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
             '暂无终端会话\n智能体在终端里跑命令时这里可实时围观',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(color: muted),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _creating ? null : _createSession,
+            icon: const Icon(LucideIcons.plus, size: 16),
+            label: const Text('新建会话'),
           ),
         ],
       ),
