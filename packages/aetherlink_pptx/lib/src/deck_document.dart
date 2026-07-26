@@ -12,7 +12,7 @@ class DeckParseException implements Exception {
   DeckParseException(String message) : messages = [message];
 
   DeckParseException.all(this.messages)
-    : assert(messages.length > 0, 'messages 不能为空');
+    : assert(messages.isNotEmpty, 'messages 不能为空');
 
   final List<String> messages;
 
@@ -236,17 +236,17 @@ class DeckTextElement extends DeckElement {
     // 简写容错：顶层 "text" 字符串（可配 size/fontSize/bold/color/font/align）
     // 自动展开成 paragraphs/runs —— 这是 LLM 最自然的写法。
     if (rawParas == null && json['text'] is String) {
-      final size = json['size'] ?? json['fontSize'];
       final runProps = <String, Object?>{
-        if (size != null) 'size': size,
+        'size': ?(json['size'] ?? json['fontSize']),
         if (json['bold'] == true) 'bold': true,
         if (json['color'] is String) 'color': json['color'],
         if (json['font'] is String) 'font': json['font'],
       };
+      final align = json['align'] is String ? json['align'] : null;
       rawParas = [
         for (final line in (json['text'] as String).split('\n'))
           {
-            if (json['align'] is String) 'align': json['align'],
+            'align': ?align,
             'runs': [
               {'text': line, ...runProps},
             ],
