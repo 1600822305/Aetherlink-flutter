@@ -17,7 +17,7 @@
 | M5 | 读取已有 pptx + 演讲者备注 + 结构校验 | ✅ 已合并 | [#812](https://github.com/1600822305/Aetherlink-flutter/pull/812) |
 | M7 | 设计引擎：风格库 JSON + Bento 布局引擎 + 图表扩到 15 种 | ✅ 已合并 | [#815](https://github.com/1600822305/Aetherlink-flutter/pull/815) |
 | — | 图片 src 引用（URL/工作区路径）+ pptx_edit 增量编辑（deck 源级） | ✅ 已合并 | [#818](https://github.com/1600822305/Aetherlink-flutter/pull/818) |
-| M8 | 工作流 2.0：9 步 pipeline + 失败模式 QA + AI 配图 | ⬜ 未开始 | — |
+| M8 | 工作流 2.0：9 步 pipeline + 失败模式 QA + AI 配图 | ✅ 已合并 | [#820](https://github.com/1600822305/Aetherlink-flutter/pull/820) |
 | M6 | 模板导入 + 编辑已有 pptx | ⬜ 未开始 | — |
 
 实施顺序：M5 → M7 → M8 → M6（先解决「好看」，最难的模板编辑放最后）。
@@ -114,6 +114,7 @@
 - 技能升 2.0：9 步 pipeline、中间产物落盘（outline.json/style 选择）、密度交替节奏、章节强调色递进、封面-结尾呼应、8 失败模式 + 修复顺序铁律（先内容→再支撑→再锚点→最后装饰）。
 - QA 增加失败模式规则：underfill 升级（字数阈值）、support_collapse（内容页卡片<3 或类型<2）、anchor_overexpansion（单卡>65% 面积）、deck_rhythm_clone（连续 3 页同布局）。
 - 配图：接入 App 已有图像生成（生成→base64 进 image 元素），风格 JSON 附配图 prompt 模板；无图像模型时降级为色块/形状装饰。
+- 实施记录（#820）：QA 新增 4 条失败模式规则（underfill 升级：内容页纯文本 <20 字且无图表/表格/图片；support_collapse：多卡内容页卡片类型单一，卡数下限由布局引擎解析期强制；anchor_overexpansion：手写坐标页单元素占画布 >65%；deck_rhythm_clone：连续 3 页同布局），`DeckSlide` 保留 layout 元信息；新工具 `pptx_illustrate`（枚举已配置图像生成模型，经 `MediaGenerationGateway` 生成存入工作区，image 元素 src 引用；新增 `app/di/media_generation_access.dart` 组合缝）；技能升 2.0.0（9 步 pipeline + 大纲落盘 + 叙事节奏 + 修复顺序铁律 + 配图降级）。**遗留**：整 deck 截图导出 PNG（视觉自检）需离屏 widget 渲染管线，未实施；可先用 `pptx_render(preview: true)` 的 HTML 预览代替。
 
 ## 5. 排期与顺序
 
