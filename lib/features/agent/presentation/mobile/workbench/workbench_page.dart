@@ -15,9 +15,12 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/
 /// diff 为任务工作区的未提交改动清单 + 复用 Git 只读 diff 组件
 /// （[WorkbenchDiffTab]）。
 class WorkbenchPage extends StatefulWidget {
-  const WorkbenchPage({required this.task, super.key});
+  const WorkbenchPage({required this.task, this.onBackToChat, super.key});
 
   final AgentTask task;
+
+  /// 顶栏左侧返回键：滑回事件流页（不会横滑的用户的退路）。
+  final VoidCallback? onBackToChat;
 
   @override
   State<WorkbenchPage> createState() => _WorkbenchPageState();
@@ -30,16 +33,14 @@ class _WorkbenchPageState extends State<WorkbenchPage>
 
   late int _tab = _lastTabByTask[widget.task.id] ?? 0;
 
-  late final TabController _tabController = TabController(
-    length: _tabs.length,
-    initialIndex: _tab,
-    vsync: this,
-  )..addListener(() {
-      if (_tab != _tabController.index) {
-        setState(() => _tab = _tabController.index);
-        _lastTabByTask[widget.task.id] = _tabController.index;
-      }
-    });
+  late final TabController _tabController =
+      TabController(length: _tabs.length, initialIndex: _tab, vsync: this)
+        ..addListener(() {
+          if (_tab != _tabController.index) {
+            setState(() => _tab = _tabController.index);
+            _lastTabByTask[widget.task.id] = _tabController.index;
+          }
+        });
 
   static const _tabs = [
     (LucideIcons.terminal, '终端'),
@@ -61,59 +62,81 @@ class _WorkbenchPageState extends State<WorkbenchPage>
     final cs = theme.colorScheme;
     return Column(
       children: [
-        // 项目统一的分段式 tab 条（浅底胶囊 + 白底浮起指示器，
-        // 与侧边栏/聊天侧边栏同款）。
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: cs.onSurface.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: TabBar(
-            controller: _tabController,
-            dividerColor: Colors.transparent,
-            labelColor: cs.onSurface,
-            unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
-            labelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              height: 1.2,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              height: 1.2,
-            ),
-            indicatorSize: TabBarIndicatorSize.tab,
-            indicator: BoxDecoration(
-              color: cs.surface,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.08),
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
+        // 工作台页自己的精简顶栏：返回键 + 分段式 tab 条（浅底胶囊 +
+        // 白底浮起指示器，与侧边栏/聊天侧边栏同款），随整屏横滑，
+        // 不再叠聊天 AppBar。
+        SafeArea(
+          bottom: false,
+          child: Row(
+            children: [
+              if (widget.onBackToChat != null)
+                IconButton(
+                  tooltip: '返回聊天',
+                  icon: const Icon(LucideIcons.chevronLeft, size: 20),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: widget.onBackToChat,
                 ),
-              ],
-            ),
-            splashFactory: NoSplash.splashFactory,
-            overlayColor: WidgetStateProperty.all(Colors.transparent),
-            labelPadding: EdgeInsets.zero,
-            tabs: [
-              for (final (icon, label) in _tabs)
-                Tab(
-                  height: 36,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(icon, size: 14),
-                      const SizedBox(width: 4),
-                      Text(label),
+              Expanded(
+                child: Container(
+                  margin: EdgeInsets.only(
+                    left: widget.onBackToChat == null ? 12 : 0,
+                    right: 12,
+                    top: 8,
+                    bottom: 8,
+                  ),
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: TabBar(
+                    controller: _tabController,
+                    dividerColor: Colors.transparent,
+                    labelColor: cs.onSurface,
+                    unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
+                    labelStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.2,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicator: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: cs.shadow.withValues(alpha: 0.08),
+                          blurRadius: 2,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    splashFactory: NoSplash.splashFactory,
+                    overlayColor: WidgetStateProperty.all(Colors.transparent),
+                    labelPadding: EdgeInsets.zero,
+                    tabs: [
+                      for (final (icon, label) in _tabs)
+                        Tab(
+                          height: 36,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(icon, size: 14),
+                              const SizedBox(width: 4),
+                              Text(label),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                 ),
+              ),
             ],
           ),
         ),
@@ -131,4 +154,3 @@ class _WorkbenchPageState extends State<WorkbenchPage>
     );
   }
 }
-
