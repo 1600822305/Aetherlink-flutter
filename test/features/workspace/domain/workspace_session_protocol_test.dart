@@ -4,16 +4,25 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_p
 
 void main() {
   group('buildSentinelInput', () {
-    test('appends printf sentinel after the command', () {
+    test('wraps the command in a brace group with a trailing sentinel', () {
       final input = buildSentinelInput('ls -la', 'abc');
-      expect(input, startsWith('ls -la\n'));
+      expect(input, startsWith('{\nls -la\n}; printf'));
       expect(input, contains('__AETHER_DONE_abc_%s__'));
       expect(input, endsWith('"\$?"\n'));
     });
 
-    test('keeps multi-line commands intact', () {
+    test('keeps multi-line commands intact inside the group', () {
       final input = buildSentinelInput('cd /tmp\necho hi\n', 'n1');
-      expect(input, startsWith('cd /tmp\necho hi\n'));
+      expect(input, startsWith('{\ncd /tmp\necho hi\n}; printf'));
+    });
+
+    test('sentinel shares the command line (stdin-reading commands cannot '
+        'swallow it as input)', () {
+      final input = buildSentinelInput('cat > notes.txt', 'x1');
+      // 哨兵必须在 `}` 同一行，由 shell 解析器一次读完；不能单独成行，
+      // 否则会被 cat 当 stdin 写进文件。
+      final lines = input.trimRight().split('\n');
+      expect(lines.last, startsWith('}; printf'));
     });
   });
 
@@ -81,6 +90,16 @@ void main() {
     test('strips multi-line command echoes', () {
       const cmd = 'cd /tmp\necho hi';
       const head = 'cd /tmp\r\necho hi\r\nhi\r\n';
+      expect(stripSessionEcho(head, cmd, 'x').trim(), 'hi');
+    });
+
+    test('strips brace-group echoes with PS2 continuation prompts', () {
+      const cmd = 'echo hi';
+      const head =
+          '{\r\n'
+          '> echo hi\r\n'
+          '> }; printf \'\\n__AETHER_DONE_x_%s__\\n\' "\$?"\r\n'
+          'hi\r\n';
       expect(stripSessionEcho(head, cmd, 'x').trim(), 'hi');
     });
   });
@@ -219,6 +238,15 @@ void main() {
         looksLikeInteractivePrompt('continue? [y/N]\ny\ninstalling deps...'),
         isFalse,
       );
+    });
+
+    test('REPL 提示符与菜单选择提示命中', () {
+      expect(looksLikeInteractivePrompt('>>> '), isTrue);
+      expect(looksLikeInteractivePrompt('... '), isTrue);
+      expect(looksLikeInteractivePrompt('Enter your choice [1-3]:'), isTrue);
+      expect(looksLikeInteractivePrompt('Select an option: '), isTrue);
+      expect(looksLikeInteractivePrompt('--More--'), isTrue);
+      expect(looksLikeInteractivePrompt('(END)'), isTrue);
     });
   });
 
