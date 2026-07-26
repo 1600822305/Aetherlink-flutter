@@ -32,6 +32,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_header.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_open_policy.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/image_preview.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/pptx_preview.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/markdown_preview.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_session.dart';
@@ -356,6 +357,11 @@ class _FileEditorState extends ConsumerState<FileEditor>
   // The placeholder body for non-text files, or null when the editor's text
   // area should be shown.
   Widget? _placeholder() => switch (_openKind) {
+    // .pptx/.potx 是 zip 包，会被二进制嗅探拦下；按文件名转交内容预览。
+    FileOpenKind.binary when isPptxFileName(widget.entry.name) => PptxPreview(
+      entry: widget.entry,
+      backend: ref.read(workspacePreviewBackendProvider)!,
+    ),
     FileOpenKind.binary => EditorPlaceholders.binary(
       widget.entry,
       onOpenExternally: _shareEntry,
