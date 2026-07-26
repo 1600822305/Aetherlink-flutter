@@ -14,7 +14,7 @@
 | M3 | 工作区 *.deck.json 原生预览 | ✅ 已合并 | [#807](https://github.com/1600822305/Aetherlink-flutter/pull/807) |
 | M4 | 原生 OOXML 图表（bar/line/pie） | ✅ 已合并 | [#808](https://github.com/1600822305/Aetherlink-flutter/pull/808) |
 | — | 技能 1.3.0 专业设计规范（配色/版式/禁止清单） | ✅ 已合并 | [#809](https://github.com/1600822305/Aetherlink-flutter/pull/809) |
-| M5 | 读取已有 pptx + 演讲者备注 + 结构校验 | ⬜ 未开始 | — |
+| M5 | 读取已有 pptx + 演讲者备注 + 结构校验 | ✅ 已合并 | [#812](https://github.com/1600822305/Aetherlink-flutter/pull/812) |
 | M7 | 设计引擎：风格库 JSON + Bento 布局引擎 + 图表扩到 15 种 | ⬜ 未开始 | — |
 | M8 | 工作流 2.0：9 步 pipeline + 失败模式 QA + AI 配图 | ⬜ 未开始 | — |
 | M6 | 模板导入 + 编辑已有 pptx | ⬜ 未开始 | — |
