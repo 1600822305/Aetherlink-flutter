@@ -1,24 +1,24 @@
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 
-/// 内置 skill：MCP 服务器管理（mcp_manage）的完整用法。
+/// 内置 skill：MCP 服务器管理（manage_mcp）的完整用法。
 /// 工具本体只带最小 schema，config 格式与安装流程放这里按需加载
 /// （渐进披露，对齐 read_skill 模式）。
 const Skill kMcpManageSkill = Skill(
   id: 'builtin-mcp-manage',
   name: 'MCP 服务器管理',
   description:
-      'mcp_manage 工具的完整用法：添加 stdio/HTTP/SSE MCP 服务器的 '
+      'manage_mcp 工具的完整用法：添加 stdio/HTTP/SSE MCP 服务器的 '
       'config 格式、终端安装依赖流程、启停与排错',
   emoji: '🧩',
   tags: ['MCP', '工具', '配置'],
   source: SkillSource.builtin,
-  version: '1.2.0',
+  version: '1.3.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
 ## 能力概览
 
-`mcp_manage` 管理全局 MCP 服务器配置（与设置页同一份，所有对话/任务共用，
+`manage_mcp` 管理全局 MCP 服务器配置（与设置页同一份，所有对话/任务共用，
 持久保存）。五个 action：
 
 - `list`：列出已配置的**外部**服务器（id、名称、类型、启用状态）；
@@ -81,7 +81,7 @@ type 可省略：有 `command` 推断为 stdio，有 `url` 推断为 sse。
    （如 `apk add nodejs npm` / `pkg install nodejs`，视容器发行版而定）。
 2. 能直接 `npx -y <包名>` 拉起的服务器不必预装；网络差或反复用的
    建议先 `npm install -g <包名>` 再把 command 写成安装后的命令。
-3. `mcp_manage add` 写入配置（默认立即启用并拉起进程）。
+3. `manage_mcp add` 写入配置（默认立即启用并拉起进程）。
 4. 验证：启用后该服务器的工具会在下一轮任务/对话装配时并入工具列表；
    本轮内不会立即出现，提醒用户重新发起任务即可使用。
 5. 启动失败不会回滚开关：请用户到「设置 → MCP 服务器」查看日志排错，

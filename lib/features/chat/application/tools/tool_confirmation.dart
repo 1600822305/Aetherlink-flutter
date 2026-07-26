@@ -118,7 +118,7 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
     // @aether/knowledge 写操作（kb_manage）。
     case 'kb_manage':
       return _knowledgeManageSummary(args);
-    // MCP 服务器管理（mcp_manage，list 外均需确认）。
+    // MCP 服务器管理（manage_mcp，list 外均需确认）。
     case kMcpManageToolName:
       return mcpManageConfirmSummary(args);
     // 技能库管理（skill_manage，list 外均需确认）。

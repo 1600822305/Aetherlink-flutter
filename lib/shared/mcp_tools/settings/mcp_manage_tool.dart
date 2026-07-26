@@ -11,11 +11,15 @@ import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
-/// `mcp_manage`：让模型自助管理外部 MCP 服务器（全局配置，与设置页
+/// `manage_mcp`：让模型自助管理外部 MCP 服务器（全局配置，与设置页
 /// 同一份存储）。单一工具 + 最小 schema，详细参数格式与操作流程放在
 /// 内置技能「MCP 服务器管理」里按需 read_skill 加载（渐进披露，
 /// 不占常驻上下文）。写操作（add/remove/toggle）走 HITL 审批。
-const String kMcpManageToolName = 'mcp_manage';
+///
+/// 名字不能用 `mcp_` 单下划线前缀：Anthropic 把它视为伪装的 Claude Code
+/// MCP 工具名（官方格式是 `mcp__server__tool` 双下划线），OAuth 通道
+/// 会整个请求 400（invalid_request_error 判定为第三方应用）。
+const String kMcpManageToolName = 'manage_mcp';
 
 const McpToolDefinition kMcpManageToolDefinition = McpToolDefinition(
   name: kMcpManageToolName,
@@ -132,10 +136,9 @@ Map<String, Object?> _summary(McpServer s) => {
 };
 
 /// stdio 可用的运行环境：有 shell 的工作区（SAF 无终端，排除）。
-Future<List<Workspace>> _execWorkspaces(Ref ref) async =>
-    (await loadWorkspaces(
-      ref,
-    )).where((w) => w.backendType != WorkspaceBackendType.localSaf).toList();
+Future<List<Workspace>> _execWorkspaces(Ref ref) async => (await loadWorkspaces(
+  ref,
+)).where((w) => w.backendType != WorkspaceBackendType.localSaf).toList();
 
 /// 缺省自动选运行环境：优先默认主终端同后端（同连接）的工作区，
 /// 其次最近打开的可执行工作区；都没有返回 null。
@@ -232,12 +235,11 @@ Future<McpToolResult> _add(Ref ref, Map<String, Object?> args) async {
     final requested = (args['workspace'] as String?)?.trim();
     if (requested != null && requested.isNotEmpty) {
       final candidates = await _execWorkspaces(ref);
-      runEnv = candidates.where((w) => w.id == requested).firstOrNull ??
+      runEnv =
+          candidates.where((w) => w.id == requested).firstOrNull ??
           candidates.where((w) => w.name == requested).firstOrNull;
       if (runEnv == null) {
-        return _error(
-          '找不到运行环境「$requested」（用 action=workspaces 查看可用工作区）',
-        );
+        return _error('找不到运行环境「$requested」（用 action=workspaces 查看可用工作区）');
       }
     } else {
       runEnv = await _defaultStdioWorkspace(ref);

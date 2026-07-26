@@ -10,27 +10,23 @@ void main() {
         .single;
     expect(skill.name, 'MCP 服务器管理');
     expect(skill.enabled, isTrue);
-    expect(skill.content, contains('mcp_manage'));
+    expect(skill.content, contains('manage_mcp'));
     expect(skill.content, contains('stdio'));
     expect(skill.content, contains('mcpServers 条目'));
     expect(skill.content, contains('workspaces'));
     expect(skill.content, contains('内置工具（@aether/…）不在本工具管辖范围'));
   });
 
-  test('mcp_manage 工具定义指向技能，schema 含五个 action', () {
+  test('manage_mcp 工具定义指向技能，schema 含五个 action', () {
     expect(kMcpManageToolDefinition.name, kMcpManageToolName);
+    // Anthropic 把 `mcp_` 单下划线前缀判定为伪装 Claude Code，OAuth 通道 400。
+    expect(kMcpManageToolName.startsWith('mcp_'), isFalse);
     expect(kMcpManageToolDefinition.description, contains('MCP 服务器管理'));
     final props =
         kMcpManageToolDefinition.inputSchema['properties']
             as Map<String, Object?>;
     final action = props['action'] as Map<String, Object?>;
-    expect(action['enum'], [
-      'list',
-      'add',
-      'remove',
-      'toggle',
-      'workspaces',
-    ]);
+    expect(action['enum'], ['list', 'add', 'remove', 'toggle', 'workspaces']);
     expect(props.containsKey('workspace'), isTrue);
   });
 
