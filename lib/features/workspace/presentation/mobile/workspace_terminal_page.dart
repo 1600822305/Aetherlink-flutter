@@ -46,6 +46,7 @@ class _TerminalTab {
   final String? initialDirectory;
   final Terminal terminal = Terminal(maxLines: 10000);
   final TerminalController controller = TerminalController();
+  final FocusNode focusNode = FocusNode();
 
   WorkspaceShellSession? session;
   StreamSubscription<String>? outSub;
@@ -54,6 +55,7 @@ class _TerminalTab {
   String? error;
 
   Future<void> dispose() async {
+    focusNode.dispose();
     await outSub?.cancel();
     outSub = null;
     await session?.close();
@@ -79,9 +81,11 @@ class _AiSessionView {
   final PooledWorkspaceSession session;
   final Terminal terminal = Terminal(maxLines: 10000);
   final TerminalController controller = TerminalController();
+  final FocusNode focusNode = FocusNode();
   StreamSubscription<String>? _sub;
 
   Future<void> detach() async {
+    focusNode.dispose();
     await _sub?.cancel();
     _sub = null;
   }
@@ -147,8 +151,7 @@ class WorkspaceTerminalPage extends ConsumerStatefulWidget {
       _WorkspaceTerminalPageState();
 }
 
-class _WorkspaceTerminalPageState
-    extends ConsumerState<WorkspaceTerminalPage> {
+class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
   final List<_TerminalTab> _tabs = [];
   int _active = 0;
   int _nextTabNumber = 1;
@@ -166,10 +169,12 @@ class _WorkspaceTerminalPageState
   @override
   void initState() {
     super.initState();
-    _tabs.add(_TerminalTab(
-      name: '${_nextTabNumber++}',
-      initialDirectory: widget.initialDirectory,
-    ));
+    _tabs.add(
+      _TerminalTab(
+        name: '${_nextTabNumber++}',
+        initialDirectory: widget.initialDirectory,
+      ),
+    );
     final manager = ref.read(workspaceSessionPoolManagerProvider);
     manager.addListener(_onPoolChanged);
     _poolManager = manager;
@@ -241,8 +246,7 @@ class _WorkspaceTerminalPageState
     final isProot = workspace.backendType == WorkspaceBackendType.prootLocal;
     return [
       for (final s in manager.allSessions())
-        if (s.workspaceId == workspace.id ||
-            (s.workspaceId == null && isProot))
+        if (s.workspaceId == workspace.id || (s.workspaceId == null && isProot))
           s,
     ];
   }
@@ -291,8 +295,8 @@ class _WorkspaceTerminalPageState
       );
       // Wire xterm <-> session: keystrokes out, remote bytes in, size changes.
       // 输入先过额外按键条的 Ctrl / Alt 粘滞转换再写进 PTY。
-      tab.terminal.onOutput =
-          (data) => session.write(utf8.encode(_extraKeys.transform(data)));
+      tab.terminal.onOutput = (data) =>
+          session.write(utf8.encode(_extraKeys.transform(data)));
       tab.terminal.onResize = (w, h, _, __) => session.resize(w, h);
       // cast 到 List<int>：Utf8Decoder 的 StreamTransformer 反化是
       // <List<int>, String>，Stream<Uint8List>.transform 在运行时泛型检查下
@@ -304,14 +308,18 @@ class _WorkspaceTerminalPageState
       // L2 语言级隔离（设计稿 §4 P5）：开启时注入独立 HOME。
       final isolatedHome = workspace.isolatedHomePath;
       if (isolatedHome != null) {
-        session.write(utf8.encode(buildSessionEnvSetup({'HOME': isolatedHome})));
+        session.write(
+          utf8.encode(buildSessionEnvSetup({'HOME': isolatedHome})),
+        );
       }
       if (workspace.backendType == WorkspaceBackendType.prootLocal) {
         // 内置终端：设置带当前路径的提示符 + 清屏后打印工作区横幅
         // （clear 顺便抹掉前面注入命令的回显）。
-        session.write(utf8.encode(
-          buildProotGreeting(name: workspace.name, root: workspace.root),
-        ));
+        session.write(
+          utf8.encode(
+            buildProotGreeting(name: workspace.name, root: workspace.root),
+          ),
+        );
       } else {
         // 远程后端不动对方 shell 配置，只在本地终端视图里写横幅。
         tab.terminal.write(
@@ -355,6 +363,15 @@ class _WorkspaceTerminalPageState
           tab.connecting = false;
         });
       }
+    }
+  }
+
+  /// 键盘开关：已聚焦则收起，否则聚焦呼出（免去点终端区域）。
+  void _toggleKeyboard(FocusNode node) {
+    if (node.hasFocus) {
+      node.unfocus();
+    } else {
+      node.requestFocus();
     }
   }
 
@@ -440,7 +457,9 @@ class _WorkspaceTerminalPageState
         return;
       }
       if (!mounted) return;
-      ref.read(openWorkspaceFilesProvider.notifier).open(
+      ref
+          .read(openWorkspaceFilesProvider.notifier)
+          .open(
             entry,
             dirtyPaths: ref.read(dirtyFilesProvider),
             line: link.line,
@@ -519,8 +538,9 @@ class _WorkspaceTerminalPageState
     // 终端页已在前台时再次点「在终端中查看」：就地切到对应 AI 会话。
     ref.listen<String?>(terminalFocusSessionProvider, (prev, next) {
       if (next != null) {
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _consumeFocusRequest());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _consumeFocusRequest(),
+        );
       }
     });
     final theme = Theme.of(context);
@@ -542,8 +562,11 @@ class _WorkspaceTerminalPageState
               children: [
                 IconButton(
                   tooltip: '返回',
-                  icon: const Icon(LucideIcons.arrowLeft,
-                      size: 20, color: Colors.white),
+                  icon: const Icon(
+                    LucideIcons.arrowLeft,
+                    size: 20,
+                    color: Colors.white,
+                  ),
                   onPressed: widget.onBack,
                 ),
                 Expanded(
@@ -561,8 +584,11 @@ class _WorkspaceTerminalPageState
                 if (isProot)
                   IconButton(
                     tooltip: '环境管理（镜像源 / 预设包 / 清理重装）',
-                    icon: const Icon(LucideIcons.package,
-                        size: 18, color: Colors.white70),
+                    icon: const Icon(
+                      LucideIcons.package,
+                      size: 18,
+                      color: Colors.white70,
+                    ),
                     onPressed: () => showTerminalEnvPage(
                       context,
                       onRunCommand: (command) {
@@ -580,8 +606,11 @@ class _WorkspaceTerminalPageState
                 else if (canExec && workspace != null)
                   IconButton(
                     tooltip: '环境管理（镜像源 / 预设包检测）',
-                    icon: const Icon(LucideIcons.package,
-                        size: 18, color: Colors.white70),
+                    icon: const Icon(
+                      LucideIcons.package,
+                      size: 18,
+                      color: Colors.white70,
+                    ),
                     onPressed: () {
                       final envBackend = backend;
                       if (envBackend == null) return;
@@ -615,8 +644,11 @@ class _WorkspaceTerminalPageState
                 if (tab.connected)
                   IconButton(
                     tooltip: '断开',
-                    icon: const Icon(LucideIcons.power,
-                        size: 18, color: Colors.white70),
+                    icon: const Icon(
+                      LucideIcons.power,
+                      size: 18,
+                      color: Colors.white70,
+                    ),
                     onPressed: () => _disconnect(tab),
                   ),
               ],
@@ -629,31 +661,39 @@ class _WorkspaceTerminalPageState
               child: Row(
                 children: [
                   Expanded(
-                    child: Builder(builder: (context) {
-                      final aiSessions = _aiSessions(workspace);
-                      return ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        itemCount: _tabs.length + aiSessions.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 6),
-                        itemBuilder: (context, index) => index < _tabs.length
-                            ? _tabChip(index)
-                            : _aiChip(aiSessions[index - _tabs.length]),
-                      );
-                    }),
+                    child: Builder(
+                      builder: (context) {
+                        final aiSessions = _aiSessions(workspace);
+                        return ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          itemCount: _tabs.length + aiSessions.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 6),
+                          itemBuilder: (context, index) => index < _tabs.length
+                              ? _tabChip(index)
+                              : _aiChip(aiSessions[index - _tabs.length]),
+                        );
+                      },
+                    ),
                   ),
                   IconButton(
                     tooltip: '新建终端',
-                    icon: const Icon(LucideIcons.plus,
-                        size: 18, color: Colors.white70),
+                    icon: const Icon(
+                      LucideIcons.plus,
+                      size: 18,
+                      color: Colors.white70,
+                    ),
                     onPressed: _addTab,
                   ),
                 ],
               ),
             ),
           Expanded(
-            child: _body(theme,
-                canExec: canExec, hasWorkspace: workspace != null),
+            child: _body(
+              theme,
+              canExec: canExec,
+              hasWorkspace: workspace != null,
+            ),
           ),
         ],
       ),
@@ -670,9 +710,7 @@ class _WorkspaceTerminalPageState
         decoration: BoxDecoration(
           color: selected ? Colors.white12 : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? Colors.white38 : Colors.white12,
-          ),
+          border: Border.all(color: selected ? Colors.white38 : Colors.white12),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -710,9 +748,7 @@ class _WorkspaceTerminalPageState
         decoration: BoxDecoration(
           color: selected ? Colors.white12 : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? Colors.white38 : Colors.white12,
-          ),
+          border: Border.all(color: selected ? Colors.white38 : Colors.white12),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -741,13 +777,13 @@ class _WorkspaceTerminalPageState
     );
   }
 
-  Widget _body(ThemeData theme,
-      {required bool canExec, required bool hasWorkspace}) {
+  Widget _body(
+    ThemeData theme, {
+    required bool canExec,
+    required bool hasWorkspace,
+  }) {
     if (!hasWorkspace) {
-      return const _Hint(
-        icon: LucideIcons.terminal,
-        text: '请先打开一个工作区',
-      );
+      return const _Hint(icon: LucideIcons.terminal, text: '请先打开一个工作区');
     }
     if (!canExec) {
       return const _Hint(
@@ -762,10 +798,12 @@ class _WorkspaceTerminalPageState
     if (aiView != null) {
       return Column(
         children: [
+          _AiSessionStatusBar(session: aiView.session),
           Expanded(
             child: TerminalView(
               aiView.terminal,
               controller: aiView.controller,
+              focusNode: aiView.focusNode,
               textStyle: textStyle,
               padding: const EdgeInsets.all(8),
             ),
@@ -777,6 +815,7 @@ class _WorkspaceTerminalPageState
             onPaste: () => _pasteClipboard(aiView.terminal),
             onFontAdjust: ref.read(terminalFontSizeProvider.notifier).adjust,
             onJumpToFile: () => _jumpToFileLink(aiView.terminal),
+            onToggleKeyboard: () => _toggleKeyboard(aiView.focusNode),
           ),
         ],
       );
@@ -795,6 +834,7 @@ class _WorkspaceTerminalPageState
                   TerminalView(
                     t.terminal,
                     controller: t.controller,
+                    focusNode: t.focusNode,
                     textStyle: textStyle,
                     padding: const EdgeInsets.all(8),
                   ),
@@ -808,14 +848,13 @@ class _WorkspaceTerminalPageState
             onPaste: () => _pasteClipboard(tab.terminal),
             onFontAdjust: ref.read(terminalFontSizeProvider.notifier).adjust,
             onJumpToFile: () => _jumpToFileLink(tab.terminal),
+            onToggleKeyboard: () => _toggleKeyboard(tab.focusNode),
           ),
         ],
       );
     }
     if (tab.connecting) {
-      return const Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
     // Idle / errored: explicit connect affordance (lazy shell start).
     return Center(
@@ -839,6 +878,68 @@ class _WorkspaceTerminalPageState
             label: Text(tab.error == null ? '启动终端' : '重试'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// AI 会话围观视图顶部的状态条：实时显示会话是否被 AI 命令占用，
+/// 让用户知道此刻键入会不会打进 AI 正在跑的命令；忙时提供一键中断。
+class _AiSessionStatusBar extends StatelessWidget {
+  const _AiSessionStatusBar({required this.session});
+
+  final PooledWorkspaceSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: session.busyListenable,
+      builder: (context, busy, _) => Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        color: busy ? const Color(0xFF3A2E12) : const Color(0xFF16281B),
+        child: Row(
+          children: [
+            Icon(
+              busy ? LucideIcons.loader : LucideIcons.check,
+              size: 13,
+              color: busy ? Colors.amberAccent : Colors.greenAccent,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                busy ? 'AI 命令执行中 · 此刻键入会打进该命令的 stdin' : '会话空闲 · 可直接键入接管',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: busy ? Colors.amberAccent : Colors.white60,
+                ),
+              ),
+            ),
+            if (busy)
+              GestureDetector(
+                onTap: () {
+                  try {
+                    session.interrupt();
+                  } on WorkspaceSessionException catch (e) {
+                    AppToast.info(context, e.message);
+                  }
+                },
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    '中断',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

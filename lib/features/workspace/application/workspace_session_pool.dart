@@ -129,10 +129,13 @@ class PooledWorkspaceSession {
   /// 原始流：含哨兵行，供 exec 扫哨兵判定命令结束。
   final StreamController<String> _raw = StreamController<String>.broadcast();
   bool _alive = true;
-  bool _busy = false;
+
+  /// busy 变化可监听（终端页的 AI 会话状态条据此实时刷新）。
+  final ValueNotifier<bool> busyListenable = ValueNotifier<bool>(false);
 
   bool get alive => _alive;
-  bool get busy => _busy;
+  bool get busy => busyListenable.value;
+  set _busy(bool value) => busyListenable.value = value;
 
   /// 最近一条已结束命令的退出码（含超时/后台提交后才结束的）；
   /// 从未跑完过命令时为 null。配合 busy 可查后台命令是否结束。
@@ -240,7 +243,7 @@ class PooledWorkspaceSession {
     if (!_alive) {
       throw const WorkspaceSessionException('会话已结束，请新建会话');
     }
-    if (_busy) {
+    if (busy) {
       throw const WorkspaceSessionException('会话正忙（上一条命令还没结束），可换一个会话或稍后再试');
     }
     _busy = true;
