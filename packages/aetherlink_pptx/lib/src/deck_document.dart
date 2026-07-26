@@ -639,7 +639,14 @@ class DeckChartElement extends DeckElement {
 
 /// One slide: background + z-ordered elements + optional speaker notes.
 class DeckSlide {
-  const DeckSlide({required this.elements, this.background, this.notes});
+  const DeckSlide({
+    required this.elements,
+    this.background,
+    this.notes,
+    this.layoutType,
+    this.layoutCardCount,
+    this.layoutCardTypeCount,
+  });
 
   factory DeckSlide.fromJson(
     Map<String, Object?> json,
@@ -658,17 +665,24 @@ class DeckSlide {
     }
     final notes = (rawNotes as String?)?.trim();
     final elements = <DeckElement>[];
+    String? layoutType;
+    int? layoutCardCount;
+    int? layoutCardTypeCount;
     // 布局引擎：页级 layout 声明编译成绝对定位元素；仍可与 elements 混用
     // （layout 元素在前，elements 叠加在后）。
     if (rawLayout != null) {
-      elements.addAll(
-        buildLayoutElements(
-          _asMap(rawLayout, '$where.layout'),
-          canvas,
-          style,
-          where,
-        ),
-      );
+      final layoutMap = _asMap(rawLayout, '$where.layout');
+      elements.addAll(buildLayoutElements(layoutMap, canvas, style, where));
+      // 保留布局元信息供 QA 的失败模式规则（节奏克隆/支撑坍缩）使用。
+      layoutType = layoutMap['type'] as String?;
+      final cards = layoutMap['cards'];
+      if (cards is List) {
+        layoutCardCount = cards.length;
+        layoutCardTypeCount = {
+          for (final c in cards)
+            if (c is Map) (c['type'] as String?) ?? 'text',
+        }.length;
+      }
     }
     if (rawElements is List) {
       for (final (i, e) in rawElements.indexed) {
@@ -690,6 +704,9 @@ class DeckSlide {
           : DeckColor(json['background'] as String),
       notes: notes == null || notes.isEmpty ? null : notes,
       elements: elements,
+      layoutType: layoutType,
+      layoutCardCount: layoutCardCount,
+      layoutCardTypeCount: layoutCardTypeCount,
     );
   }
 
@@ -698,6 +715,12 @@ class DeckSlide {
 
   /// Speaker notes, written into the slide's `notesSlide` part on export.
   final String? notes;
+
+  /// Layout metadata (when the slide used a page-level layout declaration),
+  /// consumed by the failure-mode QA rules; null for absolute-positioned pages.
+  final String? layoutType;
+  final int? layoutCardCount;
+  final int? layoutCardTypeCount;
 }
 
 /// The whole deck source — the structured JSON the agent produces and both

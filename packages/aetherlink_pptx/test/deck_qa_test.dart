@@ -12,6 +12,22 @@ DeckDocument _deck(List<Map<String, Object?>> elements) => DeckDocument.parse(
   }),
 );
 
+DeckDocument _deckSlides(List<Map<String, Object?>> slides) =>
+    DeckDocument.parse(jsonEncode({'layout': '16x9', 'slides': slides}));
+
+Map<String, Object?> _layoutSlide(
+  String type,
+  List<Map<String, Object?>> cards,
+) => {
+  'layout': {'type': type, 'title': '标题', 'cards': cards},
+};
+
+Map<String, Object?> _textCard() => {
+  'type': 'text',
+  'title': '小标题',
+  'body': ['这是一段足够长的卡片正文内容，用来避免触发内容太薄的警告'],
+};
+
 void main() {
   group('runDeckQa', () {
     test('passes a well-formed slide', () {
@@ -26,7 +42,7 @@ void main() {
             'paragraphs': [
               {
                 'runs': [
-                  {'text': '标题', 'size': 32},
+                  {'text': '这是一页内容充实的幻灯片标题，配有足够的支撑文字说明', 'size': 32},
                 ],
               },
             ],
@@ -42,9 +58,9 @@ void main() {
           {'type': 'shape', 'shape': 'rect', 'x': 12, 'y': 1, 'w': 3, 'h': 1},
         ]),
       );
-      expect(issues.single.rule, 'out_of_bounds');
-      expect(issues.single.severity, DeckQaSeverity.error);
-      expect(issues.single.toJson()['slide'], 1);
+      final issue = issues.singleWhere((i) => i.rule == 'out_of_bounds');
+      expect(issue.severity, DeckQaSeverity.error);
+      expect(issue.toJson()['slide'], 1);
     });
 
     test('flags estimated text overflow as an error', () {
@@ -93,6 +109,176 @@ void main() {
       final empty = runDeckQa(_deck([]));
       expect(empty.single.rule, 'underfill');
       expect(empty.single.severity, DeckQaSeverity.warning);
+    });
+  });
+
+  group('失败模式规则', () {
+    test('underfill 升级：内容页文字太少且无图表/表格/图片', () {
+      final thin = runDeckQa(
+        _deck([
+          {
+            'type': 'text',
+            'x': 1,
+            'y': 1,
+            'w': 10,
+            'h': 1,
+            'paragraphs': [
+              {
+                'runs': [
+                  {'text': '标题', 'size': 32},
+                ],
+              },
+            ],
+          },
+        ]),
+      );
+      expect(thin.map((i) => i.rule), contains('underfill'));
+
+      final withChart = runDeckQa(
+        _deck([
+          {
+            'type': 'text',
+            'x': 1,
+            'y': 0.5,
+            'w': 10,
+            'h': 1,
+            'paragraphs': [
+              {
+                'runs': [
+                  {'text': '标题', 'size': 32},
+                ],
+              },
+            ],
+          },
+          {
+            'type': 'chart',
+            'chart': 'bar',
+            'x': 1,
+            'y': 2,
+            'w': 6,
+            'h': 4,
+            'categories': ['Q1', 'Q2'],
+            'series': [
+              {
+                'name': '营收',
+                'values': [1, 2],
+              },
+            ],
+          },
+        ]),
+      );
+      expect(withChart.map((i) => i.rule), isNot(contains('underfill')));
+    });
+
+    test('support_collapse：多卡内容页卡片类型单一', () {
+      final monotype = runDeckQa(
+        _deckSlides([
+          _layoutSlide('grid', [
+            _textCard(),
+            _textCard(),
+            _textCard(),
+            _textCard(),
+          ]),
+        ]),
+      );
+      expect(monotype.map((i) => i.rule), contains('support_collapse'));
+
+      final mixed = runDeckQa(
+        _deckSlides([
+          _layoutSlide('grid', [
+            _textCard(),
+            {'type': 'data', 'value': '87%', 'label': '增长率'},
+            {
+              'type': 'list',
+              'title': '要点',
+              'items': ['第一条要点说明', '第二条要点说明'],
+            },
+            _textCard(),
+          ]),
+        ]),
+      );
+      expect(mixed.map((i) => i.rule), isNot(contains('support_collapse')));
+
+      // split 本身就是 2 卡布局，不设卡数下限。
+      final split = runDeckQa(
+        _deckSlides([
+          _layoutSlide('split', [
+            _textCard(),
+            {'type': 'data', 'value': '3x', 'label': '提速'},
+          ]),
+        ]),
+      );
+      expect(split.map((i) => i.rule), isNot(contains('support_collapse')));
+    });
+
+    test('anchor_overexpansion：手写坐标页单元素霸占画布', () {
+      final issues = runDeckQa(
+        _deck([
+          {
+            'type': 'shape',
+            'shape': 'rect',
+            'x': 0.5,
+            'y': 0.5,
+            'w': 11,
+            'h': 6,
+            'fill': '1A73E8',
+          },
+          {
+            'type': 'text',
+            'x': 1,
+            'y': 1,
+            'w': 10,
+            'h': 1,
+            'paragraphs': [
+              {
+                'runs': [
+                  {'text': '这是一页有足够文字支撑的幻灯片标题内容说明', 'size': 32},
+                ],
+              },
+            ],
+          },
+          {
+            'type': 'shape',
+            'shape': 'rect',
+            'x': 1,
+            'y': 6.6,
+            'w': 2,
+            'h': 0.5,
+            'fill': '00E5FF',
+          },
+        ]),
+      );
+      expect(issues.map((i) => i.rule), contains('anchor_overexpansion'));
+    });
+
+    test('deck_rhythm_clone：连续三页同一内容布局', () {
+      final cards = [
+        _textCard(),
+        {'type': 'data', 'value': '87%', 'label': '增长率'},
+        {
+          'type': 'list',
+          'title': '要点',
+          'items': ['第一条要点说明', '第二条要点说明'],
+        },
+        _textCard(),
+      ];
+      final cloned = runDeckQa(
+        _deckSlides([
+          _layoutSlide('grid', cards),
+          _layoutSlide('grid', cards),
+          _layoutSlide('grid', cards),
+        ]),
+      );
+      expect(cloned.where((i) => i.rule == 'deck_rhythm_clone').length, 1);
+
+      final varied = runDeckQa(
+        _deckSlides([
+          _layoutSlide('grid', cards),
+          _layoutSlide('columns', cards.sublist(0, 3)),
+          _layoutSlide('grid', cards),
+        ]),
+      );
+      expect(varied.map((i) => i.rule), isNot(contains('deck_rhythm_clone')));
     });
   });
 }

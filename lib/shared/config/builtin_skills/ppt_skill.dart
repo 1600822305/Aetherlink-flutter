@@ -11,14 +11,14 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '1.6.0',
+  version: '2.0.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
 ## 能力概览
 
 `@aether/pptx` 把结构化 deck.json 源渲染成**原生可编辑**的 .pptx
-（文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。五个工具：
+（文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。六个工具：
 
 - `pptx_styles`：列出内置视觉风格库（只读，免审批）。
 - `pptx_read`：读取工作区里已有的 .pptx/.potx（只读，免审批），逐页提取
@@ -30,17 +30,32 @@ const Skill kPptSkill = Skill(
   可传 `preview: true` 同时导出 .preview.html 预览。
 - `pptx_edit`：增量编辑——以工作区的 .deck.json 为源应用 ops（只改一页/
   一个元素），写回源文件；传 `export` 同时重导出 .pptx（可覆盖旧导出）。
+- `pptx_illustrate`：AI 配图——用已配置的图像生成模型把 prompt 生成为
+  图片存进工作区，image 元素用 `"src": "<路径>"` 引用；没有图像模型时
+  返回错误（此时降级为色块/形状装饰，不要反复重试）。
 
-## 标准工作流
+## 标准工作流（9 步 pipeline，中间产物全部落盘）
 
-1. 先和用户对齐：主题、页数、风格（深色/浅色、正式/活泼）、语言。
-2. `pptx_styles` 看风格目录，按主题选一个 `style`；写大纲（每页一句话），
-   再逐页展开成 deck.json（优先用页级 layout 声明，少手写坐标）。
-3. `pptx_check` 自检 → 按返回的 errors/warnings 修改源 → 重查。
-4. 通过后 `pptx_render` 导出（路径如 `演示文稿/主题.pptx`）。
-5. 同时用 file-editor 的 `write` 把 deck 源存为同名 `主题.deck.json`：
-   用户在工作区点开它可直接预览幻灯片（编辑器右上角「PPT 预览」）。
-6. 后续修改用 `pptx_edit` 增量迭代，不要重发完整 deck：
+1. **需求对齐**：主题、场景、受众、页数、风格倾向（深色/浅色、正式/活泼）、
+   语言。信息不全先问，不要凭空猜。
+2. **收集资料**：用户给的材料优先；数据/案例不足时可用网络搜索补充
+   （有该工具时），标注来源。
+3. **写大纲并落盘**：每页一行「页型 + 一句话主旨」，用 file-editor 的
+   `write` 存为 `主题.outline.json`（或 .md），发给用户过目再继续——
+   大纲返工比整 deck 返工便宜一个量级。
+4. **选风格**：`pptx_styles` 看目录，按主题/受众选 `style` 并说明理由
+   （科技发布→dark_tech，医疗→medical_pulse，年报→champagne_gold …）。
+5. **配图（可选）**：需要照片/插画的页先 `pptx_illustrate` 生成进工作区
+   （prompt 贴合风格：写清主体、构图、配色关键词，不要要求文字入图）；
+   没有图像模型时用色块/形状/infographic 装饰代替，不算失败。
+6. **展开 deck 源**：按大纲逐页展开成 deck.json（优先页级 layout 声明，
+   少手写坐标），同时应用下面的「叙事节奏」。
+7. **QA 循环**：`pptx_check` → 按 errors/warnings 逐条改源 → 重查，
+   直到 errors 为空（修复顺序见「失败模式」）。
+8. **导出**：`pptx_render` 导出（路径如 `演示文稿/主题.pptx`），并用
+   file-editor 把 deck 源存为同名 `主题.deck.json`：用户点开可直接预览；
+   要人工视觉复核时可传 `preview: true` 同时导出 .preview.html。
+9. **增量迭代**：后续修改一律 `pptx_edit`，不要重发完整 deck：
    `pptx_edit(source: "主题.deck.json", ops: [...], export: "主题.pptx")`。
    ops 支持 set_meta(title/style/layout) / set_slide / insert_slide /
    remove_slide / move_slide / set_element / append_element /
@@ -145,6 +160,18 @@ textPrimary/textSecondary/accents 必填）。不传 style 则完全手动控制
 - 相邻内容页换着用不同布局；卡片类型也要混搭（data+list+tags 比
   全 text 好看得多）。
 
+## 叙事节奏（整篇结构，不只是单页好看）
+
+- **三明治结构**：cover（深）→ toc → section/内容页交替 → end（深，
+  视觉呼应封面：同一强调色、同一构图语言）。
+- **密度交替**：重信息页（grid/columns 多卡）之后跟一页轻的
+  （focus 大数字/金句/全幅图），密→疏→密，给观众喘息点。
+- **章节强调色递进**：多章节长 deck 里，每个 section 页依次用
+  accents 里的下一个强调色（accent(0)→accent(1)→…），观众能凭颜色
+  感知进度。
+- 连续 3 页同一布局会触发 deck_rhythm_clone 警告——写大纲时就把
+  布局排开。
+
 ## 硬性规则（违反会被拒绝或产出损坏文件）
 
 - 颜色一律 **6 位 hex**（如 `1A73E8`），不带 `#`、不带 alpha；
@@ -231,14 +258,29 @@ textPrimary/textSecondary/accents 必填）。不传 style 则完全手动控制
 - 禁止正文居中；禁止低对比（浅底浅字/深底深字）。
 - 禁止只给一页上设计、其余全裸奔——风格要贯穿全篇。
 
-## QA 报告的用法
+## 失败模式 QA（8 条规则 + 修复顺序铁律）
 
 `pptx_check` / `pptx_render` 返回 `qa: { errors: [...], warnings: [...] }`
-与 `structure: { errors: [...] }`（导出包的内容类型/关系/引用自检，
-正常恒为空，非空说明生成器有 bug，照报告反馈）。qa 
-每条含 rule（out_of_bounds / text_overflow / font_too_small /
-over_density / underfill）、slide/element 序号与修正建议。errors 必须
-修完才能导出（不要用 force 绕过）；warnings 酌情优化。按报告逐条改
-deck 源再重查，直到 errors 为空。
+与 `structure: { errors: [...] }`（导出包结构自检，正常恒为空，非空说明
+生成器有 bug，照报告反馈）。qa 每条含 rule、slide/element 序号与修正建议：
+
+- `out_of_bounds`（error）：元素超出画布 → 调坐标/尺寸。
+- `text_overflow`（error）：文本估算溢出容器 → 精简文字、调小字号或
+  加大容器，不要硬塞。
+- `font_too_small`（warning）：字号 <12pt → 提字号或删内容。
+- `over_density`（warning）：单页 >12 个元素 → 拆页。
+- `underfill`（warning）：空白页，或内容页纯文本 <20 字且无图表/表格/
+  图片 → 补支撑内容或并入相邻页。
+- `support_collapse`（warning）：grid/columns/hierarchy 卡片 <3，或
+  卡片类型全部相同 → 补卡片/混卡片类型。
+- `anchor_overexpansion`（warning）：手写坐标页单元素占画布 >65%
+  （非满幅背景）→ 缩小锚点元素，给支撑内容留空间。
+- `deck_rhythm_clone`（warning）：连续 3 页同一内容布局 → 换布局
+  制造节奏。
+
+**修复顺序铁律**：先内容（文字对不对、够不够）→ 再支撑（数据/图表/
+卡片）→ 再视觉锚点（大数字/图片/色块的大小位置）→ 最后装饰。
+顺序反了会来回返工。errors 必须修完才能导出（不要用 force 绕过）；
+warnings 酌情优化。按报告逐条改 deck 源再重查，直到 errors 为空。
 ''',
 );
