@@ -71,10 +71,19 @@ Future<McpToolResult> runPptxTool(
               '在 deck.json 顶层加 "style": "<id>" 套用；元素可省略颜色，'
               '背景/文字/卡片/图表配色自动推导；也可传内联风格对象自定义',
         });
+      case 'pptx_schema':
+        return fileEditorOk({
+          'schema': kDeckJsonSchema,
+          'usage':
+              'deck.json 格式的单一权威来源（与解析器同步，含别名容错说明）。'
+              '解析报错时先对照 schema 自查字段名/枚举值/结构',
+        });
     }
     return fileEditorError('未知的工具: $toolName');
   } on DeckParseException catch (e) {
-    return fileEditorError('deck 源无效：${e.message}');
+    return fileEditorError(
+      'deck 源无效：${e.message}\n（字段名/枚举/结构不确定时调 pptx_schema 查权威格式）',
+    );
   } on PptxReadException catch (e) {
     return fileEditorError('pptx 读取失败：${e.message}');
   } on PptxEditException catch (e) {

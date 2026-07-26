@@ -192,6 +192,7 @@ bool toolRouteIsReadOnly(ToolRoute route) => switch (route) {
     'pptx_read',
     'pptx_outline',
     'pptx_styles',
+    'pptx_schema',
   }.contains(route.toolName),
   TerminalToolRoute() => false,
   RemoteToolRoute() => false,

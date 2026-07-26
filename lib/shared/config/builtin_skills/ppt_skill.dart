@@ -28,8 +28,10 @@ const Skill kPptSkill = Skill(
 选错路线的典型后果：拿到用户的公司模板却走 A，母版和 VI 全丢；
 只想改一个错别字却走 A，整份 PPT 被重做一遍。
 
-八个工具：
+九个工具：
 
+- `pptx_schema`：返回 deck.json 的 JSON Schema（只读，免审批）——格式的
+  单一权威来源，含别名容错说明；字段/结构不确定或 check 报错时先调它自查。
 - `pptx_styles`：列出内置视觉风格库（只读，免审批）。
 - `pptx_read`：读取工作区里已有的 .pptx/.potx（只读，免审批），逐页提取
   文本/表格/图表数据/演讲者备注；`format: "markdown"`（默认，适合总结

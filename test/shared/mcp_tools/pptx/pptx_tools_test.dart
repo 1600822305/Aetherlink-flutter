@@ -46,7 +46,10 @@ void main() {
 
     test('静态工具目录暴露 pptx_read / pptx_check / pptx_render', () {
       final names = builtinToolsFor(kPptxServerName).map((t) => t.name);
-      expect(names, containsAll(['pptx_read', 'pptx_check', 'pptx_render']));
+      expect(
+        names,
+        containsAll(['pptx_read', 'pptx_check', 'pptx_render', 'pptx_schema']),
+      );
       for (final tool in builtinToolsFor(kPptxServerName)) {
         expect(tool.inputSchema['type'], 'object');
       }
@@ -154,6 +157,7 @@ void main() {
         'pptx_render',
         'pptx_edit',
         'pptx_styles',
+        'pptx_schema',
         'pptx_outline',
         'pptx_illustrate',
       ]) {

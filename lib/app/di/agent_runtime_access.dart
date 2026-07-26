@@ -286,6 +286,7 @@ const Set<String> _kReadOnlyToolNames = {
   'pptx_check',
   'pptx_read',
   'pptx_outline',
+  'pptx_schema',
   // 内置浏览器：只读子集（click/input 有副作用，排除）
   'browser_open', 'browser_read', 'browser_snapshot', 'browser_snapshot_dom',
   'browser_wait',

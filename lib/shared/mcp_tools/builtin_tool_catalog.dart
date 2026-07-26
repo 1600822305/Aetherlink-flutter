@@ -1625,6 +1625,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'pptx_schema',
+      description:
+          '返回 deck.json 格式的 JSON Schema（只读，不写任何文件）——格式的'
+          '单一权威来源，与解析器同步，含别名容错说明（fontSize≡size、'
+          'chartType≡chart、text 元素顶层 "text" 简写等）。'
+          'pptx_check 报字段/结构错误而不确定正确写法时调它自查。',
+      inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
+    ),
+    McpToolDefinition(
       name: 'pptx_styles',
       description:
           '列出 PPT 内置视觉风格库（只读，不写任何文件）：返回每个风格的 id/'

@@ -10,6 +10,47 @@ const String kPngBase64 =
     'YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 void main() {
+  group('kDeckJsonSchema', () {
+    test('枚举与解析器保持同步（chart/shape/infographic/布局/卡片）', () {
+      Map<String, Object?> def(String name) =>
+          (kDeckJsonSchema['definitions']!
+                  as Map<String, Object?>)[name]!
+              as Map<String, Object?>;
+      List<Object?> enumOf(Map<String, Object?> node, List<String> path) {
+        Object? cur = node;
+        for (final key in path) {
+          cur = (cur! as Map<String, Object?>)[key];
+        }
+        return cur! as List<Object?>;
+      }
+
+      expect(
+        enumOf(def('chartElement'), ['properties', 'chart', 'enum']),
+        [for (final k in DeckChartKind.values) k.name],
+      );
+      expect(
+        enumOf(def('shapeElement'), ['properties', 'shape', 'enum']),
+        [for (final k in DeckShapeKind.values) k.preset],
+      );
+      expect(
+        enumOf(def('element'), ['properties', 'type', 'enum']),
+        ['text', 'shape', 'image', 'table', 'chart', 'infographic'],
+      );
+      expect(
+        enumOf(def('infographicElement'), ['properties', 'kind', 'enum']),
+        ['progress', 'kpi', 'waffle', 'timeline', 'funnel', 'gauge'],
+      );
+      expect(
+        enumOf(def('pageLayout'), ['properties', 'type', 'enum']),
+        [
+          'cover', 'toc', 'section', 'end',
+          'focus', 'split', 'asymmetric', 'columns',
+          'hierarchy', 'hero', 'grid',
+        ],
+      );
+    });
+  });
+
   group('DeckDocument.parse', () {
     test('parses a minimal valid deck', () {
       final deck = DeckDocument.parse(
