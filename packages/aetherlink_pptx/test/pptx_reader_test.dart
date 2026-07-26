@@ -98,6 +98,8 @@ void main() {
       expect(s2.notes, isNull);
     });
 
+    _shapesTests();
+
     test('非 zip 输入抛 PptxReadException', () {
       expect(
         () => readPptxBytes(utf8.encode('not a zip')),
@@ -220,6 +222,42 @@ void main() {
       final issues = validatePptxPackage(utf8.encode('junk'));
       expect(issues, isNotEmpty);
       expect(issues.any((i) => i.part == 'ppt/presentation.xml'), isTrue);
+    });
+  });
+}
+
+/// 版面级解析：形状几何（EMU）、run 样式、图片/表格/图表定位。
+void _shapesTests() {
+  group('readPptxBytes shapes', () {
+    test('文本形状带几何与 run 样式', () {
+      final result = readPptxBytes(buildPptxBytes(_deckWithEverything()));
+      final slide = result.slides.first;
+      expect(slide.shapes, isNotEmpty);
+      final textShape = slide.shapes.firstWhere(
+        (s) => s.kind == PptxShapeKind.text,
+      );
+      // deck x:1 英寸 = 914400 EMU。
+      expect(textShape.rect, isNotNull);
+      expect(textShape.rect!.x, closeTo(914400, 1));
+      expect(textShape.rect!.w, closeTo(11 * 914400, 1));
+      final run = textShape.paragraphs.first.runs.first;
+      expect(run.text, '大标题');
+      expect(run.bold, isTrue);
+      expect(run.sizePt, 40);
+    });
+
+    test('表格与图表形状带 frame', () {
+      final result = readPptxBytes(buildPptxBytes(_deckWithEverything()));
+      final tableShape = result.slides.first.shapes.firstWhere(
+        (s) => s.kind == PptxShapeKind.table,
+      );
+      expect(tableShape.rect, isNotNull);
+      expect(tableShape.table!.rows.first, ['指标', '数值']);
+      final chartShape = result.slides[1].shapes.firstWhere(
+        (s) => s.kind == PptxShapeKind.chart,
+      );
+      expect(chartShape.rect, isNotNull);
+      expect(chartShape.chart!.kind, 'bar');
     });
   });
 }

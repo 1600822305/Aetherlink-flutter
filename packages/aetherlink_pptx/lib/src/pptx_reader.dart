@@ -48,6 +48,110 @@ class PptxChartContent {
   final List<PptxChartSeriesContent> series;
 }
 
+/// One styled text run inside a paragraph.
+class PptxRun {
+  const PptxRun({
+    required this.text,
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.sizePt,
+    this.colorHex,
+    this.fontFamily,
+  });
+
+  final String text;
+  final bool bold;
+  final bool italic;
+  final bool underline;
+
+  /// Font size in points, when the run declares one.
+  final double? sizePt;
+
+  /// `RRGGBB` (theme colors already resolved), when declared.
+  final String? colorHex;
+  final String? fontFamily;
+}
+
+/// One paragraph: runs plus alignment / bullet info.
+class PptxParagraph {
+  const PptxParagraph({
+    required this.runs,
+    this.align,
+    this.level = 0,
+    this.bullet = false,
+  });
+
+  final List<PptxRun> runs;
+
+  /// `l` / `ctr` / `r` / `just`, when declared.
+  final String? align;
+  final int level;
+  final bool bullet;
+
+  String get text => runs.map((r) => r.text).join();
+}
+
+/// Shape frame on the slide, in EMU (914400 per inch).
+class PptxRect {
+  const PptxRect({
+    required this.x,
+    required this.y,
+    required this.w,
+    required this.h,
+  });
+
+  final double x;
+  final double y;
+  final double w;
+  final double h;
+}
+
+enum PptxShapeKind { text, image, table, chart, shape }
+
+/// One positioned shape on a slide, in z order.
+class PptxShape {
+  const PptxShape({
+    required this.kind,
+    this.rect,
+    this.rotationDeg = 0,
+    this.paragraphs = const [],
+    this.fillHex,
+    this.lineHex,
+    this.geometry,
+    this.imageBytes,
+    this.imageName,
+    this.table,
+    this.chart,
+    this.isTitlePlaceholder = false,
+    this.placeholderType,
+  });
+
+  final PptxShapeKind kind;
+
+  /// Frame in EMU; null when neither the shape nor its layout/master
+  /// placeholder declares one.
+  final PptxRect? rect;
+  final double rotationDeg;
+  final List<PptxParagraph> paragraphs;
+
+  /// Solid fill / outline color as `RRGGBB`, when present.
+  final String? fillHex;
+  final String? lineHex;
+
+  /// Preset geometry name (`rect`, `roundRect`, `ellipse`, …), when present.
+  final String? geometry;
+
+  /// Raw image bytes for [PptxShapeKind.image] (only formats Flutter can
+  /// decode: png/jpeg/gif/bmp/webp); null for wmf/emf etc.
+  final Uint8List? imageBytes;
+  final String? imageName;
+  final PptxTableContent? table;
+  final PptxChartContent? chart;
+  final bool isTitlePlaceholder;
+  final String? placeholderType;
+}
+
 /// Extracted content of one slide, in shape (z) order.
 class PptxSlideContent {
   const PptxSlideContent({
@@ -55,6 +159,8 @@ class PptxSlideContent {
     required this.tables,
     required this.charts,
     required this.imageCount,
+    this.shapes = const [],
+    this.backgroundHex,
     this.notes,
   });
 
@@ -63,6 +169,12 @@ class PptxSlideContent {
   final List<PptxTableContent> tables;
   final List<PptxChartContent> charts;
   final int imageCount;
+
+  /// Positioned shapes with style, for layout-faithful rendering.
+  final List<PptxShape> shapes;
+
+  /// Slide background solid fill as `RRGGBB` (slide → layout → master).
+  final String? backgroundHex;
 
   /// Speaker notes text, when the slide has a notesSlide part.
   final String? notes;
@@ -81,6 +193,9 @@ class PptxReadResult {
   final double slideWidthInches;
   final double slideHeightInches;
   final List<PptxSlideContent> slides;
+
+  double get slideWidthEmu => slideWidthInches * 914400;
+  double get slideHeightEmu => slideHeightInches * 914400;
 }
 
 const String _relNs =
@@ -151,6 +266,44 @@ PptxReadResult readPptxBytes(Uint8List bytes) {
     } catch (_) {}
   }
 
+  // Theme color scheme (accent1… → RRGGBB), for resolving schemeClr.
+  final themeColors = <String, String>{};
+  for (final target in presRels.values) {
+    if (!target.contains('theme')) continue;
+    final data = parts[_resolvePath('ppt', target)];
+    if (data == null) continue;
+    try {
+      final theme = XmlDocument.parse(utf8.decode(data));
+      final scheme = theme.findAllElements('clrScheme', namespace: '*').firstOrNull;
+      if (scheme == null) continue;
+      for (final el in scheme.childElements) {
+        final hex =
+            el.findAllElements('srgbClr', namespace: '*').firstOrNull
+                ?.getAttribute('val') ??
+            el.findAllElements('sysClr', namespace: '*').firstOrNull
+                ?.getAttribute('lastClr');
+        if (hex != null) themeColors[el.name.local] = hex.toUpperCase();
+      }
+    } catch (_) {}
+    break;
+  }
+
+  // Loads a part's XML + its rels, or null when absent/broken.
+  (XmlDocument, Map<String, String>)? loadPart(String path) {
+    final data = parts[path];
+    if (data == null) return null;
+    try {
+      final doc = XmlDocument.parse(utf8.decode(data));
+      final relsPath = _relsPathFor(path);
+      final rels = parts.containsKey(relsPath)
+          ? _parseRels(parseXml(relsPath))
+          : const <String, String>{};
+      return (doc, rels);
+    } catch (_) {
+      return null;
+    }
+  }
+
   final slides = <PptxSlideContent>[];
   for (final slidePath in slidePaths) {
     final slideDoc = parseXml(slidePath);
@@ -160,26 +313,111 @@ PptxReadResult readPptxBytes(Uint8List bytes) {
         : const <String, String>{};
     final slideDir = _dirname(slidePath);
 
-    final texts = <String>[];
-    final tables = <PptxTableContent>[];
-    final charts = <PptxChartContent>[];
-    var imageCount = 0;
+    // Chain slide → layout → master, for placeholder geometry + background.
+    (XmlDocument, Map<String, String>)? layout;
+    (XmlDocument, Map<String, String>)? master;
+    var layoutDir = '';
+    for (final target in slideRels.values) {
+      if (!target.contains('slideLayout')) continue;
+      final layoutPath = _resolvePath(slideDir, target);
+      layout = loadPart(layoutPath);
+      layoutDir = _dirname(layoutPath);
+      for (final t in (layout?.$2 ?? const <String, String>{}).values) {
+        if (!t.contains('slideMaster')) continue;
+        master = loadPart(_resolvePath(layoutDir, t));
+        break;
+      }
+      break;
+    }
 
-    final spTree = slideDoc
-        .findAllElements('spTree', namespace: '*')
-        .firstOrNull;
-    if (spTree != null) {
-      for (final node in spTree.childElements) {
+    final phRects = <String, PptxRect>{};
+    void collectPh(XmlDocument? doc) {
+      if (doc == null) return;
+      for (final sp in doc.findAllElements('sp', namespace: '*')) {
+        final ph = sp.findAllElements('ph', namespace: '*').firstOrNull;
+        if (ph == null) continue;
+        final rect = _readXfrm(
+          sp.findAllElements('xfrm', namespace: '*').firstOrNull,
+        );
+        if (rect == null) continue;
+        final type = ph.getAttribute('type') ?? 'body';
+        final idx = ph.getAttribute('idx') ?? '';
+        phRects.putIfAbsent('$type|$idx', () => rect);
+        phRects.putIfAbsent('$type|', () => rect);
+        if (idx.isNotEmpty) phRects.putIfAbsent('|$idx', () => rect);
+      }
+    }
+
+    // Layout wins over master (closer in the inheritance chain).
+    collectPh(layout?.$1);
+    collectPh(master?.$1);
+
+    String? backgroundHex;
+    for (final doc in [
+      slideDoc,
+      if (layout != null) layout.$1,
+      if (master != null) master.$1,
+    ]) {
+      final bgPr = doc.findAllElements('bgPr', namespace: '*').firstOrNull;
+      final hex = bgPr == null ? null : _solidFill(bgPr, themeColors);
+      if (hex != null) {
+        backgroundHex = hex;
+        break;
+      }
+      final bgRef = doc.findAllElements('bgRef', namespace: '*').firstOrNull;
+      final refHex = bgRef == null ? null : _colorOf(bgRef, themeColors);
+      if (refHex != null) {
+        backgroundHex = refHex;
+        break;
+      }
+    }
+
+    final shapes = <PptxShape>[];
+
+    void walkTree(XmlElement tree, _Xform xf) {
+      for (final node in tree.childElements) {
         switch (node.name.local) {
           case 'sp':
-            final text = _shapeText(node);
-            if (text.isNotEmpty) texts.add(text);
+            shapes.add(_parseSp(node, xf, phRects, themeColors));
+          case 'cxnSp':
+            final rect = xf.apply(
+              _readXfrm(
+                node.findAllElements('xfrm', namespace: '*').firstOrNull,
+              ),
+            );
+            final line = _lineFill(node, themeColors);
+            if (rect != null && line != null) {
+              shapes.add(
+                PptxShape(
+                  kind: PptxShapeKind.shape,
+                  rect: rect,
+                  geometry: 'line',
+                  lineHex: line,
+                ),
+              );
+            }
           case 'pic':
-            imageCount++;
+            shapes.add(
+              _parsePic(node, xf, slideRels, slideDir, parts, themeColors),
+            );
+          case 'grpSp':
+            final child = xf.child(node);
+            if (child != null) walkTree(node, child);
           case 'graphicFrame':
+            final rect = xf.apply(
+              _readXfrm(
+                node.findAllElements('xfrm', namespace: '*').firstOrNull,
+              ),
+            );
             final tbl = node.findAllElements('tbl', namespace: '*').firstOrNull;
             if (tbl != null) {
-              tables.add(_parseTable(tbl));
+              shapes.add(
+                PptxShape(
+                  kind: PptxShapeKind.table,
+                  rect: rect,
+                  table: _parseTable(tbl),
+                ),
+              );
               break;
             }
             final chartRef = node
@@ -195,13 +433,46 @@ PptxReadResult readPptxBytes(Uint8List bytes) {
               final data = parts[chartPath];
               if (data != null) {
                 try {
-                  charts.add(_parseChart(XmlDocument.parse(utf8.decode(data))));
+                  shapes.add(
+                    PptxShape(
+                      kind: PptxShapeKind.chart,
+                      rect: rect,
+                      chart: _parseChart(XmlDocument.parse(utf8.decode(data))),
+                    ),
+                  );
                 } catch (_) {}
               }
             }
         }
       }
     }
+
+    final spTree = slideDoc
+        .findAllElements('spTree', namespace: '*')
+        .firstOrNull;
+    if (spTree != null) walkTree(spTree, const _Xform());
+
+    // Legacy flat views, derived from the shape list.
+    final texts = <String>[
+      for (final s in shapes)
+        if (s.kind == PptxShapeKind.text &&
+            s.paragraphs.any((p) => p.text.trim().isNotEmpty))
+          s.paragraphs
+              .map((p) => p.text)
+              .where((t) => t.trim().isNotEmpty)
+              .join('\n'),
+    ];
+    final tables = <PptxTableContent>[
+      for (final s in shapes)
+        if (s.table != null) s.table!,
+    ];
+    final charts = <PptxChartContent>[
+      for (final s in shapes)
+        if (s.chart != null) s.chart!,
+    ];
+    final imageCount = shapes
+        .where((s) => s.kind == PptxShapeKind.image)
+        .length;
 
     String? notes;
     for (final entry in slideRels.entries) {
@@ -234,6 +505,8 @@ PptxReadResult readPptxBytes(Uint8List bytes) {
         tables: tables,
         charts: charts,
         imageCount: imageCount,
+        shapes: shapes,
+        backgroundHex: backgroundHex,
         notes: notes,
       ),
     );
@@ -445,6 +718,273 @@ PptxTableContent _parseTable(XmlElement tbl) {
     rows.add(cells);
   }
   return PptxTableContent(rows: rows);
+}
+
+/// Scale+translate accumulated through nested `grpSp` transforms, mapping
+/// child-space EMU to slide-space EMU.
+class _Xform {
+  const _Xform({this.sx = 1, this.sy = 1, this.tx = 0, this.ty = 0});
+
+  final double sx;
+  final double sy;
+  final double tx;
+  final double ty;
+
+  PptxRect? apply(PptxRect? r) => r == null
+      ? null
+      : PptxRect(x: tx + r.x * sx, y: ty + r.y * sy, w: r.w * sx, h: r.h * sy);
+
+  /// Transform for the children of group [grp] (null when it lacks xfrm).
+  _Xform? child(XmlElement grp) {
+    final grpSpPr = grp.childElements
+        .where((e) => e.name.local == 'grpSpPr')
+        .firstOrNull;
+    final xfrm = grpSpPr?.childElements
+        .where((e) => e.name.local == 'xfrm')
+        .firstOrNull;
+    if (xfrm == null) return null;
+    double attr(String el, String name, [double def = 0]) =>
+        double.tryParse(
+          xfrm.childElements
+                  .where((e) => e.name.local == el)
+                  .firstOrNull
+                  ?.getAttribute(name) ??
+              '',
+        ) ??
+        def;
+    final extX = attr('ext', 'cx');
+    final extY = attr('ext', 'cy');
+    final chExtX = attr('chExt', 'cx', extX);
+    final chExtY = attr('chExt', 'cy', extY);
+    final kx = chExtX == 0 ? 1.0 : extX / chExtX;
+    final ky = chExtY == 0 ? 1.0 : extY / chExtY;
+    return _Xform(
+      sx: sx * kx,
+      sy: sy * ky,
+      tx: tx + (attr('off', 'x') - attr('chOff', 'x') * kx) * sx,
+      ty: ty + (attr('off', 'y') - attr('chOff', 'y') * ky) * sy,
+    );
+  }
+}
+
+/// off/ext of an `a:xfrm` as a rect in EMU, or null.
+PptxRect? _readXfrm(XmlElement? xfrm) {
+  if (xfrm == null) return null;
+  final off = xfrm.childElements
+      .where((e) => e.name.local == 'off')
+      .firstOrNull;
+  final ext = xfrm.childElements
+      .where((e) => e.name.local == 'ext')
+      .firstOrNull;
+  if (off == null || ext == null) return null;
+  double num(XmlElement el, String a) =>
+      double.tryParse(el.getAttribute(a) ?? '') ?? 0;
+  return PptxRect(
+    x: num(off, 'x'),
+    y: num(off, 'y'),
+    w: num(ext, 'cx'),
+    h: num(ext, 'cy'),
+  );
+}
+
+double _readRot(XmlElement? xfrm) =>
+    (double.tryParse(xfrm?.getAttribute('rot') ?? '') ?? 0) / 60000;
+
+const _schemeAlias = {'tx1': 'dk1', 'tx2': 'dk2', 'bg1': 'lt1', 'bg2': 'lt2'};
+
+/// First srgbClr/schemeClr/sysClr under [el], resolved to `RRGGBB`.
+String? _colorOf(XmlElement el, Map<String, String> theme) {
+  for (final c in el.descendantElements) {
+    switch (c.name.local) {
+      case 'srgbClr':
+        final v = c.getAttribute('val');
+        if (v != null) return v.toUpperCase();
+      case 'sysClr':
+        final v = c.getAttribute('lastClr');
+        if (v != null) return v.toUpperCase();
+      case 'schemeClr':
+        final name = c.getAttribute('val');
+        if (name != null) {
+          return theme[_schemeAlias[name] ?? name] ??
+              theme[name] ??
+              (name.startsWith('lt') || name == 'bg1' ? 'FFFFFF' : null);
+        }
+    }
+  }
+  return null;
+}
+
+/// Color of a `solidFill` that is a **direct child** of [parent] (so a
+/// shape fill is not confused with its outline fill).
+String? _solidFill(XmlElement parent, Map<String, String> theme) {
+  final fill = parent.childElements
+      .where((e) => e.name.local == 'solidFill')
+      .firstOrNull;
+  return fill == null ? null : _colorOf(fill, theme);
+}
+
+/// Outline color from `spPr > ln > solidFill`, when present.
+String? _lineFill(XmlElement sp, Map<String, String> theme) {
+  final spPr = sp
+      .findAllElements('spPr', namespace: '*')
+      .firstOrNull;
+  final ln = spPr?.childElements
+      .where((e) => e.name.local == 'ln')
+      .firstOrNull;
+  return ln == null ? null : _solidFill(ln, theme);
+}
+
+/// Styled paragraphs of a shape's txBody (empty when it has none).
+List<PptxParagraph> _parseParagraphs(XmlElement sp, Map<String, String> theme) {
+  final txBody = sp.findAllElements('txBody', namespace: '*').firstOrNull;
+  if (txBody == null) return const [];
+  final paras = <PptxParagraph>[];
+  for (final p in txBody.childElements.where((e) => e.name.local == 'p')) {
+    final pPr = p.childElements
+        .where((e) => e.name.local == 'pPr')
+        .firstOrNull;
+    final bullet =
+        pPr?.childElements.any(
+          (e) => e.name.local == 'buChar' || e.name.local == 'buAutoNum',
+        ) ??
+        false;
+    final runs = <PptxRun>[];
+    for (final child in p.childElements) {
+      if (child.name.local == 'br') {
+        runs.add(const PptxRun(text: '\n'));
+        continue;
+      }
+      if (child.name.local != 'r' && child.name.local != 'fld') continue;
+      final text = child
+          .findAllElements('t', namespace: '*')
+          .map((t) => t.innerText)
+          .join();
+      if (text.isEmpty) continue;
+      final rPr = child.childElements
+          .where((e) => e.name.local == 'rPr')
+          .firstOrNull;
+      runs.add(
+        PptxRun(
+          text: text,
+          bold: rPr?.getAttribute('b') == '1',
+          italic: rPr?.getAttribute('i') == '1',
+          underline: (rPr?.getAttribute('u') ?? 'none') != 'none',
+          sizePt: rPr == null
+              ? null
+              : double.tryParse(rPr.getAttribute('sz') ?? '')
+                    .map((v) => v / 100),
+          colorHex: rPr == null ? null : _solidFill(rPr, theme),
+          fontFamily: rPr?.childElements
+              .where((e) => e.name.local == 'latin')
+              .firstOrNull
+              ?.getAttribute('typeface'),
+        ),
+      );
+    }
+    paras.add(
+      PptxParagraph(
+        runs: runs,
+        align: pPr?.getAttribute('algn'),
+        level: int.tryParse(pPr?.getAttribute('lvl') ?? '') ?? 0,
+        bullet: bullet,
+      ),
+    );
+  }
+  // Trim trailing fully-empty paragraphs so boxes don't grow past the text.
+  while (paras.isNotEmpty && paras.last.text.trim().isEmpty) {
+    paras.removeLast();
+  }
+  return paras;
+}
+
+extension<T> on T? {
+  R? map<R>(R Function(T) f) {
+    final self = this;
+    return self == null ? null : f(self);
+  }
+}
+
+PptxShape _parseSp(
+  XmlElement sp,
+  _Xform xf,
+  Map<String, PptxRect> phRects,
+  Map<String, String> theme,
+) {
+  final spPr = sp.childElements
+      .where((e) => e.name.local == 'spPr')
+      .firstOrNull;
+  final xfrm = spPr?.childElements
+      .where((e) => e.name.local == 'xfrm')
+      .firstOrNull;
+  var rect = xf.apply(_readXfrm(xfrm));
+  final ph = sp.findAllElements('ph', namespace: '*').firstOrNull;
+  final phType = ph?.getAttribute('type');
+  if (rect == null && ph != null) {
+    final type = phType ?? 'body';
+    final idx = ph.getAttribute('idx') ?? '';
+    rect = xf.apply(
+      phRects['$type|$idx'] ??
+          phRects['$type|'] ??
+          phRects['|$idx'] ??
+          (type == 'ctrTitle'
+              ? phRects['title|']
+              : type == 'title'
+              ? phRects['ctrTitle|']
+              : null),
+    );
+  }
+  final paras = _parseParagraphs(sp, theme);
+  final hasText = paras.any((p) => p.text.trim().isNotEmpty);
+  return PptxShape(
+    kind: hasText ? PptxShapeKind.text : PptxShapeKind.shape,
+    rect: rect,
+    rotationDeg: _readRot(xfrm),
+    paragraphs: paras,
+    fillHex: spPr == null ? null : _solidFill(spPr, theme),
+    lineHex: _lineFill(sp, theme),
+    geometry: spPr
+        ?.findAllElements('prstGeom', namespace: '*')
+        .firstOrNull
+        ?.getAttribute('prst'),
+    isTitlePlaceholder: phType == 'title' || phType == 'ctrTitle',
+    placeholderType: phType,
+  );
+}
+
+PptxShape _parsePic(
+  XmlElement pic,
+  _Xform xf,
+  Map<String, String> rels,
+  String baseDir,
+  Map<String, Uint8List> parts,
+  Map<String, String> theme,
+) {
+  final xfrm = pic.findAllElements('xfrm', namespace: '*').firstOrNull;
+  final blip = pic.findAllElements('blip', namespace: '*').firstOrNull;
+  final rId = blip?.attributes
+      .where((a) => a.name.local == 'embed')
+      .firstOrNull
+      ?.value;
+  Uint8List? bytes;
+  String? name;
+  final target = rId == null ? null : rels[rId];
+  if (target != null) {
+    final path = _resolvePath(baseDir, target);
+    name = path.split('/').last;
+    final dot = name.lastIndexOf('.');
+    final ext = dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+    if (const {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}.contains(ext)) {
+      bytes = parts[path];
+    }
+  }
+  return PptxShape(
+    kind: PptxShapeKind.image,
+    rect: xf.apply(_readXfrm(xfrm)),
+    rotationDeg: _readRot(xfrm),
+    imageBytes: bytes,
+    imageName: name,
+    lineHex: _lineFill(pic, theme),
+  );
 }
 
 PptxChartContent _parseChart(XmlDocument chartDoc) {
