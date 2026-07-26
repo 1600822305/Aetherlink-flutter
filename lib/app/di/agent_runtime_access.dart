@@ -65,6 +65,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tool
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_context.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/load_mcp_tools_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/pptx/pptx_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_client.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
@@ -280,6 +281,8 @@ const Set<String> _kReadOnlyToolNames = {
   'list_files', 'read_file', 'search_files',
   // 知识库：只读子集（kb_manage 有写操作，排除）
   'kb_list', 'kb_search', 'kb_read',
+  // PPT：校验/QA 只读（pptx_render 写工作区，排除）
+  'pptx_check',
   // 内置浏览器：只读子集（click/input 有副作用，排除）
   'browser_open', 'browser_read', 'browser_snapshot', 'browser_snapshot_dom',
   'browser_wait',
@@ -320,6 +323,8 @@ DynamicToolCatalog _catalogFor(
 
   if (groups.contains(AgentToolGroup.fileEditor)) {
     addServer(kFileEditorServerName, FileEditorToolRoute.new);
+    // PPT 生成与文件编辑同组：都是工作区文件产出，导出走 HITL 审批。
+    addServer(kPptxServerName, PptxToolRoute.new);
   }
   if (groups.contains(AgentToolGroup.terminal) && !readOnly) {
     addServer(kTerminalServerName, TerminalToolRoute.new);
