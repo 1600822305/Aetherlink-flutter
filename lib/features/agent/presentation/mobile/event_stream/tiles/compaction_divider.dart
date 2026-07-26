@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
+import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -17,16 +17,6 @@ class CompactionDivider extends ConsumerWidget {
 
   final CompactionEvent event;
   final String taskId;
-
-  /// 只允许撤销最近一次未撤销的压缩：更早的压缩可能已被后续压缩
-  /// 覆盖计数，回退语义不清晰，不开放。
-  bool _isLatestActive(List<AgentEvent> events) {
-    CompactionEvent? latest;
-    for (final e in events) {
-      if (e is CompactionEvent && !e.revoked) latest = e;
-    }
-    return latest?.id == event.id;
-  }
 
   Future<void> _revoke(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
@@ -108,8 +98,14 @@ class CompactionDivider extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.4);
-    final events = ref.watch(agentTaskEventsProvider(taskId)).value ?? const [];
-    final canRevoke = !event.revoked && _isLatestActive(events);
+    // 只允许撤销最近一次未撤销的压缩：更早的压缩可能已被后续压缩
+    // 覆盖计数，回退语义不清晰，不开放。
+    final isLatestActive = ref.watch(
+      agentTimelineProvider(taskId).select(
+        (v) => v.latestActiveCompactionId == event.id,
+      ),
+    );
+    final canRevoke = !event.revoked && isLatestActive;
     return InkWell(
       onTap: () => _showSummary(context, ref, canRevoke),
       child: Padding(

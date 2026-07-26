@@ -17,15 +17,22 @@ class SingleBlock extends TimelineBlock {
 }
 
 class SegmentBlock extends TimelineBlock {
-  const SegmentBlock(this.events);
+  SegmentBlock(this.events);
 
   final List<AgentEvent> events;
 
   Iterable<ToolCallEvent> get toolCalls => events.whereType<ToolCallEvent>();
+
+  /// 段内容不可变（块实例随前缀复用），摘要与行统计惰性算一次。
+  String? _summary;
+  ({int added, int removed})? _stats;
 }
 
 /// 段头动词摘要：按段内占主导的工具类别给一句「在做什么」。
-String segmentSummary(SegmentBlock block) {
+String segmentSummary(SegmentBlock block) => block._summary ??=
+    _segmentSummary(block);
+
+String _segmentSummary(SegmentBlock block) {
   var read = 0, write = 0, exec = 0, other = 0;
   for (final e in block.toolCalls) {
     final name = e.toolName.toLowerCase();
@@ -102,8 +109,15 @@ final Map<String, ({int added, int removed})> _lineStatsCache = {};
 /// 段内代码行变更统计（Devin 风格段头 +N −N）：从写类工具的
 /// 完整参数里估算——content/replace 行数计增、search 行数计减，
 /// diff 文本按 +/− 前缀行计。仅统计成功的调用。
-({int added, int removed}) segmentLineStats(SegmentBlock block) {
-  if (_lineStatsCache.length > 4096) _lineStatsCache.clear();
+({int added, int removed}) segmentLineStats(SegmentBlock block) =>
+    block._stats ??= _segmentLineStats(block);
+
+({int added, int removed}) _segmentLineStats(SegmentBlock block) {
+  if (_lineStatsCache.length > 4096) {
+    // 只淘汰最早插入的一半，避免整体清空后雪崩式重新解码。
+    final drop = _lineStatsCache.keys.take(2048).toList();
+    drop.forEach(_lineStatsCache.remove);
+  }
   var added = 0, removed = 0;
   for (final e in block.toolCalls) {
     if (e.state != AgentToolCallState.success) continue;

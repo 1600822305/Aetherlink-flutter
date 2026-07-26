@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/markdown_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
-import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
+import 'package:aetherlink_flutter/features/agent/application/timeline_blocks.dart';
+import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/plan_panel.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/agent_event_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/plan_ready_card.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/work_segment_tile.dart';
@@ -78,13 +78,12 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   @override
   Widget build(BuildContext context) {
     // 用户发送或智能体提问 → 显式回底，确保交互卡立即进入视口。
-    ref.listen(agentTaskEventsProvider(widget.task.id), (prev, next) {
-      final before = (prev?.value?.whereType<UserMessageEvent>().length ?? 0) +
-          (prev?.value?.whereType<UserQuestionEvent>().length ?? 0);
-      final after = (next.value?.whereType<UserMessageEvent>().length ?? 0) +
-          (next.value?.whereType<UserQuestionEvent>().length ?? 0);
-      if (after > before) _autoScroll.pinToBottom();
-    });
+    ref.listen(
+      agentTimelineProvider(widget.task.id).select((v) => v.userInputCount),
+      (prev, next) {
+        if (prev != null && next > prev) _autoScroll.pinToBottom();
+      },
+    );
 
     // 键盘弹出/收起时 Scaffold 会缩放 body（adjustResize），普通列表锚点在
     // 顶部，视口底部内容会被键盘盖住。这里按 inset 变化量做同帧滚动补偿
@@ -95,19 +94,13 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
       _lastKeyboardInset = keyboardInset;
     }
 
-    final events =
-        ref.watch(agentTaskEventsProvider(widget.task.id)).value ?? const [];
-    final plan = latestPlan(events);
-    // 工作段折叠由侧边栏设置控制（默认折叠，用户点段头展开）。
-    final collapse = ref.watch(agentUiSettingsControllerProvider
-        .select((s) => s.autoCollapseWorkSessions));
-    final blocks = buildTimelineBlocks(
-      events,
-      collapse: collapse,
-      running: widget.task.status == AgentTaskStatus.running,
-    );
+    // 时间线推导（块/计划/等待指示）全部来自按任务缓存的增量折叠，
+    // 每个事件 delta 只重算尾部未收尾段。
+    final timeline = ref.watch(agentTimelineProvider(widget.task.id));
+    final plan = timeline.latestPlan;
+    final blocks = timeline.blocks;
     final showWorking = widget.task.status == AgentTaskStatus.running &&
-        needsWorkingIndicator(events);
+        !timeline.hasLiveEvent;
     // Plan 模式收尾（方案已出完）→ 事件流末尾出「方案已就绪」卡，
     // 一键转 Code 继续执行（设计初稿 §七）。
     final showPlanReady = widget.task.mode == AgentSessionMode.plan &&
