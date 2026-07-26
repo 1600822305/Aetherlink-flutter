@@ -27,6 +27,19 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_writ
 /// The built-in MCP server name this router serves.
 const String kPptxServerName = '@aether/pptx';
 
+/// 这次 `@aether/pptx` 调用是否要先经用户确认。
+///
+/// 只有 `pptx_modify` 原地改写用户既有文件时需要——它替换的是别人给的
+/// 或用户自己做的 pptx，覆盖后原内容就没了。另存到新路径（`output` 指向
+/// 别的文件）视同产出新文件，和 `pptx_render` 一样免确认。
+bool pptxToolNeedsConfirmation(String toolName, Map<String, Object?> args) {
+  if (toolName != 'pptx_modify') return false;
+  final output = args['output'];
+  if (output is! String || output.trim().isEmpty) return true;
+  final path = args['path'];
+  return path is String && path.trim() == output.trim();
+}
+
 /// Runs a `@aether/pptx` [toolName] with [args], using [ref] to reach the
 /// workspace providers. Returns an error [McpToolResult] for unknown tools or
 /// failures (never throws).
@@ -47,6 +60,10 @@ Future<McpToolResult> runPptxTool(
         return await _illustrate(ref, args);
       case 'pptx_read':
         return await _read(ref, args);
+      case 'pptx_outline':
+        return await _outline(ref, args);
+      case 'pptx_modify':
+        return await _modify(ref, args);
       case 'pptx_styles':
         return fileEditorOk({
           'styles': builtinDeckStyleCatalog(),
@@ -60,6 +77,8 @@ Future<McpToolResult> runPptxTool(
     return fileEditorError('deck 源无效：${e.message}');
   } on PptxReadException catch (e) {
     return fileEditorError('pptx 读取失败：${e.message}');
+  } on PptxEditException catch (e) {
+    return fileEditorError('pptx 编辑失败：${e.message}');
   } on FileEditorError catch (e) {
     return fileEditorError(e.message);
   } catch (e) {
@@ -590,6 +609,201 @@ Future<McpToolResult> _read(Ref ref, Map<String, Object?> args) async {
           : '包结构有 ${structureIssues.length} 处问题（不影响内容提取）',
     },
   });
+}
+
+/// 读出 [path] 指向的 pptx 字节（带大小上限与后缀校验）。
+Future<Uint8List> _readPptxArg(
+  Ref ref,
+  Map<String, Object?> args,
+  String path,
+  String argName,
+) async {
+  final lower = path.toLowerCase();
+  if (!lower.endsWith('.pptx') && !lower.endsWith('.potx')) {
+    throw FileEditorError('$argName 必须以 .pptx 或 .potx 结尾');
+  }
+  final resolved = await resolvePathArg(ref, args, path);
+  final List<int> raw;
+  try {
+    raw = await resolved.backend.readFileBytes(resolved.path);
+  } catch (e) {
+    throw FileEditorError('读取文件失败：$path（$e）');
+  }
+  if (raw.length > _kMaxReadBytes) {
+    throw FileEditorError('文件过大（${raw.length} 字节，上限 $_kMaxReadBytes），无法处理');
+  }
+  return Uint8List.fromList(raw);
+}
+
+/// M6 只读：逐页列出 shape 的下标/类型/占位符/当前文本，供模型定位编辑目标。
+Future<McpToolResult> _outline(Ref ref, Map<String, Object?> args) async {
+  final path = requireString(args, 'path');
+  final bytes = await _readPptxArg(ref, args, path, 'path');
+  final slides = await Isolate.run(() {
+    final pkg = PptxPackage.open(bytes);
+    return [for (final s in describePptxOutline(pkg)) s.toJson()];
+  });
+  return fileEditorOk({
+    'path': path,
+    'slides': slides,
+    'usage':
+        'slide/shape 都是 0 基下标；用 pptx_modify 的 set_text 按 '
+        '{slide, shape} 改文字。placeholder 为 title/body/ctrTitle 的 shape '
+        '就是模板里的填充位。',
+  });
+}
+
+/// M6：直接编辑已有 .pptx/.potx（保留母版/主题/版式），按 ops 顺序施加后写回。
+Future<McpToolResult> _modify(Ref ref, Map<String, Object?> args) async {
+  final path = requireString(args, 'path');
+  final ops = args['ops'];
+  if (ops is! List || ops.isEmpty) {
+    throw const FileEditorError('缺少必需参数: ops（编辑操作数组）');
+  }
+  final output = optionalString(args, 'output');
+  if (output != null && !output.toLowerCase().endsWith('.pptx')) {
+    throw const FileEditorError('output 必须以 .pptx 结尾');
+  }
+  if (output == null && path.toLowerCase().endsWith('.potx')) {
+    throw const FileEditorError(
+      '.potx 是模板，不能原地改写。请传 output 指定要生成的 .pptx 路径。',
+    );
+  }
+
+  final bytes = await _readPptxArg(ref, args, path, 'path');
+
+  // 图片字节要在进 isolate 前取好（isolate 里没有 ref / 网络凭据）。
+  final images = <int, List<int>>{};
+  for (final (i, op) in ops.indexed) {
+    if (op is! Map) throw FileEditorError('ops[$i] 必须是对象');
+    if (op['op'] != 'replace_image') continue;
+    final src = op['src'];
+    if (src is! String || src.trim().isEmpty) {
+      throw FileEditorError('ops[$i] 的 replace_image 缺少 src（URL 或工作区路径）');
+    }
+    final data = await _loadImage(ref, args, src);
+    if (detectImageFormat(Uint8List.fromList(data)) == null) {
+      throw FileEditorError('ops[$i] 的 src 不是 PNG/JPEG 图片：$src');
+    }
+    images[i] = data;
+  }
+
+  final opsJson = jsonEncode(ops);
+  final result = await Isolate.run(() {
+    final pkg = PptxPackage.open(bytes);
+    final decoded = jsonDecode(opsJson) as List;
+    final applied = <String>[];
+    for (final (i, raw) in decoded.indexed) {
+      applied.add(
+        _applyPptxOp(pkg, (raw as Map).cast<String, Object?>(), 'ops[$i]', images[i]),
+      );
+    }
+    return (
+      bytes: pkg.save(),
+      applied: applied,
+      slides: pkg.slidePaths().length,
+    );
+  });
+
+  final structureIssues = [
+    for (final i in validatePptxPackage(result.bytes)) i.toJson(),
+  ];
+  final force = optionalBool(args, 'force');
+  if (structureIssues.isNotEmpty && !force) {
+    return fileEditorError(
+      '编辑后的包结构自检未通过，未写文件（可传 force=true 强制写出）：\n'
+      '${jsonEncode(structureIssues)}',
+    );
+  }
+
+  final target = output ?? path;
+  final saved = await _writeBytes(ref, args, target, result.bytes, overwrite: true);
+  return fileEditorOk({
+    'message': output == null ? 'pptx 已原地编辑' : 'pptx 已编辑并另存',
+    'path': saved,
+    'source': path,
+    'slides': result.slides,
+    'ops': result.applied,
+    'sizeBytes': result.bytes.length,
+    'structure': {'errors': structureIssues},
+  });
+}
+
+/// 施加一条 pptx 包级操作，返回一句人类可读的结果描述。
+/// [imageBytes] 只在 replace_image 时有值（已在主 isolate 里下载好）。
+String _applyPptxOp(
+  PptxPackage pkg,
+  Map<String, Object?> op,
+  String where,
+  List<int>? imageBytes,
+) {
+  int intArg(String key) {
+    final v = op[key];
+    if (v is! int) throw PptxEditException('$where 的 $key 必须是整数（收到 $v）');
+    return v;
+  }
+
+  String strArg(String key) {
+    final v = op[key];
+    if (v is! String) throw PptxEditException('$where 的 $key 必须是字符串（收到 $v）');
+    return v;
+  }
+
+  switch (op['op']) {
+    case 'set_text':
+      final slide = intArg('slide');
+      final shape = intArg('shape');
+      setShapeText(pkg, slide, shape, strArg('text'));
+      return '$where set_text 第 $slide 页 shape $shape';
+    case 'replace_text':
+      final slide = op['slide'] is int ? op['slide']! as int : null;
+      final n = replaceTextEverywhere(
+        pkg,
+        strArg('find'),
+        strArg('replace'),
+        slide: slide,
+      );
+      return '$where replace_text 命中 $n 处'
+          '${slide == null ? '（全 deck）' : '（第 $slide 页）'}';
+    case 'set_notes':
+      final slide = intArg('slide');
+      setSlideNotes(pkg, slide, strArg('text'));
+      return '$where set_notes 第 $slide 页';
+    case 'replace_image':
+      if (imageBytes == null) {
+        throw PptxEditException('$where 的 replace_image 没有拿到图片数据');
+      }
+      final slide = intArg('slide');
+      final image = op['image'] is int ? op['image']! as int : 0;
+      final fmt = detectImageFormat(Uint8List.fromList(imageBytes));
+      replaceSlideImage(
+        pkg,
+        slide,
+        image,
+        Uint8List.fromList(imageBytes),
+        fmt == 'jpeg' ? 'jpg' : (fmt ?? 'png'),
+      );
+      return '$where replace_image 第 $slide 页第 $image 张';
+    case 'duplicate_slide':
+      final slide = intArg('slide');
+      final at = op['at'] is int ? op['at']! as int : null;
+      final index = duplicateSlide(pkg, slide, at: at);
+      return '$where duplicate_slide 第 $slide 页 → 新第 $index 页';
+    case 'delete_slide':
+      final slide = intArg('slide');
+      deleteSlide(pkg, slide);
+      return '$where delete_slide 第 $slide 页';
+    case 'move_slide':
+      final from = intArg('from');
+      final to = intArg('to');
+      moveSlide(pkg, from, to);
+      return '$where move_slide $from → $to';
+    default:
+      throw PptxEditException(
+        '$where 的 op 未知：${op['op']}（支持 set_text/replace_text/set_notes/'
+        'replace_image/duplicate_slide/delete_slide/move_slide）',
+      );
+  }
 }
 
 /// Normalizes the `deck` argument to a JSON-encodable object so it can be

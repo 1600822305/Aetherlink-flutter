@@ -282,9 +282,10 @@ const Set<String> _kReadOnlyToolNames = {
   'list_files', 'read_file', 'search_files',
   // 知识库：只读子集（kb_manage 有写操作，排除）
   'kb_list', 'kb_search', 'kb_read',
-  // PPT：校验/QA 只读（pptx_render 写工作区，排除）
+  // PPT：校验/QA/查看只读（pptx_render / pptx_modify 写工作区，排除）
   'pptx_check',
   'pptx_read',
+  'pptx_outline',
   // 内置浏览器：只读子集（click/input 有副作用，排除）
   'browser_open', 'browser_read', 'browser_snapshot', 'browser_snapshot_dom',
   'browser_wait',

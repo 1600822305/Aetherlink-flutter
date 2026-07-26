@@ -18,7 +18,7 @@
 | M7 | 设计引擎：风格库 JSON + Bento 布局引擎 + 图表扩到 15 种 | ✅ 已合并 | [#815](https://github.com/1600822305/Aetherlink-flutter/pull/815) |
 | — | 图片 src 引用（URL/工作区路径）+ pptx_edit 增量编辑（deck 源级） | ✅ 已合并 | [#818](https://github.com/1600822305/Aetherlink-flutter/pull/818) |
 | M8 | 工作流 2.0：9 步 pipeline + 失败模式 QA + AI 配图 | ✅ 已合并 | [#820](https://github.com/1600822305/Aetherlink-flutter/pull/820) |
-| M6 | 模板导入 + 编辑已有 pptx | ⬜ 未开始 | — |
+| M6 | 模板导入 + 编辑已有 pptx | ✅ 已合并 | 本地 |
 
 实施顺序：M5 → M7 → M8 → M6（先解决「好看」，最难的模板编辑放最后）。
 
@@ -102,6 +102,24 @@
 - 能力：改文本、换图、加/删/复制/重排幻灯片（对齐 add_slide.py/clean.py）、基于用户上传的 .pptx/.potx 模板填内容（保留母版样式）。
 - 工具 `pptx_edit(path, operations[])`，写文件需确认。
 - 风险：任意第三方 pptx 的 XML 变体多，先支持"我们生成的 + 常见 Office 模板"，逐步放宽。
+- 实施记录：内核新增 `pptx_editor.dart`（`PptxPackage` 可变包模型：解压/重打包、
+  .rels 增删改、[Content_Types].xml Override/Default 维护、按放映顺序解析
+  sldIdLst）。编辑 API：`describePptxOutline`（逐页 shape 下标/类型/占位符/
+  文本）、`setShapeText`（以首个 run 的 rPr 为模板重建段落，字体字号颜色不变）、
+  `replaceTextEverywhere`、`setSlideNotes`（无备注页时按 notesMaster 新建）、
+  `replaceSlideImage`（写新 media 部件再重指向，避免共用图被连带改；旧部件
+  无引用后回收）、`duplicateSlide`（连 .rels 一起复制，备注另存一份并把反向
+  引用指到新页）、`deleteSlide`（连带独占 notesSlide 与 Override）、`moveSlide`。
+  工具层新增只读的 `pptx_outline` 与写操作 `pptx_modify`（7 种 op，isolate 内
+  执行，写前跑 validatePptxPackage，不通过不落盘；原地覆盖走 HITL 确认，
+  传 output 另存则免确认；.potx 禁止原地改写）。技能升 2.1.0，明确「路线 A
+  从零生成 / 路线 B 改已有文件」的选择，并写清下标随增删移动而变、
+  replace_text 跨 run 匹配不到等易错点。测试：内核 28 例（全部用
+  buildPptxBytes 造真包、编辑后过 validatePptxPackage 端到端校验），
+  工具层 5 例（注册/只读分类/审批矩阵）。
+- **未覆盖**：不能新增文本框/形状/图表，也不能改位置尺寸——这些仍走路线 A
+  从 deck 生成。第三方 pptx 的 XML 变体只在自家生成的包上验证过，
+  真实 Office/WPS 模板需实测后逐步放宽。
 
 ### M7 设计引擎：风格库 + 布局引擎 + 图表扩展（≈1 周）
 - **风格库**：`assets/deck_styles/*.json`，字段对齐 Akxan schema（bg/card/text/accent/字号字距分级/装饰开关/forbidden 清单）。首批 12 个覆盖 5 大板块（dark_tech、xiaomi_orange、luxury_purple、blue_white、minimal_gray、medical_pulse、fresh_green、champagne_gold、vibrant_rainbow、bauhaus_block、royal_red、ink_jade），决策矩阵进技能。deck.json：`"style": "dark_tech"`，元素颜色可全部省略由风格推导；用户可放自定义风格 JSON 到工作区。

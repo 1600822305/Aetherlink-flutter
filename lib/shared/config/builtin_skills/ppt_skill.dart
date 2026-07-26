@@ -11,14 +11,24 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '2.0.0',
+  version: '2.1.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
 ## 能力概览
 
-`@aether/pptx` 把结构化 deck.json 源渲染成**原生可编辑**的 .pptx
-（文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。六个工具：
+`@aether/pptx` 有**两条互不替代**的路线，先选对路线再动手：
+
+- **A. 从零生成**（默认）：写 deck.json 源 → `pptx_render` 出片。用我们自己的
+  母版和 12 套风格库，设计质量最高，可增量迭代。适合「帮我做一份 PPT」。
+- **B. 改已有文件**：`pptx_outline` 看结构 → `pptx_modify` 在 OOXML 层原地改。
+  **母版/主题/版式/字体全部保留**。适合「按公司模板填内容」「改这份 PPT 的
+  某几句话」「把这份 PPT 的第 3 页删了」。
+
+选错路线的典型后果：拿到用户的公司模板却走 A，母版和 VI 全丢；
+只想改一个错别字却走 A，整份 PPT 被重做一遍。
+
+八个工具：
 
 - `pptx_styles`：列出内置视觉风格库（只读，免审批）。
 - `pptx_read`：读取工作区里已有的 .pptx/.potx（只读，免审批），逐页提取
@@ -33,6 +43,10 @@ const Skill kPptSkill = Skill(
 - `pptx_illustrate`：AI 配图——用已配置的图像生成模型把 prompt 生成为
   图片存进工作区，image 元素用 `"src": "<路径>"` 引用；没有图像模型时
   返回错误（此时降级为色块/形状装饰，不要反复重试）。
+- `pptx_outline`：列出已有 pptx 每页的 shape 清单（只读，免审批）——
+  走路线 B 的第一步，`pptx_modify` 的下标全部来自它。
+- `pptx_modify`：直接编辑已有 .pptx/.potx（路线 B）。原地覆盖用户文件时
+  需要确认；传 `output` 另存则免确认。
 
 ## 标准工作流（9 步 pipeline，中间产物全部落盘）
 
@@ -194,9 +208,69 @@ textPrimary/textSecondary/accents 必填）。不传 style 则完全手动控制
 
 - 总结/问答：`pptx_read(path)` 拿 markdown（含每页文本、表格、图表数据、
   备注）。
-- 改造已有 PPT：`pptx_read(path, format: "deck")` 拿 deck 骨架 →
-  按设计规范重排版（骨架只保留内容，坐标是估算值）→ `pptx_check` →
-  `pptx_render` 导出新文件，不要覆盖原文件。
+- **重做**已有 PPT（要换成我们的设计）：`pptx_read(path, format: "deck")`
+  拿 deck 骨架 → 按设计规范重排版（骨架只保留内容，坐标是估算值）→
+  `pptx_check` → `pptx_render` 导出新文件，不要覆盖原文件。
+- **保留原样式**地改：走下面的路线 B，不要用 pptx_read 转 deck。
+
+## 路线 B：编辑已有 pptx / 套用模板（pptx_outline + pptx_modify）
+
+用户给了 .pptx/.potx 并且**要保留它的母版、配色、字体**时走这条。
+
+### 固定三步
+
+1. `pptx_outline(path)` —— 拿到每页的 shape 清单。重点看 `placeholder`：
+   `title`/`ctrTitle` 是标题位，`body`/`subTitle` 是正文位，这些就是模板的
+   填充点。`text` 字段是当前内容，用来确认自己找对了 shape。
+2. 规划 ops。**先在脑子里过一遍下标变化**（见下）。
+3. `pptx_modify(path, ops, output?)` —— 一次把所有 ops 发过去，
+   工具会按顺序施加并做包结构自检，不通过就不写文件。
+
+### 下标会变，这是最容易出错的地方
+
+ops 依次施加，`duplicate_slide`/`delete_slide`/`move_slide` 都会改变后面
+op 看到的页码。两条铁律：
+
+- **删多页时从后往前删**：删 [1,3,5] 要写成 delete 5 → delete 3 → delete 1。
+  从前往后删会连环错位。
+- **先复制够页数，再逐页填内容**：复制阶段用 `at` 明确指定落点，
+  填内容阶段下标就固定了。
+
+### 套模板的标准姿势
+
+模板通常只有 1-2 页样板页。把样板页复制 N 份，再逐页填字，最后删掉样板原页：
+
+```
+ops: [
+  {op:"duplicate_slide", slide:1, at:2},
+  {op:"duplicate_slide", slide:1, at:3},
+  {op:"set_text", slide:2, shape:0, text:"第一章 市场分析"},
+  {op:"set_text", slide:3, shape:0, text:"第二章 竞品对比"},
+  {op:"delete_slide", slide:1}
+]
+```
+
+.potx 模板**不能原地改**，必须传 `output` 指定要生成的 .pptx。
+
+### 各 op 的注意事项
+
+- `set_text` 整体替换一个 shape 的文字，`\\n` 分段，原字体/字号/颜色保留。
+  这是改文字的**首选**。
+- `replace_text` 只在单个文本 run 内匹配。PowerPoint 常把一句话拆进多个
+  run（改过格式、拼写检查都会拆），所以「明明有这句话却替换不到」是正常的
+  ——改用 `set_text` 整体重写那个 shape。批量换公司名/年份这类短词才用它。
+- `set_notes` 在没有备注页时会自动新建；包里连 notesMaster 都没有时会报错，
+  这时如实告诉用户，不要反复重试。
+- `replace_image` 的 `src` 支持 http(s) URL 或工作区路径（PNG/JPEG ≤10MB），
+  `image` 是该页第几张图（0 基）。图片是等位替换，**原图的位置和尺寸框不变**，
+  所以新图长宽比差太多会被拉伸——挑比例接近的图。
+- 改不动的东西：`pptx_modify` 不能新增文本框/形状/图表，也不能改位置尺寸。
+  需要这些就走路线 A 从 deck 生成。
+
+### 安全
+
+原地覆盖用户文件要过确认；不确定就传 `output` 另存一份新文件，
+把原文件留给用户。
 
 ## 设计规范（不要做无聊的幻灯片）
 

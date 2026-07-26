@@ -1514,6 +1514,117 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'pptx_outline',
+      description:
+          '列出已有 .pptx/.potx 每一页的 shape 清单（只读，不写任何文件）：'
+          '给出每个 shape 的 index / kind（sp 文本·pic 图片·graphicFrame '
+          '表格图表）/ name / placeholder（title·body·ctrTitle…）/ 当前文本，'
+          '外加版式名、图片数、备注。**用 pptx_modify 编辑之前必须先调它**，'
+          'set_text 的 {slide, shape} 下标就来自这里。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {
+            'type': 'string',
+            'description': '要查看的文件路径（工作区相对路径，.pptx 或 .potx）',
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+        },
+        'required': ['path'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'pptx_modify',
+      description:
+          '直接编辑已有的 .pptx / .potx 模板（M6），在 OOXML 层原地改包，'
+          '**母版/主题/版式/字体全部原样保留**——这是它和 pptx_render 的根本'
+          '区别（后者从 deck.json 全新生成，用我们自己的母版）。适用于：'
+          '按公司模板填内容、改别人给的 PPT、批量替换文案、加删复制重排页。\n'
+          '先用 pptx_outline 拿到 slide/shape 下标，再按 ops 顺序编辑。'
+          'ops 依次施加，**增删移动会改变后续下标**，所以下标以「该 op 执行时」'
+          '的状态为准（建议从后往前删）。编辑后自动做包结构自检，不通过则不写文件。\n'
+          '支持的 op：\n'
+          '· set_text {slide, shape, text} 整体替换某个 shape 的文字（\\n 分段，'
+          '保留原字体/字号/颜色）\n'
+          '· replace_text {find, replace, slide?} 查找替换；省略 slide 则全 deck。'
+          '注意只在单个文本 run 内匹配，跨格式拆分的句子匹配不到，整体改写请用 set_text\n'
+          '· set_notes {slide, text} 设置演讲者备注（没有备注页会自动新建）\n'
+          '· replace_image {slide, image, src} 换图，src 为 http(s) URL 或工作区'
+          '路径（PNG/JPEG，≤10MB）；image 为该页第几张图，默认 0\n'
+          '· duplicate_slide {slide, at?} 复制页（含备注独立副本），at 省略则插在原页之后\n'
+          '· delete_slide {slide} 删页（至少保留一页）\n'
+          '· move_slide {from, to} 重排',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {
+            'type': 'string',
+            'description': '要编辑的文件路径（工作区相对路径，.pptx 或 .potx）',
+          },
+          'ops': {
+            'type': 'array',
+            'description': '编辑操作数组，按顺序施加',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'op': {
+                  'type': 'string',
+                  'enum': [
+                    'set_text',
+                    'replace_text',
+                    'set_notes',
+                    'replace_image',
+                    'duplicate_slide',
+                    'delete_slide',
+                    'move_slide',
+                  ],
+                  'description': '操作类型',
+                },
+                'slide': {'type': 'integer', 'description': '幻灯片下标（0 基）'},
+                'shape': {
+                  'type': 'integer',
+                  'description': 'shape 下标（0 基，来自 pptx_outline）',
+                },
+                'text': {'type': 'string', 'description': '要写入的文字'},
+                'find': {'type': 'string', 'description': '查找的文本'},
+                'replace': {'type': 'string', 'description': '替换成的文本'},
+                'src': {
+                  'type': 'string',
+                  'description': '图片来源：http(s) URL 或工作区路径',
+                },
+                'image': {
+                  'type': 'integer',
+                  'description': '该页第几张图片（0 基，默认 0）',
+                },
+                'at': {'type': 'integer', 'description': '复制页插入位置（0 基）'},
+                'from': {'type': 'integer', 'description': '移动源位置（0 基）'},
+                'to': {'type': 'integer', 'description': '移动目标位置（0 基）'},
+              },
+              'required': ['op'],
+            },
+          },
+          'output': {
+            'type': 'string',
+            'description':
+                '另存路径（.pptx，可选）。省略则原地覆盖 path；'
+                'path 是 .potx 模板时必须传，因为模板不能原地改写',
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+          'force': {
+            'type': 'boolean',
+            'description': '包结构自检不通过时仍然写出（默认 false）',
+          },
+        },
+        'required': ['path', 'ops'],
+      },
+    ),
+    McpToolDefinition(
       name: 'pptx_styles',
       description:
           '列出 PPT 内置视觉风格库（只读，不写任何文件）：返回每个风格的 id/'

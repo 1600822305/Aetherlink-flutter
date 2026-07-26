@@ -6,6 +6,7 @@ export 'src/deck_html_renderer.dart' show renderDeckHtml;
 export 'src/deck_style.dart'
     show DeckStyle, builtinDeckStyleCatalog, kBuiltinDeckStyles;
 export 'src/deck_qa.dart';
+export 'src/pptx_editor.dart';
 export 'src/pptx_package_validator.dart';
 export 'src/pptx_reader.dart';
 export 'src/pptx_writer.dart' show buildPptxBytes;

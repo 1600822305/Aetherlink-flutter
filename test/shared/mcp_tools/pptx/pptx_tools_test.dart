@@ -82,6 +82,88 @@ void main() {
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_read')), isTrue);
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_render')), isFalse);
     });
+
+    test('M6：pptx_outline 只读、pptx_modify 非只读', () {
+      expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_outline')), isTrue);
+      expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_modify')), isFalse);
+    });
+  });
+
+  group('M6 工具注册与审批（pptx_outline / pptx_modify）', () {
+    test('静态目录暴露两个新工具且 schema 必填项正确', () {
+      final tools = builtinToolsFor(kPptxServerName);
+      final names = tools.map((t) => t.name);
+      expect(names, containsAll(['pptx_outline', 'pptx_modify']));
+
+      final outline = tools.firstWhere((t) => t.name == 'pptx_outline');
+      expect(outline.inputSchema['required'], ['path']);
+
+      final modify = tools.firstWhere((t) => t.name == 'pptx_modify');
+      expect(modify.inputSchema['required'], ['path', 'ops']);
+      final props = modify.inputSchema['properties']! as Map;
+      final opEnum =
+          (((props['ops']! as Map)['items']! as Map)['properties']! as Map)['op']!
+              as Map;
+      expect(
+        opEnum['enum'],
+        containsAll([
+          'set_text',
+          'replace_text',
+          'set_notes',
+          'replace_image',
+          'duplicate_slide',
+          'delete_slide',
+          'move_slide',
+        ]),
+      );
+    });
+
+    test('pptx_outline 免审批', () {
+      expect(
+        toolNeedsConfirmation(
+          const PptxToolRoute('pptx_outline'),
+          'pptx_outline',
+          const {'path': 'a.pptx'},
+        ),
+        isFalse,
+      );
+    });
+
+    test('pptx_modify 原地覆盖要确认，另存到新路径免确认', () {
+      bool needs(Map<String, Object?> args) => toolNeedsConfirmation(
+        const PptxToolRoute('pptx_modify'),
+        'pptx_modify',
+        args,
+      );
+
+      // 没有 output → 原地改写用户文件
+      expect(needs(const {'path': 'a.pptx'}), isTrue);
+      // output 指回自己 → 仍是原地改写
+      expect(needs(const {'path': 'a.pptx', 'output': 'a.pptx'}), isTrue);
+      expect(needs(const {'path': 'a.pptx', 'output': '  a.pptx  '}), isTrue);
+      // 另存新文件 → 等同产出新文件，免确认
+      expect(needs(const {'path': 'a.pptx', 'output': 'b.pptx'}), isFalse);
+      // 空 output 视同没传
+      expect(needs(const {'path': 'a.pptx', 'output': '   '}), isTrue);
+    });
+
+    test('pptxToolNeedsConfirmation 对其他 pptx 工具一律 false', () {
+      for (final name in const [
+        'pptx_check',
+        'pptx_read',
+        'pptx_render',
+        'pptx_edit',
+        'pptx_styles',
+        'pptx_outline',
+        'pptx_illustrate',
+      ]) {
+        expect(
+          pptxToolNeedsConfirmation(name, const {'path': 'a.pptx'}),
+          isFalse,
+          reason: '$name 不该要求确认',
+        );
+      }
+    });
   });
 
   group('applyDeckEditOp — 幻灯片级操作', () {

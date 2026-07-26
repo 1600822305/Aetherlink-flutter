@@ -3,6 +3,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/pptx/pptx_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/mcp_manage_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/skill_manage_tool.dart';
@@ -37,6 +38,7 @@ bool toolNeedsConfirmation(
             args,
             workspaces: workspaces,
           )) ||
+      (route is PptxToolRoute && pptxToolNeedsConfirmation(toolName, args)) ||
       (route is BuiltinToolRoute &&
           route.serverName == kBrowserServerName &&
           browserToolNeedsConfirmation(toolName));

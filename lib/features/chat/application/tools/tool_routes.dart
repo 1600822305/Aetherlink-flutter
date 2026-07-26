@@ -190,6 +190,7 @@ bool toolRouteIsReadOnly(ToolRoute route) => switch (route) {
   PptxToolRoute() => const {
     'pptx_check',
     'pptx_read',
+    'pptx_outline',
     'pptx_styles',
   }.contains(route.toolName),
   TerminalToolRoute() => false,
