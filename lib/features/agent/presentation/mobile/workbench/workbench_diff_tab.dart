@@ -26,11 +26,20 @@ class WorkbenchDiffTab extends ConsumerStatefulWidget {
 }
 
 class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
-  /// 已行内展开的文件（relPath）。
+  /// 已行内展开的文件（absPath，多仓库下 relPath 可能重名）。
   final Set<String> _expanded = {};
 
   /// 已触发过自动刷新的最新工具事件 seq，防止重复 invalidate。
   int _lastRefreshSeq = -1;
+
+  @override
+  void didUpdateWidget(covariant WorkbenchDiffTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.task.id != oldWidget.task.id) {
+      _lastRefreshSeq = -1;
+      _expanded.clear();
+    }
+  }
 
   String? _workspaceId() => ref
       .read(agentProfilesProvider)
@@ -55,6 +64,7 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
       if (!_isMutatingTool(e.toolName)) return;
       _lastRefreshSeq = e.seq;
       ref.invalidate(agentWorkspaceChangesProvider(_workspaceId()));
+      ref.invalidate(_fileDiffProvider);
       return;
     }
   }
@@ -142,14 +152,16 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
                       // 唯一的 absPath 作键。
                       final expanded = _expanded.contains(change.absPath);
                       // 多仓库时，每个仓库首个文件前插一条仓库分组表头。
-                      final showRepoHeader = snapshot.repoCount > 1 &&
+                      final showRepoHeader =
+                          snapshot.repoCount > 1 &&
                           (i == 0 ||
                               snapshot.changes[i - 1].repoRoot !=
                                   change.repoRoot);
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (showRepoHeader) _RepoHeader(name: change.repoName),
+                          if (showRepoHeader)
+                            _RepoHeader(name: change.repoName),
                           _ChangeRow(
                             change: change,
                             expanded: expanded,
@@ -203,7 +215,8 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
     AgentChangesSnapshot snapshot,
     AgentFileChange change,
   ) async {
-    final isNew = change.status == GitFileStatus.untracked ||
+    final isNew =
+        change.status == GitFileStatus.untracked ||
         change.status == GitFileStatus.added;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -231,12 +244,16 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await ref
-          .read(_revertFileProvider((workspaceId, snapshot, change)).future);
+      await ref.read(
+        _revertFileProvider((workspaceId, snapshot, change)).future,
+      );
       if (context.mounted) {
-        AppToast.success(context, isNew ? '已删除 ${change.relPath}' : '已还原 ${change.relPath}');
+        AppToast.success(
+          context,
+          isNew ? '已删除 ${change.relPath}' : '已还原 ${change.relPath}',
+        );
       }
-      setState(() => _expanded.remove(change.relPath));
+      setState(() => _expanded.remove(change.absPath));
       ref.invalidate(agentWorkspaceChangesProvider(workspaceId));
     } catch (e) {
       if (context.mounted) AppToast.error(context, '还原失败 · $e');
@@ -267,18 +284,23 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
   }
 }
 
-final _revertFileProvider = FutureProvider.autoDispose.family<void,
-    (String?, AgentChangesSnapshot, AgentFileChange)>((ref, args) {
-  final (workspaceId, snapshot, change) = args;
-  return revertAgentFileChange(ref, workspaceId, snapshot, change);
-});
+final _revertFileProvider = FutureProvider.autoDispose
+    .family<void, (String?, AgentChangesSnapshot, AgentFileChange)>((
+      ref,
+      args,
+    ) {
+      final (workspaceId, snapshot, change) = args;
+      return revertAgentFileChange(ref, workspaceId, snapshot, change);
+    });
 
-final _fileDiffProvider = FutureProvider.autoDispose.family<
-    ({String oldText, String newText}),
-    (String?, AgentChangesSnapshot, AgentFileChange)>((ref, args) {
-  final (workspaceId, snapshot, change) = args;
-  return loadAgentFileDiff(ref, workspaceId, snapshot, change);
-});
+final _fileDiffProvider = FutureProvider.autoDispose
+    .family<
+      ({String oldText, String newText}),
+      (String?, AgentChangesSnapshot, AgentFileChange)
+    >((ref, args) {
+      final (workspaceId, snapshot, change) = args;
+      return loadAgentFileDiff(ref, workspaceId, snapshot, change);
+    });
 
 (String, Color) _statusBadge(BuildContext context, GitFileStatus status) {
   final theme = Theme.of(context);
@@ -412,7 +434,7 @@ class _ChangeRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            if ((change.additions ?? 0) > 0 || change.status != GitFileStatus.deleted) ...[
+            if ((change.additions ?? 0) > 0) ...[
               Text(
                 '+${change.additions ?? 0}',
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -472,8 +494,7 @@ class _InlineDiff extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final async =
-        ref.watch(_fileDiffProvider((workspaceId, snapshot, change)));
+    final async = ref.watch(_fileDiffProvider((workspaceId, snapshot, change)));
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       decoration: BoxDecoration(
