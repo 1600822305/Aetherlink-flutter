@@ -73,6 +73,7 @@ class TerminalExtraKeysBar extends StatelessWidget {
     this.onPaste,
     this.onFontAdjust,
     this.onJumpToFile,
+    this.onToggleKeyboard,
   });
 
   final TerminalExtraKeysController controller;
@@ -87,6 +88,9 @@ class TerminalExtraKeysBar extends StatelessWidget {
 
   /// 扫描输出里的 `path:line` 并跳转编辑器。
   final VoidCallback? onJumpToFile;
+
+  /// 呼出 / 收起软键盘（无需先点终端区域聚焦）。
+  final VoidCallback? onToggleKeyboard;
 
   void _sendKey(TerminalKey key) {
     terminal.keyInput(key, ctrl: controller.ctrl, alt: controller.alt);
@@ -107,8 +111,16 @@ class TerminalExtraKeysBar extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 6),
               children: [
-                if (onCopy != null)
-                  _Key(icon: Icons.copy, onTap: onCopy!),
+                // 一键停止：直接发 Ctrl-C（SIGINT），免去「呼键盘→粘滞
+                // Ctrl→敲 c」三步。
+                _Key(
+                  icon: Icons.stop_circle_outlined,
+                  color: Colors.redAccent,
+                  onTap: () => terminal.textInput('\x03'),
+                ),
+                if (onToggleKeyboard != null)
+                  _Key(icon: Icons.keyboard, onTap: onToggleKeyboard!),
+                if (onCopy != null) _Key(icon: Icons.copy, onTap: onCopy!),
                 if (onPaste != null)
                   _Key(icon: Icons.content_paste, onTap: onPaste!),
                 if (onFontAdjust != null) ...[
@@ -158,7 +170,10 @@ class TerminalExtraKeysBar extends StatelessWidget {
                 _Key(label: 'Home', onTap: () => _sendKey(TerminalKey.home)),
                 _Key(label: 'End', onTap: () => _sendKey(TerminalKey.end)),
                 _Key(label: 'PgUp', onTap: () => _sendKey(TerminalKey.pageUp)),
-                _Key(label: 'PgDn', onTap: () => _sendKey(TerminalKey.pageDown)),
+                _Key(
+                  label: 'PgDn',
+                  onTap: () => _sendKey(TerminalKey.pageDown),
+                ),
                 _Key(label: '|', onTap: () => terminal.textInput('|')),
                 _Key(label: '-', onTap: () => terminal.textInput('-')),
                 _Key(label: '/', onTap: () => terminal.textInput('/')),
@@ -180,6 +195,7 @@ class _Key extends StatefulWidget {
     required this.onTap,
     this.active = false,
     this.repeatable = false,
+    this.color,
   });
 
   final String? label;
@@ -187,6 +203,9 @@ class _Key extends StatefulWidget {
   final VoidCallback onTap;
   final bool active;
   final bool repeatable;
+
+  /// 图标/文字颜色覆盖（如停止键的警示色）。
+  final Color? color;
 
   @override
   State<_Key> createState() => _KeyState();
@@ -216,18 +235,16 @@ class _KeyState extends State<_Key> {
 
   @override
   Widget build(BuildContext context) {
+    final color =
+        widget.color ?? (widget.active ? Colors.white : Colors.white70);
     final child = widget.icon != null
-        ? Icon(
-            widget.icon,
-            size: 18,
-            color: widget.active ? Colors.white : Colors.white70,
-          )
+        ? Icon(widget.icon, size: 18, color: color)
         : Text(
             widget.label!,
             style: TextStyle(
               fontSize: 13,
               fontFamily: 'monospace',
-              color: widget.active ? Colors.white : Colors.white70,
+              color: color,
               fontWeight: widget.active ? FontWeight.w700 : FontWeight.w500,
             ),
           );
