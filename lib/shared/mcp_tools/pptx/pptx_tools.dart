@@ -7,6 +7,7 @@
 // layout QA gates delivery so the model can self-correct before exporting.
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -35,6 +36,8 @@ Future<McpToolResult> runPptxTool(
         return await _check(args);
       case 'pptx_render':
         return await _render(ref, args);
+      case 'pptx_edit':
+        return await _edit(ref, args);
       case 'pptx_read':
         return await _read(ref, args);
       case 'pptx_styles':
@@ -81,14 +84,21 @@ Map<String, Object?> _qaSummary(List<DeckQaIssue> issues) => {
 
 Future<McpToolResult> _check(Map<String, Object?> args) async {
   final deck = _parseDeckArg(args);
+  // check 不做 IO：未展开的 src 只验证结构，真正下载/读取在 render/edit。
   final issues = runDeckQa(deck);
   // deck_validate：实际构建一次 pptx 包并做结构自检（内容类型覆盖/
   // 关系完整性/图表与备注引用），对齐 validate.py 的检查面。
-  final deckJson = jsonEncode(_deckToTransferable(args));
-  final structureIssues = await Isolate.run(() {
-    final bytes = buildPptxBytes(DeckDocument.parse(deckJson));
-    return [for (final i in validatePptxPackage(bytes)) i.toJson()];
-  });
+  final raw = _deckToTransferable(args);
+  final hasUnresolvedImages = _hasUnresolvedImageSrc(raw);
+  final structureIssues = hasUnresolvedImages
+      ? const <Map<String, Object?>>[]
+      : await (() {
+          final deckJson = jsonEncode(raw);
+          return Isolate.run(() {
+            final bytes = buildPptxBytes(DeckDocument.parse(deckJson));
+            return [for (final i in validatePptxPackage(bytes)) i.toJson()];
+          });
+        })();
   final hasErrors =
       issues.any((i) => i.severity == DeckQaSeverity.error) ||
       structureIssues.isNotEmpty;
@@ -99,12 +109,133 @@ Future<McpToolResult> _check(Map<String, Object?> args) async {
     'structure': {'errors': structureIssues},
     'message': hasErrors
         ? 'deck 结构合法，但有错误需要修正后再导出'
+        : hasUnresolvedImages
+        ? 'deck 通过校验（含未展开的图片 src，导出时自动下载/读取并做包结构自检）'
         : 'deck 通过校验，可以调用 pptx_render 导出',
   });
 }
 
+bool _hasUnresolvedImageSrc(Object raw) {
+  if (raw is! Map) return false;
+  final slides = raw['slides'];
+  if (slides is! List) return false;
+  for (final s in slides) {
+    if (s is! Map) continue;
+    final elements = s['elements'];
+    if (elements is! List) continue;
+    for (final e in elements) {
+      if (e is Map &&
+          e['type'] == 'image' &&
+          e['data'] == null &&
+          e['src'] is String) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// 单张引用图片上限（下载/工作区读取）。
+const int _kMaxImageBytes = 10 * 1024 * 1024;
+
+/// 把 image 元素的 `src`（http(s) URL 或工作区路径）展开为内联 base64
+/// `data`，返回展开后的 deck JSON（深拷受影响节点，不改入参）。
+Future<Map<String, Object?>> _resolveImageSources(
+  Ref ref,
+  Map<String, Object?> args,
+  Object raw,
+) async {
+  if (raw is! Map) {
+    throw const FileEditorError('deck 必须是 JSON 对象');
+  }
+  final deck = Map<String, Object?>.from(raw.cast<String, Object?>());
+  final slides = deck['slides'];
+  if (slides is! List) return deck;
+  final newSlides = <Object?>[];
+  for (final s in slides) {
+    if (s is! Map) {
+      newSlides.add(s);
+      continue;
+    }
+    final slide = Map<String, Object?>.from(s.cast<String, Object?>());
+    final elements = slide['elements'];
+    if (elements is List) {
+      final newElements = <Object?>[];
+      for (final e in elements) {
+        if (e is Map &&
+            e['type'] == 'image' &&
+            e['data'] == null &&
+            e['src'] is String) {
+          final el = Map<String, Object?>.from(e.cast<String, Object?>());
+          final src = (el.remove('src')! as String).trim();
+          final bytes = await _loadImage(ref, args, src);
+          if (detectImageFormat(Uint8List.fromList(bytes)) == null) {
+            throw FileEditorError('图片 src 不是 PNG/JPEG：$src');
+          }
+          el['data'] = base64Encode(bytes);
+          newElements.add(el);
+        } else {
+          newElements.add(e);
+        }
+      }
+      slide['elements'] = newElements;
+    }
+    newSlides.add(slide);
+  }
+  deck['slides'] = newSlides;
+  return deck;
+}
+
+Future<List<int>> _loadImage(
+  Ref ref,
+  Map<String, Object?> args,
+  String src,
+) async {
+  if (src.startsWith('http://') || src.startsWith('https://')) {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 30);
+    try {
+      final request = await client.getUrl(Uri.parse(src));
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        throw FileEditorError('下载图片失败（HTTP ${response.statusCode}）：$src');
+      }
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        builder.add(chunk);
+        if (builder.length > _kMaxImageBytes) {
+          throw FileEditorError('图片超过 $_kMaxImageBytes 字节上限：$src');
+        }
+      }
+      return builder.takeBytes();
+    } on FileEditorError {
+      rethrow;
+    } catch (e) {
+      throw FileEditorError('下载图片失败：$src（$e）');
+    } finally {
+      client.close(force: true);
+    }
+  }
+  final resolved = await resolvePathArg(ref, args, src);
+  final List<int> bytes;
+  try {
+    bytes = await resolved.backend.readFileBytes(resolved.path);
+  } catch (e) {
+    throw FileEditorError('读取图片文件失败：$src（$e）');
+  }
+  if (bytes.length > _kMaxImageBytes) {
+    throw FileEditorError('图片超过 $_kMaxImageBytes 字节上限：$src');
+  }
+  return bytes;
+}
+
 Future<McpToolResult> _render(Ref ref, Map<String, Object?> args) async {
-  final deck = _parseDeckArg(args);
+  final deckRaw = await _resolveImageSources(
+    ref,
+    args,
+    _deckToTransferable(args),
+  );
+  final deck = DeckDocument.fromJson(deckRaw.cast<String, Object?>());
   final path = requireString(args, 'path');
   if (!path.toLowerCase().endsWith('.pptx')) {
     throw const FileEditorError('path 必须以 .pptx 结尾');
@@ -121,7 +252,7 @@ Future<McpToolResult> _render(Ref ref, Map<String, Object?> args) async {
     );
   }
 
-  final deckJson = jsonEncode(_deckToTransferable(args));
+  final deckJson = jsonEncode(deckRaw);
   final bytes = await Isolate.run(
     () => buildPptxBytes(DeckDocument.parse(deckJson)),
   );
@@ -156,6 +287,161 @@ Future<McpToolResult> _render(Ref ref, Map<String, Object?> args) async {
     'qa': _qaSummary(issues),
     'structure': {'errors': structureIssues},
   });
+}
+
+/// 增量编辑：以工作区 .deck.json 为源应用 ops，写回源文件并可重导出
+/// .pptx（允许覆盖旧导出），不用重发完整 deck。
+Future<McpToolResult> _edit(Ref ref, Map<String, Object?> args) async {
+  final source = requireString(args, 'source');
+  if (!source.toLowerCase().endsWith('.deck.json')) {
+    throw const FileEditorError('source 必须以 .deck.json 结尾');
+  }
+  final ops = args['ops'];
+  if (ops is! List || ops.isEmpty) {
+    throw const FileEditorError('缺少必需参数: ops（编辑操作数组）');
+  }
+  final resolved = await resolvePathArg(ref, args, source);
+  final String sourceText;
+  try {
+    sourceText = await resolved.backend.readFile(resolved.path);
+  } catch (e) {
+    throw FileEditorError('读取 deck 源失败：$source（$e）');
+  }
+  final Object decoded;
+  try {
+    decoded = jsonDecode(sourceText) as Object;
+  } on FormatException catch (e) {
+    throw FileEditorError('deck 源不是合法 JSON：$source（${e.message}）');
+  }
+  if (decoded is! Map) {
+    throw FileEditorError('deck 源必须是 JSON 对象：$source');
+  }
+  var deckRaw = Map<String, Object?>.from(decoded.cast<String, Object?>());
+  for (final (i, op) in ops.indexed) {
+    if (op is! Map) throw FileEditorError('ops[$i] 必须是对象');
+    deckRaw = _applyOp(deckRaw, op.cast<String, Object?>(), 'ops[$i]');
+  }
+
+  deckRaw = await _resolveImageSources(ref, args, deckRaw);
+  final deck = DeckDocument.fromJson(deckRaw);
+  final issues = runDeckQa(deck);
+  final force = optionalBool(args, 'force');
+  final hasErrors = issues.any((i) => i.severity == DeckQaSeverity.error);
+  if (hasErrors && !force) {
+    return fileEditorError(
+      'QA 未通过，未写回。修正 ops 后重试（或传 force=true 强制）：\n'
+      '${jsonEncode(_qaSummary(issues))}',
+    );
+  }
+
+  await resolved.backend.writeFile(
+    resolved.path,
+    const JsonEncoder.withIndent('  ').convert(deckRaw),
+  );
+
+  final export = optionalString(args, 'export');
+  String? pptxPath;
+  var structureIssues = const <Map<String, Object?>>[];
+  if (export != null) {
+    if (!export.toLowerCase().endsWith('.pptx')) {
+      throw const FileEditorError('export 必须以 .pptx 结尾');
+    }
+    final deckJson = jsonEncode(deckRaw);
+    final bytes = await Isolate.run(
+      () => buildPptxBytes(DeckDocument.parse(deckJson)),
+    );
+    structureIssues = [for (final i in validatePptxPackage(bytes)) i.toJson()];
+    if (structureIssues.isNotEmpty && !force) {
+      return fileEditorError(
+        'deck 源已写回，但导出包结构自检未通过、未写 pptx（可传 force=true）：\n'
+        '${jsonEncode(structureIssues)}',
+      );
+    }
+    pptxPath = await _writeBytes(ref, args, export, bytes, overwrite: true);
+  }
+
+  return fileEditorOk({
+    'message': export == null
+        ? 'deck 源已增量更新（未导出，传 export 可同时重导出 pptx）'
+        : 'deck 源已增量更新并重导出 pptx',
+    'source': source,
+    if (pptxPath != null) 'path': pptxPath,
+    'slides': deck.slides.length,
+    'ops': ops.length,
+    'qa': _qaSummary(issues),
+    'structure': {'errors': structureIssues},
+  });
+}
+
+int _opIndex(Map<String, Object?> op, String key, int max, String where) {
+  final v = op[key];
+  if (v is! int || v < 0 || v >= max) {
+    throw FileEditorError('$where 的 $key 必须是 0..${max - 1} 的整数（收到 $v）');
+  }
+  return v;
+}
+
+Map<String, Object?> _applyOp(
+  Map<String, Object?> deck,
+  Map<String, Object?> op,
+  String where,
+) {
+  final result = Map<String, Object?>.from(deck);
+  final slides = [...?(deck['slides'] as List?)];
+  List<Object?> elementsOf(int slideIndex) {
+    final s = slides[slideIndex];
+    if (s is! Map) throw FileEditorError('$where 目标幻灯片不是对象');
+    return [...?(s['elements'] as List?)];
+  }
+
+  void setElements(int slideIndex, List<Object?> elements) {
+    final s = Map<String, Object?>.from(
+      (slides[slideIndex] as Map).cast<String, Object?>(),
+    );
+    s['elements'] = elements;
+    slides[slideIndex] = s;
+  }
+
+  switch (op['op']) {
+    case 'set_meta':
+      for (final key in const ['title', 'style', 'layout']) {
+        if (op.containsKey(key)) result[key] = op[key];
+      }
+    case 'set_slide':
+      slides[_opIndex(op, 'index', slides.length, where)] = op['slide'];
+    case 'insert_slide':
+      final index = op['index'] == null
+          ? slides.length
+          : _opIndex(op, 'index', slides.length + 1, where);
+      slides.insert(index, op['slide']);
+    case 'remove_slide':
+      slides.removeAt(_opIndex(op, 'index', slides.length, where));
+    case 'move_slide':
+      final from = _opIndex(op, 'from', slides.length, where);
+      final to = _opIndex(op, 'to', slides.length, where);
+      slides.insert(to, slides.removeAt(from));
+    case 'set_element':
+      final si = _opIndex(op, 'slide', slides.length, where);
+      final elements = elementsOf(si);
+      elements[_opIndex(op, 'index', elements.length, where)] = op['element'];
+      setElements(si, elements);
+    case 'append_element':
+      final si = _opIndex(op, 'slide', slides.length, where);
+      final elements = elementsOf(si)..add(op['element']);
+      setElements(si, elements);
+    case 'remove_element':
+      final si = _opIndex(op, 'slide', slides.length, where);
+      final elements = elementsOf(si)
+        ..removeAt(_opIndex(op, 'index', elementsOf(si).length, where));
+      setElements(si, elements);
+    default:
+      throw FileEditorError(
+        '$where 的 op 未知：${op['op']}（支持 set_meta/set_slide/insert_slide/'
+        'remove_slide/move_slide/set_element/append_element/remove_element）',
+      );
+  }
+  result['slides'] = slides;
+  return result;
 }
 
 /// 单文件读取上限：超大 pptx（内嵌视频等）直接拒绝，避免把内存打爆。
@@ -216,14 +502,22 @@ Future<String> _writeBytes(
   Ref ref,
   Map<String, Object?> args,
   String path,
-  Uint8List bytes,
-) async {
-  final target = await resolveWriteTarget(ref, args, path);
-  if (target.existing != null) {
-    throw FileEditorError(
-      '目标文件已存在：$path。请换一个文件名，或先用 @aether/file-editor 的 '
-      'delete_file 删除旧文件。',
-    );
+  Uint8List bytes, {
+  bool overwrite = false,
+}) async {
+  var target = await resolveWriteTarget(ref, args, path);
+  final existing = target.existing;
+  if (existing != null) {
+    if (!overwrite) {
+      throw FileEditorError(
+        '目标文件已存在：$path。请换一个文件名，或先用 @aether/file-editor 的 '
+        'delete_file 删除旧文件。',
+      );
+    }
+    // 覆盖旧导出：后端没有二进制 overwrite，用删除 + 重建实现；
+    // 删除后重解析拿到创建目标（parentPath/fileName）。
+    await target.backend.delete(existing.path);
+    target = await resolveWriteTarget(ref, args, path);
   }
   var parent = target.parentPath!;
   for (final dir in target.missingDirs) {

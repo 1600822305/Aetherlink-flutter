@@ -1542,7 +1542,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
                 'layout(Bento 布局声明：cover/toc/section/end/focus/split/'
                 'asymmetric/columns/hierarchy/hero/grid + cards[]，坐标自动计算)、'
                 'elements[]（type: text/shape/image/table/chart/infographic，'
-                '坐标单位英寸；chart 支持 bar/line/pie/doughnut/area/scatter/'
+                '坐标单位英寸；image 用 data(base64) 或 src(图片 URL/工作区路径，'
+                '导出时自动内联)；chart 支持 bar/line/pie/doughnut/area/scatter/'
                 'stackedBar/horizontalBar/radar；infographic 支持 progress/kpi/'
                 'waffle/timeline/funnel/gauge）',
           },
@@ -1585,6 +1586,48 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
         },
         'required': ['deck', 'path'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'pptx_edit',
+      description:
+          '增量编辑：以工作区里的 .deck.json 为源应用编辑操作（只改一页/'
+          '一个元素，不用重发完整 deck），QA 通过后写回源文件；传 export '
+          '可同时重导出 .pptx（允许覆盖旧导出）。适合 pptx_render + '
+          '同名 .deck.json 落盘后的后续迭代。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'source': {
+            'type': 'string',
+            'description': 'deck 源文件路径（工作区内，必须以 .deck.json 结尾且已存在）',
+          },
+          'ops': {
+            'type': 'array',
+            'description':
+                '按顺序应用的操作数组。每项：{op: set_meta(title/style/layout) | '
+                'set_slide(index, slide) | insert_slide(index?, slide) | '
+                'remove_slide(index) | move_slide(from, to) | '
+                'set_element(slide, index, element) | '
+                'append_element(slide, element) | '
+                'remove_element(slide, index)}，索引从 0 起',
+            'items': {'type': 'object'},
+          },
+          'export': {
+            'type': 'string',
+            'description': '可选：同时重导出的 .pptx 路径（已存在则覆盖）',
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+          'force': {
+            'type': 'boolean',
+            'description': 'QA 有 error 时仍强制写回/导出（默认 false）',
+            'default': false,
+          },
+        },
+        'required': ['source', 'ops'],
       },
     ),
   ],

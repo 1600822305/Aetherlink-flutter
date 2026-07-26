@@ -185,6 +185,11 @@ String _pieShapeHtml(DeckShapeElement element) {
 }
 
 String _imageHtml(DeckImageElement element) {
+  if (!element.isResolved) {
+    return '<div class="el" style="${_pos(element.frame)}display:flex;'
+        'align-items:center;justify-content:center;border:1px dashed #999;'
+        'color:#999;font-size:11px;">图片（src 未展开）</div>';
+  }
   final format = detectImageFormat(element.bytes)!;
   final data = base64Encode(element.bytes);
   return '<img class="el" style="${_pos(element.frame)}object-fit:fill;" '

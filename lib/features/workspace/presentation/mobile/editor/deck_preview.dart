@@ -183,10 +183,28 @@ class _SlideCanvas extends StatelessWidget {
     return switch (element) {
       DeckTextElement() => _TextBox(element: element, scale: scale),
       DeckShapeElement() => _Shape(element: element, scale: scale),
-      DeckImageElement() => Image.memory(element.bytes, fit: BoxFit.fill),
+      DeckImageElement() =>
+        element.isResolved
+            ? Image.memory(element.bytes, fit: BoxFit.fill)
+            : const _ImagePlaceholder(),
       DeckTableElement() => _DeckTable(element: element, scale: scale),
       DeckChartElement() => CustomPaint(painter: _ChartPainter(element)),
     };
+  }
+}
+
+/// 未展开 src 引用（URL/工作区路径）的图片占位，导出时由工具层内联。
+class _ImagePlaceholder extends StatelessWidget {
+  const _ImagePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(border: Border.all(color: Colors.black26)),
+      child: const Center(
+        child: Icon(LucideIcons.image, size: 16, color: Colors.black38),
+      ),
+    );
   }
 }
 

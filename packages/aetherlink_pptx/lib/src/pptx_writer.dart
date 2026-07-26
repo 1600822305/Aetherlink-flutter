@@ -630,6 +630,12 @@ class _SlideBuilder {
   }
 
   String _imageXml(DeckImageElement element) {
+    if (!element.isResolved) {
+      throw DeckParseException(
+        '图片 "src"（${element.src}）尚未展开为 data：pptx_render/pptx_check 会'
+        '自动下载或读取工作区文件，直接调用 buildPptxBytes 需先内联 base64',
+      );
+    }
     final id = _nextShapeId++;
     final format = detectImageFormat(element.bytes)!;
     final fileName = 'image${media.length + 1}.$format';
