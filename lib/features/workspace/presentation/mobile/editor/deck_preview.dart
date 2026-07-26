@@ -2,6 +2,8 @@
 // DeckDocument 模型按幻灯片几何（英寸坐标）原生渲染缩放画布，与
 // PPTX 导出共用同一份源，所见即所得；解析失败时展示可读的错误提示。
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'package:aetherlink_pptx/aetherlink_pptx.dart';
@@ -285,6 +287,15 @@ class _Shape extends StatelessWidget {
     final borderWidth = element.lineWidth == null
         ? 0.0
         : _fontPx(element.lineWidth!, scale);
+    if (element.kind == DeckShapeKind.pie) {
+      return CustomPaint(
+        painter: _PieShapePainter(
+          color: fill ?? Colors.black54,
+          startDeg: element.angleStart ?? 0,
+          endDeg: element.angleEnd ?? 270,
+        ),
+      );
+    }
     if (element.kind == DeckShapeKind.line) {
       return Center(
         child: Container(
@@ -315,6 +326,37 @@ class _Shape extends StatelessWidget {
   }
 }
 
+/// 扇形（DeckShapeKind.pie）：与 OOXML pie 同语义，0°=3 点钟方向顺时针。
+class _PieShapePainter extends CustomPainter {
+  _PieShapePainter({
+    required this.color,
+    required this.startDeg,
+    required this.endDeg,
+  });
+
+  final Color color;
+  final double startDeg;
+  final double endDeg;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sweepDeg = (endDeg - startDeg) % 360;
+    canvas.drawArc(
+      Offset.zero & size,
+      startDeg * math.pi / 180,
+      (sweepDeg <= 0 ? sweepDeg + 360 : sweepDeg) * math.pi / 180,
+      true,
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_PieShapePainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.startDeg != startDeg ||
+      oldDelegate.endDeg != endDeg;
+}
+
 /// Office-default accent palette — mirrors the PPTX writer's chart palette.
 const List<Color> _chartPalette = [
   Color(0xFF4472C4),
@@ -332,9 +374,25 @@ class _ChartPainter extends CustomPainter {
 
   final DeckChartElement element;
 
+  /// 风格 palette 优先（与 writer/HTML 预览同一推导），再回退 Office 色板。
+  Color _paletteColor(int index) {
+    final palette = element.palette;
+    if (palette != null && palette.isNotEmpty) {
+      return _color(palette[index % palette.length])!;
+    }
+    return _chartPalette[index % _chartPalette.length];
+  }
+
   Color _seriesColor(int index) =>
-      _color(element.series[index].color) ??
-      _chartPalette[index % _chartPalette.length];
+      _color(element.series[index].color) ?? _paletteColor(index);
+
+  Color get _textColor => _color(element.textColor) ?? Colors.black87;
+
+  Color get _mutedTextColor =>
+      _color(element.textColor)?.withValues(alpha: 0.7) ?? Colors.black54;
+
+  Color get _axisColor =>
+      _color(element.textColor)?.withValues(alpha: 0.4) ?? Colors.black38;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -342,11 +400,7 @@ class _ChartPainter extends CustomPainter {
     if (element.title != null) {
       final tp = _paragraph(
         element.title!,
-        const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Colors.black87,
-        ),
+        TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _textColor),
         size.width,
         TextAlign.center,
       );
@@ -363,10 +417,21 @@ class _ChartPainter extends CustomPainter {
     switch (element.kind) {
       case DeckChartKind.bar:
         _paintBars(canvas, plot);
+      case DeckChartKind.stackedBar:
+        _paintStackedBars(canvas, plot);
+      case DeckChartKind.horizontalBar:
+        _paintHorizontalBars(canvas, plot);
       case DeckChartKind.line:
         _paintLines(canvas, plot);
+      case DeckChartKind.area:
+        _paintAreas(canvas, plot);
+      case DeckChartKind.scatter:
+        _paintScatter(canvas, plot);
       case DeckChartKind.pie:
-        _paintPie(canvas, plot);
+      case DeckChartKind.doughnut:
+        _paintPie(canvas, plot, hole: element.kind == DeckChartKind.doughnut);
+      case DeckChartKind.radar:
+        _paintRadar(canvas, plot);
     }
     _paintLegend(canvas, size);
   }
@@ -402,13 +467,13 @@ class _ChartPainter extends CustomPainter {
       plot.bottomLeft,
       plot.bottomRight,
       Paint()
-        ..color = Colors.black38
+        ..color = _axisColor
         ..strokeWidth = 1,
     );
   }
 
   void _paintCategoryLabels(Canvas canvas, Rect plot, double Function(int) cx) {
-    const style = TextStyle(fontSize: 7, color: Colors.black54);
+    final style = TextStyle(fontSize: 7, color: _mutedTextColor);
     for (final (i, cat) in element.categories.indexed) {
       final tp = TextPainter(
         text: TextSpan(text: cat, style: style),
@@ -473,33 +538,232 @@ class _ChartPainter extends CustomPainter {
     _paintCategoryLabels(canvas, plot, (i) => plot.left + i * stepX);
   }
 
-  void _paintPie(Canvas canvas, Rect plot) {
+  void _paintStackedBars(Canvas canvas, Rect plot) {
+    _paintAxis(canvas, plot);
+    final catCount = element.categories.length;
+    var maxTotal = 0.0;
+    for (var ci = 0; ci < catCount; ci++) {
+      var total = 0.0;
+      for (final s in element.series) {
+        total += s.values[ci] < 0 ? 0 : s.values[ci];
+      }
+      if (total > maxTotal) maxTotal = total;
+    }
+    if (maxTotal <= 0) maxTotal = 1;
+    final groupW = plot.width / catCount;
+    final barW = groupW * 0.55;
+    for (var ci = 0; ci < catCount; ci++) {
+      var y = plot.bottom;
+      for (final (si, s) in element.series.indexed) {
+        final v = s.values[ci] < 0 ? 0.0 : s.values[ci];
+        final h = v / maxTotal * plot.height;
+        canvas.drawRect(
+          Rect.fromLTWH(
+            plot.left + ci * groupW + (groupW - barW) / 2,
+            y - h,
+            barW,
+            h,
+          ),
+          Paint()..color = _seriesColor(si),
+        );
+        y -= h;
+      }
+    }
+    _paintCategoryLabels(
+      canvas,
+      plot,
+      (i) => plot.left + i * groupW + groupW / 2,
+    );
+  }
+
+  void _paintHorizontalBars(Canvas canvas, Rect plot) {
+    canvas.drawLine(
+      plot.topLeft,
+      plot.bottomLeft,
+      Paint()
+        ..color = _axisColor
+        ..strokeWidth = 1,
+    );
+    final max = _maxValue;
+    final catCount = element.categories.length;
+    final groupH = plot.height / catCount;
+    final barH = groupH * 0.6 / element.series.length;
+    for (var ci = 0; ci < catCount; ci++) {
+      for (final (si, s) in element.series.indexed) {
+        final w = s.values[ci] / max * plot.width;
+        canvas.drawRect(
+          Rect.fromLTWH(
+            plot.left,
+            plot.top + ci * groupH + groupH * 0.2 + si * barH,
+            w < 0 ? 0 : w,
+            barH,
+          ),
+          Paint()..color = _seriesColor(si),
+        );
+      }
+    }
+    final style = TextStyle(fontSize: 7, color: _mutedTextColor);
+    for (final (i, cat) in element.categories.indexed) {
+      final tp = TextPainter(
+        text: TextSpan(text: cat, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout(maxWidth: plot.left + 14);
+      tp.paint(
+        canvas,
+        Offset(2, plot.top + i * groupH + groupH / 2 - tp.height / 2),
+      );
+    }
+  }
+
+  void _paintAreas(Canvas canvas, Rect plot) {
+    _paintAxis(canvas, plot);
+    final max = _maxValue;
+    final catCount = element.categories.length;
+    final stepX = catCount == 1 ? 0.0 : plot.width / (catCount - 1);
+    for (final (si, s) in element.series.indexed) {
+      final path = Path()..moveTo(plot.left, plot.bottom);
+      for (final (ci, v) in s.values.indexed) {
+        path.lineTo(
+          plot.left + ci * stepX,
+          plot.bottom - v / max * plot.height,
+        );
+      }
+      path
+        ..lineTo(plot.left + (catCount - 1) * stepX, plot.bottom)
+        ..close();
+      canvas.drawPath(
+        path,
+        Paint()..color = _seriesColor(si).withValues(alpha: 0.45),
+      );
+    }
+    _paintCategoryLabels(canvas, plot, (i) => plot.left + i * stepX);
+  }
+
+  void _paintScatter(Canvas canvas, Rect plot) {
+    _paintAxis(canvas, plot);
+    // 与 writer 同语义：categories 可解析为数值时作 x，否则用序号。
+    final xs = [
+      for (final (i, c) in element.categories.indexed)
+        double.tryParse(c) ?? (i + 1).toDouble(),
+    ];
+    final minX = xs.reduce(math.min);
+    final maxX = xs.reduce(math.max);
+    final spanX = maxX - minX <= 0 ? 1.0 : maxX - minX;
+    final max = _maxValue;
+    for (final (si, s) in element.series.indexed) {
+      for (final (ci, v) in s.values.indexed) {
+        canvas.drawCircle(
+          Offset(
+            plot.left + (xs[ci] - minX) / spanX * plot.width,
+            plot.bottom - v / max * plot.height,
+          ),
+          2.2,
+          Paint()..color = _seriesColor(si),
+        );
+      }
+    }
+  }
+
+  void _paintPie(Canvas canvas, Rect plot, {bool hole = false}) {
     final values = element.series.first.values;
     final total = values.fold<double>(0, (a, b) => a + (b < 0 ? 0 : b));
     if (total <= 0) return;
     final radius = plot.shortestSide / 2;
     final rect = Rect.fromCircle(center: plot.center, radius: radius);
-    var start = -90 * 3.1415926535 / 180;
+    // 环形图在独立图层上挖洞，透出幻灯片背景。
+    if (hole) canvas.saveLayer(rect.inflate(1), Paint());
+    var start = -math.pi / 2;
     for (final (i, v) in values.indexed) {
       if (v <= 0) continue;
-      final sweep = v / total * 2 * 3.1415926535;
+      final sweep = v / total * 2 * math.pi;
       canvas.drawArc(
         rect,
         start,
         sweep,
         true,
-        Paint()..color = _chartPalette[i % _chartPalette.length],
+        Paint()..color = _paletteColor(i),
       );
       start += sweep;
+    }
+    if (hole) {
+      canvas.drawCircle(
+        plot.center,
+        radius * 0.55,
+        Paint()..blendMode = BlendMode.clear,
+      );
+      canvas.restore();
+    }
+  }
+
+  void _paintRadar(Canvas canvas, Rect plot) {
+    final catCount = element.categories.length;
+    if (catCount < 3) return;
+    final center = plot.center;
+    final radius = plot.shortestSide / 2 - 8;
+    final max = _maxValue;
+    Offset point(int i, double r) {
+      final angle = -math.pi / 2 + i * 2 * math.pi / catCount;
+      return center + Offset(math.cos(angle) * r, math.sin(angle) * r);
+    }
+
+    final web = Paint()
+      ..color = _axisColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+    for (final f in const [0.33, 0.66, 1.0]) {
+      final ring = Path()
+        ..moveTo(point(0, radius * f).dx, point(0, radius * f).dy);
+      for (var i = 1; i <= catCount; i++) {
+        final p = point(i % catCount, radius * f);
+        ring.lineTo(p.dx, p.dy);
+      }
+      canvas.drawPath(ring, web);
+    }
+    final labelStyle = TextStyle(fontSize: 7, color: _mutedTextColor);
+    for (var i = 0; i < catCount; i++) {
+      canvas.drawLine(center, point(i, radius), web);
+      final p = point(i, radius + 5);
+      final tp = TextPainter(
+        text: TextSpan(text: element.categories[i], style: labelStyle),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout();
+      tp.paint(canvas, p - Offset(tp.width / 2, tp.height / 2));
+    }
+    for (final (si, s) in element.series.indexed) {
+      final path = Path();
+      for (final (ci, v) in s.values.indexed) {
+        final p = point(ci, v / max * radius);
+        ci == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+      }
+      path.close();
+      canvas
+        ..drawPath(
+          path,
+          Paint()..color = _seriesColor(si).withValues(alpha: 0.25),
+        )
+        ..drawPath(
+          path,
+          Paint()
+            ..color = _seriesColor(si)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2,
+        );
     }
   }
 
   void _paintLegend(Canvas canvas, Size size) {
-    const style = TextStyle(fontSize: 7, color: Colors.black87);
-    final entries = element.kind == DeckChartKind.pie
+    final style = TextStyle(fontSize: 7, color: _textColor);
+    final byCategory =
+        element.kind == DeckChartKind.pie ||
+        element.kind == DeckChartKind.doughnut;
+    final entries = byCategory
         ? [
             for (final (i, cat) in element.categories.indexed)
-              (cat, _chartPalette[i % _chartPalette.length]),
+              (cat, _paletteColor(i)),
           ]
         : [
             for (final (i, s) in element.series.indexed)
