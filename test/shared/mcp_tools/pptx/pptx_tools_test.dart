@@ -15,9 +15,9 @@ void main() {
       expect(kLocallyRunnableBuiltins.contains(kPptxServerName), isFalse);
     });
 
-    test('静态工具目录暴露 pptx_check 与 pptx_render', () {
+    test('静态工具目录暴露 pptx_read / pptx_check / pptx_render', () {
       final names = builtinToolsFor(kPptxServerName).map((t) => t.name);
-      expect(names, containsAll(['pptx_check', 'pptx_render']));
+      expect(names, containsAll(['pptx_read', 'pptx_check', 'pptx_render']));
       for (final tool in builtinToolsFor(kPptxServerName)) {
         expect(tool.inputSchema['type'], 'object');
       }
@@ -48,8 +48,9 @@ void main() {
       );
     });
 
-    test('pptx_check 只读、pptx_render 非只读（并发安全分类）', () {
+    test('pptx_check/pptx_read 只读、pptx_render 非只读（并发安全分类）', () {
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_check')), isTrue);
+      expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_read')), isTrue);
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_render')), isFalse);
     });
   });

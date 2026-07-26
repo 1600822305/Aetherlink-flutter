@@ -537,19 +537,25 @@ class DeckChartElement extends DeckElement {
   final String? title;
 }
 
-/// One slide: background + z-ordered elements.
+/// One slide: background + z-ordered elements + optional speaker notes.
 class DeckSlide {
-  const DeckSlide({required this.elements, this.background});
+  const DeckSlide({required this.elements, this.background, this.notes});
 
   factory DeckSlide.fromJson(Map<String, Object?> json, String where) {
     final rawElements = json['elements'];
     if (rawElements is! List) {
       throw DeckParseException('$where 缺少数组 "elements"');
     }
+    final rawNotes = json['notes'];
+    if (rawNotes != null && rawNotes is! String) {
+      throw DeckParseException('$where 的 "notes" 必须是字符串（演讲者备注）');
+    }
+    final notes = (rawNotes as String?)?.trim();
     return DeckSlide(
       background: json['background'] == null
           ? null
           : DeckColor(json['background'] as String),
+      notes: notes == null || notes.isEmpty ? null : notes,
       elements: [
         for (final (i, e) in rawElements.indexed)
           DeckElement.fromJson(
@@ -562,6 +568,9 @@ class DeckSlide {
 
   final DeckColor? background;
   final List<DeckElement> elements;
+
+  /// Speaker notes, written into the slide's `notesSlide` part on export.
+  final String? notes;
 }
 
 /// The whole deck source — the structured JSON the agent produces and both

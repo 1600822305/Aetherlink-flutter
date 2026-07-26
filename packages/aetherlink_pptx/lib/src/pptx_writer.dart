@@ -18,8 +18,20 @@ Uint8List buildPptxBytes(DeckDocument deck) {
   final slideXmls = <String>[];
   final slideRels = <String>[];
 
-  for (final slide in deck.slides) {
-    final builder = _SlideBuilder(deck, slide, media, charts);
+  // slide index (0-based) → notesSlide number (1-based, dense).
+  final notesIndex = <int, int>{};
+  for (final (i, slide) in deck.slides.indexed) {
+    if (slide.notes != null) notesIndex[i] = notesIndex.length + 1;
+  }
+
+  for (final (i, slide) in deck.slides.indexed) {
+    final builder = _SlideBuilder(
+      deck,
+      slide,
+      media,
+      charts,
+      notesSlideNumber: notesIndex[i],
+    );
     slideXmls.add(builder.buildXml());
     slideRels.add(builder.buildRelsXml());
   }
@@ -30,12 +42,21 @@ Uint8List buildPptxBytes(DeckDocument deck) {
     archive.add(ArchiveFile.bytes(path, bytes));
   }
 
-  addText('[Content_Types].xml', _contentTypesXml(slideCount, media, charts));
+  addText(
+    '[Content_Types].xml',
+    _contentTypesXml(slideCount, media, charts, notesCount: notesIndex.length),
+  );
   addText('_rels/.rels', _rootRelsXml());
   addText('docProps/core.xml', _coreXml(deck.title));
   addText('docProps/app.xml', _appXml(slideCount));
-  addText('ppt/presentation.xml', _presentationXml(deck));
-  addText('ppt/_rels/presentation.xml.rels', _presentationRelsXml(slideCount));
+  addText(
+    'ppt/presentation.xml',
+    _presentationXml(deck, hasNotes: notesIndex.isNotEmpty),
+  );
+  addText(
+    'ppt/_rels/presentation.xml.rels',
+    _presentationRelsXml(slideCount, hasNotes: notesIndex.isNotEmpty),
+  );
   addText('ppt/slideMasters/slideMaster1.xml', _slideMasterXml());
   addText(
     'ppt/slideMasters/_rels/slideMaster1.xml.rels',
@@ -50,6 +71,26 @@ Uint8List buildPptxBytes(DeckDocument deck) {
   for (var i = 0; i < slideCount; i++) {
     addText('ppt/slides/slide${i + 1}.xml', slideXmls[i]);
     addText('ppt/slides/_rels/slide${i + 1}.xml.rels', slideRels[i]);
+  }
+  if (notesIndex.isNotEmpty) {
+    addText('ppt/notesMasters/notesMaster1.xml', _notesMasterXml());
+    addText(
+      'ppt/notesMasters/_rels/notesMaster1.xml.rels',
+      _notesMasterRelsXml(),
+    );
+    addText('ppt/theme/theme2.xml', _themeXml(name: 'AetherLink Notes'));
+    for (final entry in notesIndex.entries) {
+      final slideNumber = entry.key + 1;
+      final n = entry.value;
+      addText(
+        'ppt/notesSlides/notesSlide$n.xml',
+        _notesSlideXml(deck.slides[entry.key].notes!),
+      );
+      addText(
+        'ppt/notesSlides/_rels/notesSlide$n.xml.rels',
+        _notesSlideRelsXml(slideNumber),
+      );
+    }
   }
   for (var i = 0; i < charts.length; i++) {
     addText('ppt/charts/chart${i + 1}.xml', charts[i]);
@@ -100,8 +141,9 @@ const String _xmlDecl =
 String _contentTypesXml(
   int slideCount,
   List<_MediaEntry> media,
-  List<String> charts,
-) {
+  List<String> charts, {
+  int notesCount = 0,
+}) {
   final buf = StringBuffer()
     ..write(_xmlDecl)
     ..write(
@@ -139,6 +181,19 @@ String _contentTypesXml(
     buf.write(
       '<Override PartName="/ppt/charts/chart$i.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>',
     );
+  }
+  if (notesCount > 0) {
+    buf.write(
+      '<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>',
+    );
+    buf.write(
+      '<Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>',
+    );
+    for (var i = 1; i <= notesCount; i++) {
+      buf.write(
+        '<Override PartName="/ppt/notesSlides/notesSlide$i.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>',
+      );
+    }
   }
   buf
     ..write(
@@ -180,14 +235,20 @@ String _appXml(int slideCount) =>
     '<Slides>$slideCount</Slides>'
     '</Properties>';
 
-String _presentationXml(DeckDocument deck) {
+String _presentationXml(DeckDocument deck, {bool hasNotes = false}) {
   final buf = StringBuffer()
     ..write(_xmlDecl)
     ..write('<p:presentation xmlns:a="$_nsA" xmlns:p="$_nsP" xmlns:r="$_nsR">')
     ..write(
       '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>',
-    )
-    ..write('<p:sldIdLst>');
+    );
+  if (hasNotes) {
+    // rId = slideCount + 2 (rId1 → slideMaster, rId2.. → slides).
+    buf.write(
+      '<p:notesMasterIdLst><p:notesMasterId r:id="rId${deck.slides.length + 2}"/></p:notesMasterIdLst>',
+    );
+  }
+  buf.write('<p:sldIdLst>');
   for (var i = 0; i < deck.slides.length; i++) {
     buf.write('<p:sldId id="${256 + i}" r:id="rId${i + 2}"/>');
   }
@@ -203,7 +264,7 @@ String _presentationXml(DeckDocument deck) {
   return buf.toString();
 }
 
-String _presentationRelsXml(int slideCount) {
+String _presentationRelsXml(int slideCount, {bool hasNotes = false}) {
   final buf = StringBuffer()
     ..write(_xmlDecl)
     ..write(
@@ -217,9 +278,68 @@ String _presentationRelsXml(int slideCount) {
       '<Relationship Id="rId${i + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>',
     );
   }
+  if (hasNotes) {
+    buf.write(
+      '<Relationship Id="rId${slideCount + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="notesMasters/notesMaster1.xml"/>',
+    );
+  }
   buf.write('</Relationships>');
   return buf.toString();
 }
+
+/// Minimal notes master: an empty spTree plus the required color map and
+/// notes text styles, themed by theme2.xml.
+String _notesMasterXml() =>
+    '$_xmlDecl'
+    '<p:notesMaster xmlns:a="$_nsA" xmlns:p="$_nsP" xmlns:r="$_nsR">'
+    '<p:cSld>$_emptySpTree</p:cSld>'
+    '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" '
+    'accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" '
+    'accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+    '<p:notesStyle/>'
+    '</p:notesMaster>';
+
+String _notesMasterRelsXml() =>
+    '$_xmlDecl'
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme2.xml"/>'
+    '</Relationships>';
+
+/// One notes page: a body placeholder carrying the speaker [notes] text
+/// (one paragraph per line).
+String _notesSlideXml(String notes) {
+  final paragraphs = notes
+      .split('\n')
+      .map(
+        (line) =>
+            '<a:p><a:r><a:rPr lang="zh-CN" dirty="0"/>'
+            '<a:t>${_esc(line)}</a:t></a:r></a:p>',
+      )
+      .join();
+  return '$_xmlDecl'
+      '<p:notes xmlns:a="$_nsA" xmlns:p="$_nsP" xmlns:r="$_nsR">'
+      '<p:cSld><p:spTree>'
+      '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+      '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
+      '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+      '<p:sp>'
+      '<p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder 1"/>'
+      '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>'
+      '<p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>'
+      '<p:spPr/>'
+      '<p:txBody><a:bodyPr/><a:lstStyle/>$paragraphs</p:txBody>'
+      '</p:sp>'
+      '</p:spTree></p:cSld>'
+      '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>'
+      '</p:notes>';
+}
+
+String _notesSlideRelsXml(int slideNumber) =>
+    '$_xmlDecl'
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="../notesMasters/notesMaster1.xml"/>'
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/slide$slideNumber.xml"/>'
+    '</Relationships>';
 
 const String _emptySpTree =
     '<p:spTree>'
@@ -264,7 +384,7 @@ String _slideLayoutRelsXml() =>
 
 /// A minimal but schema-complete Office theme (clrScheme + fontScheme +
 /// fmtScheme with the required 3-entry style lists).
-String _themeXml() {
+String _themeXml({String name = 'AetherLink'}) {
   const fill =
       '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>'
       '<a:gradFill rotWithShape="1"><a:gsLst>'
@@ -287,7 +407,7 @@ String _themeXml() {
       '<a:effectStyle><a:effectLst/></a:effectStyle>'
       '<a:effectStyle><a:effectLst/></a:effectStyle>';
   return '$_xmlDecl'
-      '<a:theme xmlns:a="$_nsA" name="AetherLink">'
+      '<a:theme xmlns:a="$_nsA" name="${_esc(name)}">'
       '<a:themeElements>'
       '<a:clrScheme name="AetherLink">'
       '<a:dk1><a:srgbClr val="000000"/></a:dk1>'
@@ -319,11 +439,20 @@ String _themeXml() {
 
 /// Builds one slide part plus its rels; appends embedded images to [media].
 class _SlideBuilder {
-  _SlideBuilder(this.deck, this.slide, this.media, this.charts);
+  _SlideBuilder(
+    this.deck,
+    this.slide,
+    this.media,
+    this.charts, {
+    this.notesSlideNumber,
+  });
 
   final DeckDocument deck;
   final DeckSlide slide;
   final List<_MediaEntry> media;
+
+  /// 1-based notesSlide part number when this slide has speaker notes.
+  final int? notesSlideNumber;
 
   /// Global chart-part XMLs across the whole deck (index → chartN.xml).
   final List<String> charts;
@@ -382,6 +511,11 @@ class _SlideBuilder {
     for (final rel in _extraRels) {
       buf.write(
         '<Relationship Id="${rel.relId}" Type="${rel.type}" Target="${rel.target}"/>',
+      );
+    }
+    if (notesSlideNumber != null) {
+      buf.write(
+        '<Relationship Id="rId${_extraRels.length + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide$notesSlideNumber.xml"/>',
       );
     }
     buf.write('</Relationships>');

@@ -11,16 +11,20 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '1.3.1',
+  version: '1.4.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
 ## 能力概览
 
 `@aether/pptx` 把结构化 deck.json 源渲染成**原生可编辑**的 .pptx
-（文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。两个工具：
+（文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。三个工具：
 
-- `pptx_check`：校验 deck 源 + 布局 QA（不写文件，免审批）。
+- `pptx_read`：读取工作区里已有的 .pptx/.potx（只读，免审批），逐页提取
+  文本/表格/图表数据/演讲者备注；`format: "markdown"`（默认，适合总结
+  和问答）或 `format: "deck"`（输出 deck.json 骨架，适合把已有 PPT 转成源
+  继续迭代；骨架里图片不内嵌、布局是估算值，要按设计规范重排）。
+- `pptx_check`：校验 deck 源 + 布局 QA + 包结构自检（不写文件，免审批）。
 - `pptx_render`：QA 通过后导出 .pptx 到工作区；
   可传 `preview: true` 同时导出 .preview.html 预览。
 
@@ -45,6 +49,7 @@ const Skill kPptSkill = Skill(
   "slides": [
     {
       "background": "0F1115",
+      "notes": "演讲者备注（可选）：写入 PPT 备注页，预览也会显示",
       "elements": [
         { "type": "text", "x": 1, "y": 2.5, "w": 11.3, "h": 1.5,
           "valign": "middle", "lineSpacing": 1.2,
@@ -96,6 +101,21 @@ const Skill kPptSkill = Skill(
 - 图片 data 必须是 PNG 或 JPEG 的 base64。
 - 表格每行列数必须一致。
 - 所有元素不得超出画布（QA 会报 out_of_bounds error）。
+
+## 演讲者备注
+
+- 每页可选 `"notes": "..."`（纯文本，支持 \\n 分段），导出时写入原生
+  notesSlide 备注页，演示者视图可见。
+- 备注写给演讲人看：讲稿口弩、数据出处、过渡提示；**不要**把备注
+  内容做成页面上的文本框。
+
+## 读取已有 PPT（pptx_read）
+
+- 总结/问答：`pptx_read(path)` 拿 markdown（含每页文本、表格、图表数据、
+  备注）。
+- 改造已有 PPT：`pptx_read(path, format: "deck")` 拿 deck 骨架 →
+  按设计规范重排版（骨架只保留内容，坐标是估算值）→ `pptx_check` →
+  `pptx_render` 导出新文件，不要覆盖原文件。
 
 ## 设计规范（不要做无聊的幻灯片）
 
@@ -158,7 +178,9 @@ const Skill kPptSkill = Skill(
 
 ## QA 报告的用法
 
-`pptx_check` / `pptx_render` 返回 `qa: { errors: [...], warnings: [...] }`，
+`pptx_check` / `pptx_render` 返回 `qa: { errors: [...], warnings: [...] }`
+与 `structure: { errors: [...] }`（导出包的内容类型/关系/引用自检，
+正常恒为空，非空说明生成器有 bug，照报告反馈）。qa 
 每条含 rule（out_of_bounds / text_overflow / font_too_small /
 over_density / underfill）、slide/element 序号与修正建议。errors 必须
 修完才能导出（不要用 force 绕过）；warnings 酌情优化。按报告逐条改

@@ -1486,10 +1486,39 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
   ],
   '@aether/pptx': [
     McpToolDefinition(
+      name: 'pptx_read',
+      description:
+          '读取工作区里已有的 .pptx/.potx 文件（只读，不写任何文件）：逐页提取'
+          '文本/表格/图表数据/演讲者备注，并做包结构自检。format=markdown（默认，'
+          '适合总结/问答）或 format=deck（输出 deck.json 骨架，适合把已有 PPT '
+          '转成源继续迭代；图片不内嵌、布局为估算值，需要人工调整）。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {
+            'type': 'string',
+            'description': '要读取的文件路径（工作区相对路径，.pptx 或 .potx）',
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+          'format': {
+            'type': 'string',
+            'enum': ['markdown', 'deck'],
+            'description': '输出格式：markdown（默认）或 deck（deck.json 骨架）',
+            'default': 'markdown',
+          },
+        },
+        'required': ['path'],
+      },
+    ),
+    McpToolDefinition(
       name: 'pptx_check',
       description:
-          '校验 deck.json 幻灯片源并运行布局 QA（溢出/密度/字号），不写任何文件。'
-          '返回结构化 QA 报告（errors 必须修正、warnings 酌情优化）。'
+          '校验 deck.json 幻灯片源：运行布局 QA（溢出/密度/字号）+ 包结构自检'
+          '（内容类型/关系完整性/图表与备注引用），不写任何文件。'
+          '返回结构化报告（errors 必须修正、warnings 酌情优化）。'
           '建议先 check、按报告改源、再 pptx_render 导出。deck.json 格式详见'
           '内置技能「PPT 设计师」。',
       inputSchema: {
@@ -1499,8 +1528,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'object',
             'description':
                 'deck.json 源对象（也接受 JSON 字符串）。顶层：layout(16x9/4x3)、'
-                'title、slides[]；每页：background(6位hex)、elements[]（type: '
-                'text/shape/image/table/chart，坐标单位英寸）',
+                'title、slides[]；每页：background(6位hex)、notes(演讲者备注)、'
+                'elements[]（type: text/shape/image/table/chart，坐标单位英寸）',
           },
         },
         'required': ['deck'],
@@ -1510,7 +1539,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'pptx_render',
       description:
           '把 deck.json 源渲染成原生可编辑的 .pptx 文件写入工作区（文本框/形状/'
-          '图片/表格/图表都是原生 PowerPoint 对象，不是截图）。导出前自动运行 QA：'
+          '图片/表格/图表都是原生 PowerPoint 对象，不是截图；每页可选 notes '
+          '写入演讲者备注）。导出前自动运行 QA 与包结构自检：'
           '有 error 时默认拒绝导出并返回报告（可传 force=true 强制）。'
           '纯 Dart 端上生成、后台 isolate 执行，不依赖任何外部运行时。',
       inputSchema: {
