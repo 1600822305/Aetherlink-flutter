@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/shared/domain/model_detection/model_id_utils.
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_registry.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/vendor_patterns.dart';
 import 'package:aetherlink_flutter/shared/domain/model_type.dart';
+import 'package:aetherlink_flutter/shared/domain/reasoning_model_detection.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Model _m(String id) => Model(id: id, name: id, provider: 'p');
@@ -23,13 +24,22 @@ void main() {
     });
 
     test('strips date snapshots, quantization and bedrock ARN decorations', () {
-      expect(normalizeModelId('claude-sonnet-4-5-20250929'), normalizeModelId('claude-sonnet-4-5'));
+      expect(
+        normalizeModelId('claude-sonnet-4-5-20250929'),
+        normalizeModelId('claude-sonnet-4-5'),
+      );
       expect(normalizeModelId('gpt-4o-2024-08-06'), 'gpt-4o');
       expect(normalizeModelId('glm-4-5-fp8'), 'glm-4-5');
-      expect(normalizeModelId('us.anthropic.claude-sonnet-4-5-v1:0'), normalizeModelId('claude-sonnet-4-5'));
+      expect(
+        normalizeModelId('us.anthropic.claude-sonnet-4-5-v1:0'),
+        normalizeModelId('claude-sonnet-4-5'),
+      );
       // sizes/versions are not eaten by the date pattern
       expect(normalizeModelId('qwen3-235b'), 'qwen3');
-      expect(normalizeModelId('bce-embedding-base_v1'), 'bce-embedding-base-v1');
+      expect(
+        normalizeModelId('bce-embedding-base_v1'),
+        'bce-embedding-base-v1',
+      );
     });
 
     test('colon size/quant tags: realignment and size-preserving key', () {
@@ -41,9 +51,18 @@ void main() {
       expect(normalizeModelId('gpt-oss-20b'), 'gpt-oss');
       expect(normalizeModelId('gpt-oss-120b'), 'gpt-oss');
       // size-preserving key keeps distinct sizes distinct
-      expect(normalizeModelId('gpt-oss:20b', keepParameterSize: true), 'gpt-oss-20b');
-      expect(normalizeModelId('gpt-oss:120b', keepParameterSize: true), 'gpt-oss-120b');
-      expect(normalizeModelId('qwen2.5:7b', keepParameterSize: true), 'qwen2-5-7b');
+      expect(
+        normalizeModelId('gpt-oss:20b', keepParameterSize: true),
+        'gpt-oss-20b',
+      );
+      expect(
+        normalizeModelId('gpt-oss:120b', keepParameterSize: true),
+        'gpt-oss-120b',
+      );
+      expect(
+        normalizeModelId('qwen2.5:7b', keepParameterSize: true),
+        'qwen2-5-7b',
+      );
     });
 
     test('lowerBaseModelName strips provider prefix + :free', () {
@@ -84,7 +103,12 @@ void main() {
     });
 
     test('negative cases', () {
-      for (final id in ['gpt-4o', 'gpt-5-chat', 'text-embedding-3-large', 'dall-e-3']) {
+      for (final id in [
+        'gpt-4o',
+        'gpt-5-chat',
+        'text-embedding-3-large',
+        'dall-e-3',
+      ]) {
         expect(inferReasoningFromModelId(id), isFalse, reason: id);
       }
     });
@@ -92,12 +116,24 @@ void main() {
 
   group('inference: vision', () {
     test('positive', () {
-      for (final id in ['gpt-4o', 'claude-3-opus', 'gemini-2.5-flash', 'qwen2.5-vl-7b', 'gpt-4.1']) {
+      for (final id in [
+        'gpt-4o',
+        'claude-3-opus',
+        'gemini-2.5-flash',
+        'qwen2.5-vl-7b',
+        'gpt-4.1',
+      ]) {
         expect(inferVisionFromModelId(id), isTrue, reason: id);
       }
     });
     test('negative', () {
-      for (final id in ['o1-mini', 'o3-mini', 'text-embedding-3-large', 'deepseek-chat', 'qwen-max']) {
+      for (final id in [
+        'o1-mini',
+        'o3-mini',
+        'text-embedding-3-large',
+        'deepseek-chat',
+        'qwen-max',
+      ]) {
         expect(inferVisionFromModelId(id), isFalse, reason: id);
       }
     });
@@ -117,7 +153,13 @@ void main() {
 
   group('inference: image generation', () {
     test('dedicated image models', () {
-      for (final id in ['dall-e-3', 'flux-1-schnell', 'gpt-image-1', 'imagen-3', 'qwen-image']) {
+      for (final id in [
+        'dall-e-3',
+        'flux-1-schnell',
+        'gpt-image-1',
+        'imagen-3',
+        'qwen-image',
+      ]) {
         expect(inferImageGenerationFromModelId(id), isTrue, reason: id);
       }
     });
@@ -128,12 +170,23 @@ void main() {
 
   group('inference: function calling', () {
     test('positive', () {
-      for (final id in ['gpt-4o', 'claude-sonnet-4-5', 'qwen3-max', 'deepseek-chat', 'gemini-2.5-pro']) {
+      for (final id in [
+        'gpt-4o',
+        'claude-sonnet-4-5',
+        'qwen3-max',
+        'deepseek-chat',
+        'gemini-2.5-pro',
+      ]) {
         expect(inferFunctionCallingFromModelId(id), isTrue, reason: id);
       }
     });
     test('negative (embedding / image / excluded)', () {
-      for (final id in ['text-embedding-3-large', 'dall-e-3', 'o1-mini', 'gpt-5-chat']) {
+      for (final id in [
+        'text-embedding-3-large',
+        'dall-e-3',
+        'o1-mini',
+        'gpt-5-chat',
+      ]) {
         expect(inferFunctionCallingFromModelId(id), isFalse, reason: id);
       }
     });
@@ -149,12 +202,34 @@ void main() {
 
   group('inference: claude 5+ 代', () {
     test('opus-5 推断出 reasoning/vision/web-search/function-call', () {
-      for (final id in ['claude-opus-5', 'claude-opus-5-20260724', 'claude-sonnet-5', 'claude-haiku-5-1']) {
+      for (final id in [
+        'claude-opus-5',
+        'claude-opus-5-20260724',
+        'claude-sonnet-5',
+        'claude-haiku-5-1',
+        'claude-fable-5',
+      ]) {
         expect(inferReasoningFromModelId(id), isTrue, reason: id);
         expect(inferVisionFromModelId(id), isTrue, reason: id);
         expect(inferWebSearchFromModelId(id), isTrue, reason: id);
         expect(inferFunctionCallingFromModelId(id), isTrue, reason: id);
       }
+    });
+
+    test('思考模型识别覆盖新家族，5 代起走 adaptive', () {
+      for (final id in [
+        'claude-fable-5',
+        'claude-sonnet-5',
+        'claude-opus-4-7',
+      ]) {
+        expect(isClaudeThinkingModelId(id), isTrue, reason: id);
+        expect(isClaudeAdaptiveThinkingModelId(id), isTrue, reason: id);
+      }
+      for (final id in ['claude-sonnet-4-5-20250929', 'claude-opus-4-6']) {
+        expect(isClaudeThinkingModelId(id), isTrue, reason: id);
+        expect(isClaudeAdaptiveThinkingModelId(id), isFalse, reason: id);
+      }
+      expect(isClaudeThinkingModelId('claude-3-5-sonnet'), isFalse);
     });
   });
 
@@ -173,11 +248,15 @@ void main() {
 
   group('runtime checks read fields (no regex)', () {
     test('modelTypes override wins', () {
-      final model = _m('totally-unknown').copyWith(modelTypes: [ModelType.vision]);
+      final model = _m(
+        'totally-unknown',
+      ).copyWith(modelTypes: [ModelType.vision]);
       expect(isVisionModel(model), isTrue);
     });
     test('capabilities field is read', () {
-      final model = _m('x').copyWith(capabilities: const ModelCapabilities(reasoning: true));
+      final model = _m(
+        'x',
+      ).copyWith(capabilities: const ModelCapabilities(reasoning: true));
       expect(isReasoningModel(model), isTrue);
     });
     test('empty model → all false', () {
@@ -206,7 +285,10 @@ void main() {
         '{"version":"t","models":[{"i":"DeepSeek-V3","c":["function-call","reasoning"],"in":["text"]}]}',
       );
       expect(reg.capabilitiesFor('DeepSeek-V3')!.reasoning, isTrue);
-      expect(reg.capabilitiesFor('deepseek/deepseek-v3')!.functionCalling, isTrue);
+      expect(
+        reg.capabilitiesFor('deepseek/deepseek-v3')!.functionCalling,
+        isTrue,
+      );
     });
 
     test('colon size tag resolves to its own-size row, not a sibling', () {
@@ -226,18 +308,34 @@ void main() {
   group('capabilitiesToModelTypes', () {
     test('chat is implied for conversational models', () {
       final t = capabilitiesToModelTypes(
-        const ModelCapabilities(vision: true, functionCalling: true, reasoning: true),
+        const ModelCapabilities(
+          vision: true,
+          functionCalling: true,
+          reasoning: true,
+        ),
       );
-      expect(t, containsAll([ModelType.vision, ModelType.functionCalling, ModelType.reasoning, ModelType.chat]));
+      expect(
+        t,
+        containsAll([
+          ModelType.vision,
+          ModelType.functionCalling,
+          ModelType.reasoning,
+          ModelType.chat,
+        ]),
+      );
     });
 
     test('pure embedding model does not imply chat', () {
-      final t = capabilitiesToModelTypes(const ModelCapabilities(embedding: true));
+      final t = capabilitiesToModelTypes(
+        const ModelCapabilities(embedding: true),
+      );
       expect(t, {ModelType.embedding});
     });
 
     test('dedicated image generator does not imply chat', () {
-      final t = capabilitiesToModelTypes(const ModelCapabilities(imageGeneration: true));
+      final t = capabilitiesToModelTypes(
+        const ModelCapabilities(imageGeneration: true),
+      );
       expect(t, {ModelType.imageGen});
     });
 
@@ -263,7 +361,9 @@ void main() {
 
     test('preserves models that already have capabilities', () async {
       final reg = ModelRegistry.fromJsonString('{"models":[]}');
-      final original = _m('gpt-4o').copyWith(capabilities: const ModelCapabilities(embedding: true));
+      final original = _m(
+        'gpt-4o',
+      ).copyWith(capabilities: const ModelCapabilities(embedding: true));
       final model = await enrichModel(original, registry: reg);
       expect(model.capabilities!.embedding, isTrue);
       expect(model.capabilities!.functionCalling, isNull);

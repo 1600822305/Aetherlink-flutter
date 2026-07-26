@@ -254,6 +254,12 @@ Map<String, dynamic> _enableParams(
     };
   }
   if (isClaudeThinkingModelId(id)) {
+    // 5 代起（及 4.7+）只接受 adaptive 且不允许 budget_tokens。
+    if (isClaudeAdaptiveThinkingModelId(id)) {
+      return const {
+        'thinking': {'type': 'adaptive'},
+      };
+    }
     return {
       'thinking': {
         'type': 'enabled',
@@ -338,8 +344,7 @@ enum _Vendor {
 /// user picked.
 _Vendor _vendorOf(Model model) {
   final key = (model.providerType ?? model.provider).toLowerCase();
-  final host =
-      (Uri.tryParse(model.baseUrl ?? '')?.host ?? '').toLowerCase();
+  final host = (Uri.tryParse(model.baseUrl ?? '')?.host ?? '').toLowerCase();
   final port = Uri.tryParse(model.baseUrl ?? '')?.port;
 
   bool hostIs(String h) => host == h || host.endsWith('.$h');

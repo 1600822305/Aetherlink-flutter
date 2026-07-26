@@ -77,7 +77,10 @@ const List<String> _dedicatedImageModels = [
   r'kandinsky(?:-[\w-]+)?',
 ];
 
-final RegExp _dedicatedImageRegex = RegExp(_dedicatedImageModels.join('|'), caseSensitive: false);
+final RegExp _dedicatedImageRegex = RegExp(
+  _dedicatedImageModels.join('|'),
+  caseSensitive: false,
+);
 
 const List<String> _imageEnhancementModels = [
   r'grok-2-image(?:-[\w-]+)?',
@@ -88,7 +91,10 @@ const List<String> _imageEnhancementModels = [
   r'gemini-3(?:\.\d+)?-(?:flash|pro)-image(?:-[\w-]+)?',
 ];
 
-final RegExp _imageEnhancementRegex = RegExp(_imageEnhancementModels.join('|'), caseSensitive: false);
+final RegExp _imageEnhancementRegex = RegExp(
+  _imageEnhancementModels.join('|'),
+  caseSensitive: false,
+);
 
 const List<String> _visionAllowedModels = [
   'llava',
@@ -101,7 +107,9 @@ const List<String> _visionAllowedModels = [
   'gemini-(flash|pro|flash-lite)-latest',
   'gemini-exp',
   'claude-3',
-  r'claude-(?:haiku|sonnet|opus)-[4-9]',
+  // 家族名不枚举（haiku/sonnet/opus/fable…）：Anthropic 会新增家族，按
+  // `claude-<family>-<gen>` 结构泛化匹配。
+  r'claude-[a-z]+-[4-9]',
   'vision',
   r'glm-4(?:\.\d+)?v(?:-[\w-]+)?',
   'qwen-vl',
@@ -160,12 +168,16 @@ const List<String> _visionExcludedModels = [
 ];
 
 final RegExp _visionRegex = RegExp(
-  r'\b(?!(?:' '${_visionExcludedModels.join('|')}' r')\b)(' '${_visionAllowedModels.join('|')}' r')\b',
+  r'\b(?!(?:'
+  '${_visionExcludedModels.join('|')}'
+  r')\b)('
+  '${_visionAllowedModels.join('|')}'
+  r')\b',
   caseSensitive: false,
 );
 
 final RegExp _claudeWebSearchRegex = RegExp(
-  r'\b(?:claude-3(-|\.)(7|5)-sonnet(?:-[\w-]+)|claude-3(-|\.)5-haiku(?:-[\w-]+)|claude-(haiku|sonnet|opus)-[4-9](?:-[\w-]+)?)\b',
+  r'\b(?:claude-3(-|\.)(7|5)-sonnet(?:-[\w-]+)|claude-3(-|\.)5-haiku(?:-[\w-]+)|claude-[a-z]+-[4-9](?:-[\w-]+)?)\b',
   caseSensitive: false,
 );
 
@@ -228,7 +240,9 @@ const List<String> _functionCallingExcludedModels = [
 ];
 
 final RegExp _functionCallingRegex = RegExp(
-  r'\b(?!(?:' '${_functionCallingExcludedModels.join('|')}' r')\b)(?:'
+  r'\b(?!(?:'
+  '${_functionCallingExcludedModels.join('|')}'
+  r')\b)(?:'
   '${_functionCallingAllowedModels.join('|')}'
   r')\b',
   caseSensitive: false,
@@ -241,7 +255,7 @@ final RegExp _functionCallingRegex = RegExp(
 bool _inferClaudeReasoning(String id) =>
     id.contains('claude-3-7-sonnet') ||
     id.contains('claude-3.7-sonnet') ||
-    RegExp(r'claude-(?:haiku|sonnet|opus)-[4-9]').hasMatch(id);
+    RegExp(r'claude-[a-z]+-[4-9]').hasMatch(id);
 
 bool _inferGeminiReasoning(String id) {
   if (id.startsWith('gemini') && id.contains('thinking')) return true;
@@ -256,24 +270,42 @@ bool _inferGeminiReasoning(String id) {
 bool _inferQwenReasoning(String id) {
   if (id.startsWith('qwen3') && id.contains('thinking')) return true;
   if (id.contains('qwq') || id.contains('qvq')) return true;
-  if (const ['coder', 'asr', 'tts', 'reranker', 'embedding', 'instruct', 'thinking'].any(id.contains)) {
+  if (const [
+    'coder',
+    'asr',
+    'tts',
+    'reranker',
+    'embedding',
+    'instruct',
+    'thinking',
+  ].any(id.contains)) {
     return false;
   }
   if (RegExp(r'^qwen3\.[5-9]').hasMatch(id)) return true;
-  if (RegExp(r'^(?:qwen3-max(?!-2025-09-23)|qwen-max-latest)(?:-|$)', caseSensitive: false).hasMatch(id)) {
+  if (RegExp(
+    r'^(?:qwen3-max(?!-2025-09-23)|qwen-max-latest)(?:-|$)',
+    caseSensitive: false,
+  ).hasMatch(id)) {
     return true;
   }
-  if (RegExp(r'^qwen(?:3\.[5-9])?-(?:plus|flash|turbo)(?:-|$)', caseSensitive: false).hasMatch(id)) {
+  if (RegExp(
+    r'^qwen(?:3\.[5-9])?-(?:plus|flash|turbo)(?:-|$)',
+    caseSensitive: false,
+  ).hasMatch(id)) {
     return true;
   }
   if (RegExp(r'^qwen3-\d', caseSensitive: false).hasMatch(id)) return true;
   return false;
 }
 
-bool _inferDoubaoReasoning(String id) => _doubaoThinkingRegex.hasMatch(id) || _reasoningRegex.hasMatch(id);
+bool _inferDoubaoReasoning(String id) =>
+    _doubaoThinkingRegex.hasMatch(id) || _reasoningRegex.hasMatch(id);
 
 bool _inferOpenAIReasoning(String id) {
-  if (id.contains('o1') && !id.contains('o1-preview') && !id.contains('o1-mini')) return true;
+  if (id.contains('o1') &&
+      !id.contains('o1-preview') &&
+      !id.contains('o1-mini'))
+    return true;
   if (id.contains('o3') && !id.contains('o3-mini')) return true;
   if (id.startsWith('o3') || id.startsWith('o4')) return true;
   if (id.contains('gpt-oss')) return true;
@@ -282,7 +314,9 @@ bool _inferOpenAIReasoning(String id) {
 }
 
 bool _inferDeepSeekHybrid(String id) =>
-    RegExp(r'(\w+-)?deepseek-v3(?:\.\d|-\d)(?:(\.|-)(?!speciale$)\w+)?$').hasMatch(id) ||
+    RegExp(
+      r'(\w+-)?deepseek-v3(?:\.\d|-\d)(?:(\.|-)(?!speciale$)\w+)?$',
+    ).hasMatch(id) ||
     id.contains('deepseek-chat-v3.1') ||
     id.contains('deepseek-chat') ||
     _deepSeekV4PlusRegex.hasMatch(id);
@@ -311,8 +345,12 @@ bool inferReasoningFromModelId(String rawModelId) {
       id.contains('hunyuan-t1') ||
       id.contains('hunyuan-a13b') ||
       RegExp(r'glm-?5|glm-4\.[567]|glm-z1').hasMatch(id) ||
-      RegExp(r'mimo-v2\.5(?:-pro)?(?!-)|mimo-v2-(?:flash|pro|omni)').hasMatch(id) ||
-      RegExp(r'^kimi-k2-thinking(?:-turbo)?$|^kimi-k(?:2\.[5-9]\d*|[3-9]\d*(?:\.\d+)?)(?:-[\w-]+)?$').hasMatch(id) ||
+      RegExp(
+        r'mimo-v2\.5(?:-pro)?(?!-)|mimo-v2-(?:flash|pro|omni)',
+      ).hasMatch(id) ||
+      RegExp(
+        r'^kimi-k2-thinking(?:-turbo)?$|^kimi-k(?:2\.[5-9]\d*|[3-9]\d*(?:\.\d+)?)(?:-[\w-]+)?$',
+      ).hasMatch(id) ||
       id.contains('magistral') ||
       id.contains('mistral-small-2603') ||
       id.contains('grok-build') ||
@@ -323,7 +361,12 @@ bool inferReasoningFromModelId(String rawModelId) {
       id.contains('gemma4') ||
       id.contains('step-3') ||
       id.contains('step-r1-v-mini') ||
-      const ['minimax-m1', 'minimax-m2', 'minimax-m2.1', 'minimax-m3'].any(id.contains) ||
+      const [
+        'minimax-m1',
+        'minimax-m2',
+        'minimax-m2.1',
+        'minimax-m3',
+      ].any(id.contains) ||
       id == 'baichuan-m2' ||
       id == 'baichuan-m3' ||
       const ['ring-1t', 'ring-mini', 'ring-flash'].any(id.contains) ||
@@ -333,7 +376,8 @@ bool inferReasoningFromModelId(String rawModelId) {
 
 bool inferVisionFromModelId(String rawModelId) {
   final id = lowerBaseModelName(rawModelId);
-  if (RegExp(r'^qwen(?:3\.[5-9]-?max|[-]?max)(?:-|$)?').hasMatch(id)) return false;
+  if (RegExp(r'^qwen(?:3\.[5-9]-?max|[-]?max)(?:-|$)?').hasMatch(id))
+    return false;
   return _visionRegex.hasMatch(id) || _imageEnhancementRegex.hasMatch(id);
 }
 
@@ -343,11 +387,13 @@ bool inferEmbeddingFromModelId(String rawModelId) {
   return _embeddingRegex.hasMatch(id);
 }
 
-bool inferRerankFromModelId(String rawModelId) => _rerankingRegex.hasMatch(lowerBaseModelName(rawModelId));
+bool inferRerankFromModelId(String rawModelId) =>
+    _rerankingRegex.hasMatch(lowerBaseModelName(rawModelId));
 
 bool inferImageGenerationFromModelId(String rawModelId) {
   final id = lowerBaseModelName(rawModelId);
-  return _dedicatedImageRegex.hasMatch(id) || _imageEnhancementRegex.hasMatch(id);
+  return _dedicatedImageRegex.hasMatch(id) ||
+      _imageEnhancementRegex.hasMatch(id);
 }
 
 bool inferWebSearchFromModelId(String rawModelId) {
