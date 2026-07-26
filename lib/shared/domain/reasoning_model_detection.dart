@@ -136,25 +136,38 @@ final _gpt51Regex = RegExp(r'^gpt-5\.1(?:-[\w-]+)?$', caseSensitive: false);
 // _gpt51CodexRegex intentionally kept for future use if needed.
 // final _gpt51CodexRegex =
 //     RegExp(r'^gpt-5\.1-codex(?:-[\w-]+)?$', caseSensitive: false);
-final _gpt51CodexMaxRegex =
-    RegExp(r'^gpt-5\.1-codex-max(?:-[\w-]+)?$', caseSensitive: false);
+final _gpt51CodexMaxRegex = RegExp(
+  r'^gpt-5\.1-codex-max(?:-[\w-]+)?$',
+  caseSensitive: false,
+);
 final _gpt52Regex = RegExp(r'^gpt-5\.2(?:-[\w-]+)?$', caseSensitive: false);
-final _gpt52ProRegex =
-    RegExp(r'^gpt-5\.2-pro(?:-[\w-]+)?$', caseSensitive: false);
-final _openaiReasoningRegex =
-    RegExp(r'^(o1|o3|o4)(?:-[\w-]+)?$', caseSensitive: false);
-final _openaiDeepResearchRegex =
-    RegExp(r'^(o3-deep-research|o4-deep-research)(?:-[\w-]+)?$',
-        caseSensitive: false);
-final _openaiOpenWeightRegex =
-    RegExp(r'^(o1-open|o3-open|o4-open)(?:-[\w-]+)?$', caseSensitive: false);
+final _gpt52ProRegex = RegExp(
+  r'^gpt-5\.2-pro(?:-[\w-]+)?$',
+  caseSensitive: false,
+);
+final _openaiReasoningRegex = RegExp(
+  r'^(o1|o3|o4)(?:-[\w-]+)?$',
+  caseSensitive: false,
+);
+final _openaiDeepResearchRegex = RegExp(
+  r'^(o3-deep-research|o4-deep-research)(?:-[\w-]+)?$',
+  caseSensitive: false,
+);
+final _openaiOpenWeightRegex = RegExp(
+  r'^(o1-open|o3-open|o4-open)(?:-[\w-]+)?$',
+  caseSensitive: false,
+);
 
 // Gemini
 final _geminiFlashRegex = RegExp(r'gemini.*-flash.*$', caseSensitive: false);
-final _gemini3FlashRegex =
-    RegExp(r'gemini-3-flash(?!-image)(?:-[\w-]+)*$', caseSensitive: false);
-final _gemini3ProRegex =
-    RegExp(r'gemini-3-pro(?!-image)(?:-[\w-]+)*$', caseSensitive: false);
+final _gemini3FlashRegex = RegExp(
+  r'gemini-3-flash(?!-image)(?:-[\w-]+)*$',
+  caseSensitive: false,
+);
+final _gemini3ProRegex = RegExp(
+  r'gemini-3-pro(?!-image)(?:-[\w-]+)*$',
+  caseSensitive: false,
+);
 
 // Minimax
 final _minimaxRegex = RegExp(r'minimax-m\d', caseSensitive: false);
@@ -297,9 +310,7 @@ ThinkingModelType getThinkModelType(String? modelId) {
   }
   if (_isGPT5Series(id)) {
     if (id.contains('codex')) return ThinkingModelType.gpt5Codex;
-    return _isGPT5Pro(id)
-        ? ThinkingModelType.gpt5pro
-        : ThinkingModelType.gpt5;
+    return _isGPT5Pro(id) ? ThinkingModelType.gpt5pro : ThinkingModelType.gpt5;
   }
   if (_isSupportedReasoningEffortOpenAI(id)) return ThinkingModelType.o;
 
@@ -405,11 +416,20 @@ bool isGemini3ThinkingModelId(String modelId) {
 bool isGeminiFlashModelId(String modelId) =>
     _geminiFlashRegex.hasMatch(_lowerBase(modelId));
 
-/// Claude model with extended-thinking support (3.7+ / 4.x families).
+/// Claude model with extended-thinking support (3.7+ / 4.x / 5.x families).
+/// 家族名不枚举（haiku/sonnet/opus/fable…），按 `claude-<family>-<gen>` 泛化。
 bool isClaudeThinkingModelId(String modelId) {
   final id = _lowerBase(modelId);
   return id.contains('claude') &&
-      RegExp(r'claude-(?:3[.-]7|(?:sonnet|opus|haiku)-4)').hasMatch(id);
+      RegExp(r'claude-(?:3[.-]7|[a-z]+-[4-9])').hasMatch(id);
+}
+
+/// Claude model whose extended thinking only accepts `type: adaptive`
+/// (no `budget_tokens`)：5 代起及 4.7+（4.6 及更早用 enabled + budget）。
+bool isClaudeAdaptiveThinkingModelId(String modelId) {
+  final id = _lowerBase(modelId);
+  return id.contains('claude') &&
+      RegExp(r'claude-[a-z]+-(?:[5-9]|4[.-][7-9])').hasMatch(id);
 }
 
 bool isGrok4FastModelId(String modelId) => _isGrok4Fast(_lowerBase(modelId));
@@ -442,12 +462,11 @@ List<SelectOption> getReasoningEffortOptions(String? modelId) {
     return _defaultReasoningEffortOptions;
   }
   final type = getThinkModelType(modelId);
-  final efforts = _modelSupportedOptions[type] ??
+  final efforts =
+      _modelSupportedOptions[type] ??
       _modelSupportedOptions[ThinkingModelType.defaultType]!;
   if (efforts.isEmpty) return _defaultReasoningEffortOptions;
   return efforts
-      .map(
-        (e) => SelectOption(value: e, label: _reasoningEffortLabels[e] ?? e),
-      )
+      .map((e) => SelectOption(value: e, label: _reasoningEffortLabels[e] ?? e))
       .toList();
 }

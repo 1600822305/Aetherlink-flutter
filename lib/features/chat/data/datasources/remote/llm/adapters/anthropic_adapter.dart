@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/shared/domain/reasoning_model_detection.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:aetherlink_flutter/shared/utils/api_host.dart';
@@ -96,11 +97,11 @@ class AnthropicAdapter implements LlmGateway {
 
       if (request.user != null && request.user!.isNotEmpty)
         'metadata': {'user_id': request.user},
+      // 5 代起（及 4.7+）只接受 adaptive 且不允许 budget_tokens。
       if (hasThinking)
-        'thinking': {
-          'type': 'enabled',
-          'budget_tokens': request.thinkingBudget,
-        },
+        'thinking': isClaudeAdaptiveThinkingModelId(model.id)
+            ? {'type': 'adaptive'}
+            : {'type': 'enabled', 'budget_tokens': request.thinkingBudget},
       if (request.webSearchEnabled == true ||
           request.codeExecutionEnabled == true ||
           (tools != null && tools.isNotEmpty))
