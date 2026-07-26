@@ -1514,6 +1514,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'pptx_styles',
+      description:
+          '列出 PPT 内置视觉风格库（只读，不写任何文件）：返回每个风格的 id/'
+          '名称/板块/背景色/强调色。在 deck.json 顶层传 "style": "<id>" 即可'
+          '套用：背景/文字色/卡片色/图表配色/字体全部自动推导，元素可不写颜色；'
+          '也可传内联风格 JSON 对象自定义。选风格前先调本工具看目录。',
+      inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
+    ),
+    McpToolDefinition(
       name: 'pptx_check',
       description:
           '校验 deck.json 幻灯片源：运行布局 QA（溢出/密度/字号）+ 包结构自检'
@@ -1528,8 +1537,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'object',
             'description':
                 'deck.json 源对象（也接受 JSON 字符串）。顶层：layout(16x9/4x3)、'
-                'title、slides[]；每页：background(6位hex)、notes(演讲者备注)、'
-                'elements[]（type: text/shape/image/table/chart，坐标单位英寸）',
+                'style(内置风格 id 或内联风格对象，见 pptx_styles)、title、'
+                'slides[]；每页：background(6位hex)、notes(演讲者备注)、'
+                'layout(Bento 布局声明：cover/toc/section/end/focus/split/'
+                'asymmetric/columns/hierarchy/hero/grid + cards[]，坐标自动计算)、'
+                'elements[]（type: text/shape/image/table/chart/infographic，'
+                '坐标单位英寸；chart 支持 bar/line/pie/doughnut/area/scatter/'
+                'stackedBar/horizontalBar/radar；infographic 支持 progress/kpi/'
+                'waffle/timeline/funnel/gauge）',
           },
         },
         'required': ['deck'],

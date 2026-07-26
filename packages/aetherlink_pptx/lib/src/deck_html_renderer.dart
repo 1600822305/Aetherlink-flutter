@@ -138,6 +138,8 @@ String _shapeHtml(DeckShapeElement element) {
         'border-top:${(width * 96 / 72).toStringAsFixed(1)}px solid #$color;'
         'height:0;',
       );
+    case DeckShapeKind.pie:
+      return _pieShapeHtml(element);
     case DeckShapeKind.rect:
       break;
   }
@@ -149,6 +151,37 @@ String _shapeHtml(DeckShapeElement element) {
     );
   }
   return '<div class="el" style="$style"></div>';
+}
+
+/// Renders a pie-wedge shape as an inline SVG path（角度语义对齐 OOXML：
+/// 0 = 3 点钟方向，顺时针）.
+String _pieShapeHtml(DeckShapeElement element) {
+  final w = element.frame.w * 96;
+  final h = element.frame.h * 96;
+  final start = (element.angleStart ?? 0) * pi / 180;
+  final end = (element.angleEnd ?? 270) * pi / 180;
+  final cx = w / 2;
+  final cy = h / 2;
+  final rx = w / 2;
+  final ry = h / 2;
+  var sweep = end - start;
+  if (sweep <= 0) sweep += 2 * pi;
+  final x1 = cx + rx * cos(start);
+  final y1 = cy + ry * sin(start);
+  final x2 = cx + rx * cos(start + sweep);
+  final y2 = cy + ry * sin(start + sweep);
+  final largeArc = sweep > pi ? 1 : 0;
+  final fill = element.fill == null ? 'none' : '#${element.fill!.value}';
+  final opacity = element.fillTransparency > 0
+      ? ' fill-opacity="${((100 - element.fillTransparency) / 100).toStringAsFixed(2)}"'
+      : '';
+  return '<div class="el" style="${_pos(element.frame)}">'
+      '<svg width="100%" height="100%" viewBox="0 0 ${w.toStringAsFixed(0)} ${h.toStringAsFixed(0)}">'
+      '<path d="M${cx.toStringAsFixed(1)},${cy.toStringAsFixed(1)} '
+      'L${x1.toStringAsFixed(1)},${y1.toStringAsFixed(1)} '
+      'A${rx.toStringAsFixed(1)},${ry.toStringAsFixed(1)} 0 $largeArc 1 '
+      '${x2.toStringAsFixed(1)},${y2.toStringAsFixed(1)} Z" fill="$fill"$opacity/>'
+      '</svg></div>';
 }
 
 String _imageHtml(DeckImageElement element) {
@@ -168,8 +201,18 @@ const List<String> _chartPalette = [
   '70AD47',
 ];
 
-String _seriesColor(DeckChartSeries series, int index) =>
-    series.color?.value ?? _chartPalette[index % _chartPalette.length];
+String _seriesColor(
+  DeckChartElement element,
+  DeckChartSeries series,
+  int index,
+) => series.color?.value ?? _catColor(element, index);
+
+String _catColor(DeckChartElement element, int index) {
+  final palette = element.palette == null
+      ? _chartPalette
+      : [for (final c in element.palette!) c.value];
+  return palette[index % palette.length];
+}
 
 /// Renders the chart as an inline SVG approximation of the native OOXML
 /// chart (same data, palette and legend; PowerPoint owns the exact styling).
@@ -195,22 +238,38 @@ String _chartHtml(DeckChartElement element) {
   switch (element.kind) {
     case DeckChartKind.bar:
       buf.write(_barSvg(element, plotX, plotY, plotW, plotH));
+    case DeckChartKind.stackedBar:
+      buf.write(_stackedBarSvg(element, plotX, plotY, plotW, plotH));
+    case DeckChartKind.horizontalBar:
+      buf.write(_horizontalBarSvg(element, plotX, plotY, plotW, plotH));
     case DeckChartKind.line:
       buf.write(_lineSvg(element, plotX, plotY, plotW, plotH));
+    case DeckChartKind.area:
+      buf.write(_lineSvg(element, plotX, plotY, plotW, plotH, area: true));
+    case DeckChartKind.scatter:
+      buf.write(_scatterSvg(element, plotX, plotY, plotW, plotH));
+    case DeckChartKind.radar:
+      buf.write(_radarSvg(element, w / 2, plotY + plotH / 2, plotH / 2));
     case DeckChartKind.pie:
       buf.write(_pieSvg(element, w / 2, plotY + plotH / 2, plotH / 2));
+    case DeckChartKind.doughnut:
+      buf.write(
+        _pieSvg(element, w / 2, plotY + plotH / 2, plotH / 2, hole: 0.55),
+      );
   }
   // Legend
   var lx = plotX;
   final ly = h - 10;
-  final legendEntries = element.kind == DeckChartKind.pie
+  final legendEntries =
+      element.kind == DeckChartKind.pie ||
+          element.kind == DeckChartKind.doughnut
       ? [
           for (final (i, cat) in element.categories.indexed)
-            (cat, _chartPalette[i % _chartPalette.length]),
+            (cat, _catColor(element, i)),
         ]
       : [
           for (final (i, s) in element.series.indexed)
-            (s.name, _seriesColor(s, i)),
+            (s.name, _seriesColor(element, s, i)),
         ];
   for (final (label, color) in legendEntries) {
     buf.write(
@@ -258,7 +317,7 @@ String _barSvg(
       buf.write(
         '<rect x="${bx.toStringAsFixed(1)}" y="${(y + h - barH).toStringAsFixed(1)}" '
         'width="${barW.toStringAsFixed(1)}" height="${barH.toStringAsFixed(1)}" '
-        'fill="#${_seriesColor(s, si)}"/>',
+        'fill="#${_seriesColor(element, s, si)}"/>',
       );
     }
     buf.write(
@@ -275,8 +334,9 @@ String _lineSvg(
   double x,
   double y,
   double w,
-  double h,
-) {
+  double h, {
+  bool area = false,
+}) {
   final max = _chartMax(element);
   final buf = StringBuffer(
     '<line x1="$x" y1="${(y + h).toStringAsFixed(1)}" '
@@ -290,9 +350,16 @@ String _lineSvg(
         '${(x + ci * stepX).toStringAsFixed(1)},'
             '${(y + h - v / max * h).toStringAsFixed(1)}',
     ].join(' ');
+    if (area) {
+      buf.write(
+        '<polygon points="${x.toStringAsFixed(1)},${(y + h).toStringAsFixed(1)} '
+        '$points ${(x + (catCount - 1) * stepX).toStringAsFixed(1)},${(y + h).toStringAsFixed(1)}" '
+        'fill="#${_seriesColor(element, s, si)}" fill-opacity="0.45"/>',
+      );
+    }
     buf.write(
       '<polyline points="$points" fill="none" '
-      'stroke="#${_seriesColor(s, si)}" stroke-width="2"/>',
+      'stroke="#${_seriesColor(element, s, si)}" stroke-width="2"/>',
     );
   }
   for (final (ci, cat) in element.categories.indexed) {
@@ -305,11 +372,37 @@ String _lineSvg(
   return buf.toString();
 }
 
-String _pieSvg(DeckChartElement element, double cx, double cy, double r) {
+String _pieSvg(
+  DeckChartElement element,
+  double cx,
+  double cy,
+  double r, {
+  double hole = 0,
+}) {
   final values = element.series.first.values;
   final total = values.fold<double>(0, (a, b) => a + (b < 0 ? 0 : b));
   if (total <= 0) return '';
   final buf = StringBuffer();
+  if (hole > 0) {
+    // 环形图：用描边弧段避免依赖背景色遮挡。
+    final ringR = r * (1 + hole) / 2;
+    final strokeW = r * (1 - hole);
+    var angle = -pi / 2;
+    final circumference = 2 * pi * ringR;
+    for (final (i, v) in values.indexed) {
+      if (v <= 0) continue;
+      final frac = v / total;
+      buf.write(
+        '<circle cx="${cx.toStringAsFixed(1)}" cy="${cy.toStringAsFixed(1)}" '
+        'r="${ringR.toStringAsFixed(1)}" fill="none" '
+        'stroke="#${_catColor(element, i)}" stroke-width="${strokeW.toStringAsFixed(1)}" '
+        'stroke-dasharray="${(frac * circumference).toStringAsFixed(1)} ${circumference.toStringAsFixed(1)}" '
+        'transform="rotate(${(angle * 180 / pi).toStringAsFixed(1)} ${cx.toStringAsFixed(1)} ${cy.toStringAsFixed(1)})"/>',
+      );
+      angle += frac * 2 * pi;
+    }
+    return buf.toString();
+  }
   var angle = -pi / 2;
   for (final (i, v) in values.indexed) {
     if (v <= 0) continue;
@@ -325,7 +418,165 @@ String _pieSvg(DeckChartElement element, double cx, double cy, double r) {
       'L${x1.toStringAsFixed(1)},${y1.toStringAsFixed(1)} '
       'A${r.toStringAsFixed(1)},${r.toStringAsFixed(1)} 0 $largeArc 1 '
       '${x2.toStringAsFixed(1)},${y2.toStringAsFixed(1)} Z" '
-      'fill="#${_chartPalette[i % _chartPalette.length]}"/>',
+      'fill="#${_catColor(element, i)}"/>',
+    );
+  }
+  return buf.toString();
+}
+
+String _stackedBarSvg(
+  DeckChartElement element,
+  double x,
+  double y,
+  double w,
+  double h,
+) {
+  // 堆叠最大值 = 各类别系列之和的最大值。
+  var max = 0.0;
+  for (var ci = 0; ci < element.categories.length; ci++) {
+    var sum = 0.0;
+    for (final s in element.series) {
+      final v = s.values[ci];
+      if (v > 0) sum += v;
+    }
+    if (sum > max) max = sum;
+  }
+  if (max <= 0) max = 1;
+  final buf = StringBuffer(
+    '<line x1="$x" y1="${(y + h).toStringAsFixed(1)}" '
+    'x2="${(x + w).toStringAsFixed(1)}" y2="${(y + h).toStringAsFixed(1)}" stroke="#999"/>',
+  );
+  final catCount = element.categories.length;
+  final groupW = w / catCount;
+  final barW = groupW * 0.55;
+  for (final (ci, cat) in element.categories.indexed) {
+    var top = y + h;
+    final bx = x + ci * groupW + (groupW - barW) / 2;
+    for (final (si, s) in element.series.indexed) {
+      final v = s.values[ci];
+      if (v <= 0) continue;
+      final segH = v / max * h;
+      top -= segH;
+      buf.write(
+        '<rect x="${bx.toStringAsFixed(1)}" y="${top.toStringAsFixed(1)}" '
+        'width="${barW.toStringAsFixed(1)}" height="${segH.toStringAsFixed(1)}" '
+        'fill="#${_seriesColor(element, s, si)}"/>',
+      );
+    }
+    buf.write(
+      '<text x="${(x + ci * groupW + groupW / 2).toStringAsFixed(1)}" '
+      'y="${(y + h + 12).toStringAsFixed(1)}" text-anchor="middle" '
+      'font-size="10">${_esc(cat)}</text>',
+    );
+  }
+  return buf.toString();
+}
+
+String _horizontalBarSvg(
+  DeckChartElement element,
+  double x,
+  double y,
+  double w,
+  double h,
+) {
+  final max = _chartMax(element);
+  const labelW = 52.0;
+  final plotX = x + labelW;
+  final plotW = w - labelW;
+  final buf = StringBuffer(
+    '<line x1="$plotX" y1="$y" x2="$plotX" y2="${(y + h).toStringAsFixed(1)}" stroke="#999"/>',
+  );
+  final catCount = element.categories.length;
+  final groupH = h / catCount;
+  final barH = groupH * 0.6 / element.series.length;
+  for (final (ci, cat) in element.categories.indexed) {
+    for (final (si, s) in element.series.indexed) {
+      final v = s.values[ci];
+      final barLen = (v / max) * plotW;
+      final by = y + ci * groupH + groupH * 0.2 + si * barH;
+      buf.write(
+        '<rect x="${plotX.toStringAsFixed(1)}" y="${by.toStringAsFixed(1)}" '
+        'width="${barLen.toStringAsFixed(1)}" height="${barH.toStringAsFixed(1)}" '
+        'fill="#${_seriesColor(element, s, si)}"/>',
+      );
+    }
+    buf.write(
+      '<text x="${(plotX - 4).toStringAsFixed(1)}" '
+      'y="${(y + ci * groupH + groupH / 2 + 3).toStringAsFixed(1)}" '
+      'text-anchor="end" font-size="10">${_esc(cat)}</text>',
+    );
+  }
+  return buf.toString();
+}
+
+String _scatterSvg(
+  DeckChartElement element,
+  double x,
+  double y,
+  double w,
+  double h,
+) {
+  final xs = [
+    for (final (i, cat) in element.categories.indexed)
+      double.tryParse(cat) ?? (i + 1).toDouble(),
+  ];
+  final xMin = xs.reduce(min);
+  final xMax = xs.reduce(max);
+  final xRange = xMax - xMin <= 0 ? 1 : xMax - xMin;
+  final yMax = _chartMax(element);
+  final buf = StringBuffer(
+    '<line x1="$x" y1="${(y + h).toStringAsFixed(1)}" '
+    'x2="${(x + w).toStringAsFixed(1)}" y2="${(y + h).toStringAsFixed(1)}" stroke="#999"/>'
+    '<line x1="$x" y1="$y" x2="$x" y2="${(y + h).toStringAsFixed(1)}" stroke="#999"/>',
+  );
+  for (final (si, s) in element.series.indexed) {
+    for (final (ci, v) in s.values.indexed) {
+      buf.write(
+        '<circle cx="${(x + (xs[ci] - xMin) / xRange * w).toStringAsFixed(1)}" '
+        'cy="${(y + h - v / yMax * h).toStringAsFixed(1)}" r="4" '
+        'fill="#${_seriesColor(element, s, si)}"/>',
+      );
+    }
+  }
+  return buf.toString();
+}
+
+String _radarSvg(DeckChartElement element, double cx, double cy, double r) {
+  final n = element.categories.length;
+  final max = _chartMax(element);
+  final buf = StringBuffer();
+  // 网格（3 圈）+ 轴线 + 维度标签。
+  for (final frac in [1.0, 2 / 3, 1 / 3]) {
+    final pts = [
+      for (var i = 0; i < n; i++)
+        '${(cx + r * frac * cos(2 * pi * i / n - pi / 2)).toStringAsFixed(1)},'
+            '${(cy + r * frac * sin(2 * pi * i / n - pi / 2)).toStringAsFixed(1)}',
+    ].join(' ');
+    buf.write(
+      '<polygon points="$pts" fill="none" stroke="#bbb" stroke-width="0.5"/>',
+    );
+  }
+  for (var i = 0; i < n; i++) {
+    final ang = 2 * pi * i / n - pi / 2;
+    buf.write(
+      '<line x1="${cx.toStringAsFixed(1)}" y1="${cy.toStringAsFixed(1)}" '
+      'x2="${(cx + r * cos(ang)).toStringAsFixed(1)}" '
+      'y2="${(cy + r * sin(ang)).toStringAsFixed(1)}" stroke="#ccc" stroke-width="0.5"/>'
+      '<text x="${(cx + (r + 10) * cos(ang)).toStringAsFixed(1)}" '
+      'y="${(cy + (r + 10) * sin(ang)).toStringAsFixed(1)}" '
+      'text-anchor="middle" font-size="9">${_esc(element.categories[i])}</text>',
+    );
+  }
+  for (final (si, s) in element.series.indexed) {
+    final pts = [
+      for (final (i, v) in s.values.indexed)
+        '${(cx + r * v / max * cos(2 * pi * i / n - pi / 2)).toStringAsFixed(1)},'
+            '${(cy + r * v / max * sin(2 * pi * i / n - pi / 2)).toStringAsFixed(1)}',
+    ].join(' ');
+    final color = _seriesColor(element, s, si);
+    buf.write(
+      '<polygon points="$pts" fill="#$color" fill-opacity="0.25" '
+      'stroke="#$color" stroke-width="2"/>',
     );
   }
   return buf.toString();

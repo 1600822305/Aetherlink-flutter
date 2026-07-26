@@ -11,15 +11,16 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '1.4.0',
+  version: '1.5.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
 ## 能力概览
 
 `@aether/pptx` 把结构化 deck.json 源渲染成**原生可编辑**的 .pptx
-（文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。三个工具：
+（文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。四个工具：
 
+- `pptx_styles`：列出内置视觉风格库（只读，免审批）。
 - `pptx_read`：读取工作区里已有的 .pptx/.potx（只读，免审批），逐页提取
   文本/表格/图表数据/演讲者备注；`format: "markdown"`（默认，适合总结
   和问答）或 `format: "deck"`（输出 deck.json 骨架，适合把已有 PPT 转成源
@@ -31,7 +32,8 @@ const Skill kPptSkill = Skill(
 ## 标准工作流
 
 1. 先和用户对齐：主题、页数、风格（深色/浅色、正式/活泼）、语言。
-2. 写大纲（每页一句话），再逐页展开成 deck.json。
+2. `pptx_styles` 看风格目录，按主题选一个 `style`；写大纲（每页一句话），
+   再逐页展开成 deck.json（优先用页级 layout 声明，少手写坐标）。
 3. `pptx_check` 自检 → 按返回的 errors/warnings 修改源 → 重查。
 4. 通过后 `pptx_render` 导出（路径如 `演示文稿/主题.pptx`）。
 5. 同时用 file-editor 的 `write` 把 deck 源存为同名 `主题.deck.json`：
@@ -45,6 +47,7 @@ const Skill kPptSkill = Skill(
 ```json
 {
   "layout": "16x9",
+  "style": "dark_tech",
   "title": "文件标题",
   "slides": [
     {
@@ -87,11 +90,51 @@ const Skill kPptSkill = Skill(
 要点：
 
 - shape 取值：`rect` / `roundRect`（radius 0-0.5，短边比例）/
-  `ellipse` / `line`（h 可为 0，用 lineColor+lineWidth）。
+  `ellipse` / `line`（h 可为 0，用 lineColor+lineWidth）/
+  `pie`（扇形，需 angleStart/angleEnd，0=3 点钟方向顺时针）。
 - align：left/center/right；valign：top/middle/bottom。
-- chart 取值：`bar` / `line` / `pie`（导出为原生 OOXML 图表，可在
-  PowerPoint 里改样式）；每个 series 的 values 长度必须等于
-  categories 长度；饼图只支持 1 个 series；color 省略时用默认色板。
+- chart 取值（9 种原生 OOXML 图表，可在 PowerPoint 里改样式）：
+  `bar` / `line` / `pie` / `doughnut` / `area` / `scatter` /
+  `stackedBar` / `horizontalBar` / `radar`；每个 series 的 values 长度
+  必须等于 categories 长度；饼图/环形图只支持 1 个 series；雷达图至少
+  3 个 categories；scatter 的 categories 写数字字符串作 x 值；
+  color 省略时用风格 accents 或默认色板。
+- infographic（形状合成信息图，展开为可编辑形状组）：
+  `{ "type": "infographic", "kind": "progress|kpi|waffle|timeline|funnel|gauge",
+  "x":.., "y":.., "w":.., "h":.. }`＋各自字段：
+  progress/waffle/gauge 要 `value`(0-100)+可选 `label`；
+  kpi 要 `value`(字符串)+`label`+可选 `trend`("+12%"/"-3%")；
+  timeline 要 `steps`(字符串或 {label, desc} 数组)；
+  funnel 要 `stages`([{label, value}])。
+
+## 风格系统（style）
+
+顶层 `"style": "<id>"` 套用内置风格（目录调 `pptx_styles`，含
+ dark_tech/xiaomi_orange/luxury_purple/blue_white/minimal_gray 等 12 个）：
+背景、文字色、卡片色、图表配色、字体全部自动推导，元素**不写颜色**即可；
+显式写了的颜色优先。也可传内联对象自定义（background/cardFill/
+textPrimary/textSecondary/accents 必填）。不传 style 则完全手动控制。
+
+## Bento 布局引擎（页级 layout，强烈推荐）
+
+每页用 `"layout": {...}` 声明代替手写坐标，坐标/间距/边界由引擎保证，
+可与 elements 混用（layout 元素在底层）：
+
+- 页型：`{"type":"cover","title":..,"subtitle":..,"meta":..}` /
+  `{"type":"toc","items":[2-6条]}` /
+  `{"type":"section","title":..,"label":"PART 01","lead":..}` /
+  `{"type":"end","title":..,"items":[..],"meta":..}`。
+- 内容页（需 title + cards）：`focus`(1 卡) / `split`(2 卡 50/50) /
+  `asymmetric`(2 卡 2:1) / `columns`(3 卡等宽) / `hierarchy`(3 卡，
+  左主右两小) / `hero`(3-5 卡，顶部横幅+下排) / `grid`(4-6 卡网格)。
+- 卡片 6 类：`{"type":"text","title":..,"body":[段落]}` /
+  `{"type":"data","value":"87%","label":..,"desc":..}` /
+  `{"type":"list","title":..,"items":[≥2条]}` /
+  `{"type":"tags","title":..,"tags":[≥3个]}` /
+  `{"type":"process","title":..,"steps":[≥3步]}` /
+  `{"type":"big_number","value":..,"label":..}`。
+- 相邻内容页换着用不同布局；卡片类型也要混搭（data+list+tags 比
+  全 text 好看得多）。
 
 ## 硬性规则（违反会被拒绝或产出损坏文件）
 
@@ -164,7 +207,8 @@ const Skill kPptSkill = Skill(
 
 - 有数据一律用原生 chart，别写成文字或表格；单序列隐藏图例噪音的
   办法是把 series name 起成图表主题本身。
-- 图表配色用全篇主色/强调色（series 的 `color`），别用默认色板混搭。
+- 图表配色：用了 style 就省略 color（自动用风格 accents）；没用 style
+  才手动指定 series 的 `color`，别用默认色板混搭。
 - 图表至少占 4×3 英寸，旁边配一句结论文字（「营收三年翻三倍」），
   别让读者自己找重点。
 
