@@ -63,7 +63,14 @@ class StreamingRegistry extends _$StreamingRegistry {
 
   /// Clears [topicId]'s streaming state (it finished, was stopped, or errored).
   /// Stops the keep-alive service once no topic is streaming.
+  ///
+  /// A no-op while the topic still has a live request bound: a topic can carry
+  /// more than one in-flight turn (multi-model siblings, or two turns racing
+  /// through [ChatController.send]'s guard), and the first one to end must not
+  /// tear down the shared state the others are still streaming into — doing so
+  /// would drop their cancel handles and leave them unstoppable.
   void finish(String topicId) {
+    if (_tokens[topicId]?.isNotEmpty ?? false) return;
     _tokens.remove(topicId);
     if (!state.liveByTopic.containsKey(topicId)) return;
     final next = Map<String, List<ChatMessageView>>.of(state.liveByTopic)
@@ -76,6 +83,15 @@ class StreamingRegistry extends _$StreamingRegistry {
   /// [cancel] can abort it. Multi-model turns bind one token per sibling.
   void bindToken(String topicId, LlmCancelToken token) {
     (_tokens[topicId] ??= <LlmCancelToken>[]).add(token);
+  }
+
+  /// Releases [token] once its stream is over. Idempotent. The topic stays
+  /// streaming until every bound token has been released — see [finish].
+  void releaseToken(String topicId, LlmCancelToken token) {
+    final tokens = _tokens[topicId];
+    if (tokens == null) return;
+    tokens.remove(token);
+    if (tokens.isEmpty) _tokens.remove(topicId);
   }
 
   /// Aborts every in-flight request on [topicId] (all parallel siblings).

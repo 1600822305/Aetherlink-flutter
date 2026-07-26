@@ -237,6 +237,7 @@ class ChatController extends _$ChatController {
     replace: _replace,
     reloadView: _reloadView,
     persistMessageBlocks: _persistMessageBlocks,
+    checkpointMessageBlocks: _checkpointMessageBlocks,
     errorMessage: _errorMessage,
     markTruncated: (messageId) => _truncatedMessageId = messageId,
     refreshTopicPreview: (topicId) =>
@@ -1033,6 +1034,15 @@ class ChatController extends _$ChatController {
     // Create a new block id for the continuation segment.
     final continuationBlockId = generateId('block');
 
+    // Carry the already-generated blocks into the turn so the continuation is
+    // *appended* to them. The turn's block set is what gets persisted, so
+    // omitting these would make the first checkpoint drop everything the
+    // truncated reply had produced.
+    final existingBlocks = _orderBlocks(
+      message.blocks,
+      await _repo.getMessageBlocksByMessageId(messageId),
+    );
+
     // Update the message status to streaming.
     await _repo.saveMessage(
       message.copyWith(status: MessageStatus.streaming, updatedAt: now),
@@ -1090,6 +1100,7 @@ class ChatController extends _$ChatController {
       views: updatedViews,
       assistantView: assistantView,
       mcp: mcp,
+      leadingBlocks: existingBlocks,
     );
   }
 
@@ -1172,6 +1183,22 @@ class ChatController extends _$ChatController {
     blocks: blocks,
     usage: usage,
     metrics: metrics,
+  );
+
+  /// 流式检查点：只 upsert 变化的尾部块并把消息的块引用指向 [blockIds]，不删除
+  /// 任何东西。已完成的块（含体积可观的工具输出）只在完成时写一次，不再随每次
+  /// 检查点整体重写。
+  Future<void> _checkpointMessageBlocks({
+    required String messageId,
+    required MessageStatus status,
+    required List<MessageBlock> changedBlocks,
+    required List<String> blockIds,
+  }) => send_svc.checkpointMessageBlocks(
+    _repo,
+    messageId: messageId,
+    status: status,
+    changedBlocks: changedBlocks,
+    blockIds: blockIds,
   );
 
   /// 崩溃恢复：把 [topicId] 里上次运行遗留在 streaming 状态的消息落定（对齐

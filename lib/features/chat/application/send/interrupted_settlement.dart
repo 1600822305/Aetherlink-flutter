@@ -1,16 +1,20 @@
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 
-/// Replaces every block of [messageId] with [blocks] (in order) and stamps the
-/// message [status]. Deleting first keeps the streaming placeholder and any
-/// stale blocks from leaking into the rendered order (the block-order
-/// projection appends unreferenced blocks), so the persisted set is exactly
-/// what was streamed.
+/// Makes [blocks] the block set of [messageId] (in order) and stamps the
+/// message [status]. Any block previously persisted for this message but no
+/// longer referenced is pruned, so the persisted set is exactly what was
+/// streamed — the block-order projection appends unreferenced blocks, so stale
+/// ones would otherwise leak into the rendered order.
+///
+/// Terminal path only. During streaming use [checkpointMessageBlocks], which
+/// writes incrementally and never deletes.
 Future<void> persistMessageBlocks(
   ChatRepository repo, {
   required String messageId,
@@ -19,18 +23,64 @@ Future<void> persistMessageBlocks(
   Usage? usage,
   Metrics? metrics,
 }) async {
-  final now = DateTime.now();
-  final message = await repo.getMessage(messageId);
   await repo.replaceMessageBlocks(
     messageId: messageId,
     blocks: blocks,
-    message: message?.copyWith(
+    message: await _syncedMessage(
+      repo,
+      messageId: messageId,
       status: status,
-      updatedAt: now,
-      blocks: [for (final block in blocks) block.id],
-      usage: usage ?? message.usage,
-      metrics: metrics ?? message.metrics,
+      blocks: blocks,
+      usage: usage,
+      metrics: metrics,
     ),
+  );
+}
+
+/// Streaming checkpoint: upserts only [changedBlocks] and re-points the
+/// message's `blocks` list at [blockIds], **deleting nothing**.
+///
+/// Completed blocks (finished tool rounds, earlier prose) are written once when
+/// they finish rather than rewritten on every checkpoint, so a long reply no
+/// longer re-serializes its whole history — including bulky tool output — every
+/// couple of seconds. Because nothing is deleted, a caller that under-reports
+/// its block set degrades to "the message under-references a block" (fixable,
+/// and recoverable by id) instead of destroying persisted content.
+Future<void> checkpointMessageBlocks(
+  ChatRepository repo, {
+  required String messageId,
+  required MessageStatus status,
+  required List<MessageBlock> changedBlocks,
+  required List<String> blockIds,
+}) async {
+  await repo.upsertMessageBlocksAndSync(
+    messageId: messageId,
+    blocks: changedBlocks,
+    message: await _syncedMessage(
+      repo,
+      messageId: messageId,
+      status: status,
+      blockIds: blockIds,
+    ),
+  );
+}
+
+Future<Message?> _syncedMessage(
+  ChatRepository repo, {
+  required String messageId,
+  required MessageStatus status,
+  List<MessageBlock>? blocks,
+  List<String>? blockIds,
+  Usage? usage,
+  Metrics? metrics,
+}) async {
+  final message = await repo.getMessage(messageId);
+  return message?.copyWith(
+    status: status,
+    updatedAt: DateTime.now(),
+    blocks: blockIds ?? [for (final block in blocks!) block.id],
+    usage: usage ?? message.usage,
+    metrics: metrics ?? message.metrics,
   );
 }
 

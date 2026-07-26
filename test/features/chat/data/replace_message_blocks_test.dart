@@ -64,4 +64,61 @@ void main() {
     expect(saved!.status, MessageStatus.success);
     expect(saved.blocks, ['b2', 'b3']);
   });
+
+  test(
+    'upsertMessageBlocksAndSync never deletes blocks it was not given',
+    () async {
+      final message = Message(
+        id: 'm1',
+        role: MessageRole.assistant,
+        assistantId: 'asst-1',
+        topicId: 't1',
+        parentId: 'root',
+        createdAt: DateTime.utc(2024, 3, 1),
+        status: MessageStatus.processing,
+        blocks: const ['b1'],
+      );
+      await repo.saveMessage(message);
+      await repo.saveMessageBlock(text('b1', 'm1', 'first half'));
+
+      // A checkpoint that only reports the tail block must leave the earlier
+      // content intact — this is what keeps a caller that under-reports its
+      // block set (e.g. 继续生成 omitting the already-generated blocks) from
+      // destroying data.
+      await repo.upsertMessageBlocksAndSync(
+        messageId: 'm1',
+        blocks: [text('b2', 'm1', 'continuation')],
+        message: message.copyWith(blocks: ['b1', 'b2']),
+      );
+
+      final stored = await repo.getMessageBlocksByMessageId('m1');
+      expect(stored.map((b) => b.id).toSet(), {'b1', 'b2'});
+      expect((await repo.getMessage('m1'))!.blocks, ['b1', 'b2']);
+    },
+  );
+
+  test('pruneMessageBlocks drops only unreferenced blocks', () async {
+    final message = Message(
+      id: 'm1',
+      role: MessageRole.assistant,
+      assistantId: 'asst-1',
+      topicId: 't1',
+      parentId: 'root',
+      createdAt: DateTime.utc(2024, 3, 1),
+      status: MessageStatus.success,
+      blocks: const ['b1', 'b2'],
+    );
+    await repo.saveMessage(message);
+    await repo.saveMessageBlocks([
+      text('b1', 'm1', 'kept'),
+      text('b2', 'm1', 'kept too'),
+      // Left over from an attempt that failed over and was retried.
+      text('b3', 'm1', 'abandoned'),
+    ]);
+
+    await repo.pruneMessageBlocks(messageId: 'm1', keepIds: {'b1', 'b2'});
+
+    final stored = await repo.getMessageBlocksByMessageId('m1');
+    expect(stored.map((b) => b.id).toSet(), {'b1', 'b2'});
+  });
 }

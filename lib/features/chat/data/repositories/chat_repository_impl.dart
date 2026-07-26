@@ -279,17 +279,51 @@ class ChatRepositoryImpl implements ChatRepository {
       _db.messageBlockDao.upsertAll(blocks);
 
   @override
-  Future<void> replaceMessageBlocks({
+  Future<void> upsertMessageBlocksAndSync({
     required String messageId,
     required List<MessageBlock> blocks,
     Message? message,
   }) {
     return _db.transaction(() async {
-      await _db.messageBlockDao.deleteByMessageId(messageId);
       if (blocks.isNotEmpty) {
         await _db.messageBlockDao.upsertAll(blocks);
       }
       if (message != null) await saveMessage(message);
+    });
+  }
+
+  @override
+  Future<void> pruneMessageBlocks({
+    required String messageId,
+    required Set<String> keepIds,
+  }) async {
+    final persisted = await _db.messageBlockDao.getIdsByMessageId(messageId);
+    final stale = [
+      for (final id in persisted)
+        if (!keepIds.contains(id)) id,
+    ];
+    if (stale.isEmpty) return;
+    await _db.messageBlockDao.deleteByIds(stale);
+  }
+
+  @override
+  Future<void> replaceMessageBlocks({
+    required String messageId,
+    required List<MessageBlock> blocks,
+    Message? message,
+  }) {
+    // Upsert first, prune second: the persisted set is a superset of both the
+    // old and the new content at every instant, so an interleaved checkpoint or
+    // a crash between the two steps can never observe a hole.
+    return _db.transaction(() async {
+      if (blocks.isNotEmpty) {
+        await _db.messageBlockDao.upsertAll(blocks);
+      }
+      if (message != null) await saveMessage(message);
+      await pruneMessageBlocks(
+        messageId: messageId,
+        keepIds: {for (final block in blocks) block.id},
+      );
     });
   }
 

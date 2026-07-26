@@ -91,8 +91,32 @@ abstract interface class ChatRepository {
 
   Future<void> saveMessageBlocks(List<MessageBlock> blocks);
 
-  /// Atomically replaces every block of [messageId] with [blocks] (in order)
-  /// and saves [message] (when given), all in one transaction — a mid-write
+  /// Atomically upserts [blocks] and saves [message] (when given) in one
+  /// transaction, **without deleting anything**. Blocks already persisted for
+  /// [messageId] but absent from [blocks] are left alone — the message's
+  /// `blocks` list is the authority on what is rendered, so an incomplete
+  /// caller can at worst under-reference a block, never destroy it.
+  ///
+  /// This is the streaming checkpoint path: pass only the blocks that changed.
+  Future<void> upsertMessageBlocksAndSync({
+    required String messageId,
+    required List<MessageBlock> blocks,
+    Message? message,
+  });
+
+  /// Deletes every persisted block of [messageId] whose id is not in [keepIds].
+  /// The explicit counterpart to [upsertMessageBlocksAndSync]: call it once a
+  /// turn reaches a terminal state to drop blocks that earlier checkpoints
+  /// wrote but the final reply no longer references (failover resets,
+  /// abandoned tool rounds).
+  Future<void> pruneMessageBlocks({
+    required String messageId,
+    required Set<String> keepIds,
+  });
+
+  /// Atomically makes [blocks] the complete block set of [messageId] and saves
+  /// [message] (when given), all in one transaction. Implemented as upsert-then-
+  /// prune so the persisted set is a superset at every instant — a mid-write
   /// crash can never leave the reply with deleted-but-not-rewritten blocks.
   Future<void> replaceMessageBlocks({
     required String messageId,

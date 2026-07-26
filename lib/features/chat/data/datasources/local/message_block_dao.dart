@@ -66,6 +66,17 @@ class MessageBlockDao extends DatabaseAccessor<AppDatabase>
     return rows.map((row) => row.data).toList();
   }
 
+  /// The ids of every persisted block of [messageId] — the cheap projection
+  /// used to prune blocks that are no longer referenced, without loading their
+  /// (potentially large) payloads.
+  Future<List<String>> getIdsByMessageId(String messageId) async {
+    final query = selectOnly(messageBlockRows)
+      ..addColumns([messageBlockRows.id])
+      ..where(messageBlockRows.messageId.equals(messageId));
+    final rows = await query.get();
+    return [for (final row in rows) row.read(messageBlockRows.id)!];
+  }
+
   Future<void> upsert(MessageBlock block) {
     return into(messageBlockRows).insertOnConflictUpdate(_companion(block));
   }

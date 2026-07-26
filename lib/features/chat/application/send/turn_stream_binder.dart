@@ -82,6 +82,13 @@ class TurnStreamBinder {
       Metrics? metrics,
     })
     persistMessageBlocks,
+    required Future<void> Function({
+      required String messageId,
+      required MessageStatus status,
+      required List<MessageBlock> changedBlocks,
+      required List<String> blockIds,
+    })
+    checkpointMessageBlocks,
     required String Function(Object error) errorMessage,
     required void Function(String messageId) markTruncated,
     required Future<void> Function(String turnTopicId) refreshTopicPreview,
@@ -98,6 +105,7 @@ class TurnStreamBinder {
        _replace = replace,
        _reloadView = reloadView,
        _persistMessageBlocks = persistMessageBlocks,
+       _checkpointMessageBlocks = checkpointMessageBlocks,
        _errorMessage = errorMessage,
        _markTruncated = markTruncated,
        _refreshTopicPreview = refreshTopicPreview,
@@ -129,6 +137,13 @@ class TurnStreamBinder {
     Metrics? metrics,
   })
   _persistMessageBlocks;
+  final Future<void> Function({
+    required String messageId,
+    required MessageStatus status,
+    required List<MessageBlock> changedBlocks,
+    required List<String> blockIds,
+  })
+  _checkpointMessageBlocks;
   final String Function(Object error) _errorMessage;
   final void Function(String messageId) _markTruncated;
   final Future<void> Function(String turnTopicId) _refreshTopicPreview;
@@ -191,6 +206,9 @@ class TurnStreamBinder {
     // 合帧窗口严格等于一个 vsync 周期，自适应 60/90/120Hz，不再写死 8ms。
     // 这不是旧的 100ms 节流——每一帧依然拿到最新内容，只是不再在一帧内
     // 重复构建同一个气泡。
+    // Bound into the registry up front (see below) and released by
+    // [emitTurnEnd]; declared here so the terminal emit can hand it back.
+    final cancelToken = LlmCancelToken();
     int? pendingEmitFrame;
     // 纯 Dart 测试环境没有 binding（也就没有 vsync），此时退化为每个 delta
     // 直接 emit。
@@ -213,6 +231,10 @@ class TurnStreamBinder {
     // siblings stay visible until the coordinator finishes.
     void emitTurnEnd() {
       cancelScheduledUpdate();
+      // This stream is over either way, so hand its cancel handle back before
+      // ending the turn: the registry only tears the topic down once every
+      // bound request has been released.
+      _registry.releaseToken(turnTopicId, cancelToken);
       _emitTurn(turnTopicId, views, streaming: !finalizeTurn);
     }
 
@@ -398,11 +420,18 @@ class TurnStreamBinder {
     // 流式（落盘是尽力而为的兜底，不能影响正常回复）。
     var checkpointChain = Future<void>.value();
     var lastCheckpointAt = DateTime.fromMillisecondsSinceEpoch(0);
+    // Ids of [completed] blocks already written at their terminal state. A
+    // finished block never changes again, so each is persisted exactly once
+    // instead of being re-serialized by every subsequent checkpoint — that is
+    // what keeps long replies (and bulky tool output) off the 2s write path.
+    // Cleared alongside [completed] on failover so the retry rewrites its own.
+    final persistedCompletedIds = <String>{};
 
-    List<MessageBlock> checkpointBlocks() {
+    /// The blocks a checkpoint must write (only what can still change) paired
+    /// with the message's full ordered block reference list.
+    (List<MessageBlock>, List<String>) checkpointDelta() {
       final current = roundDisplay();
-      return <MessageBlock>[
-        ...completed,
+      final live = <MessageBlock>[
         if (thinking.isNotEmpty)
           MessageBlock.thinking(
             id: thinkingBlockId,
@@ -420,6 +449,16 @@ class TurnStreamBinder {
             content: current,
           ),
       ];
+      final changed = <MessageBlock>[
+        for (final block in completed)
+          if (!persistedCompletedIds.contains(block.id)) block,
+        ...live,
+      ];
+      final ids = <String>[
+        for (final block in completed) block.id,
+        for (final block in live) block.id,
+      ];
+      return (changed, ids);
     }
 
     void checkpoint({bool force = false}) {
@@ -428,13 +467,18 @@ class TurnStreamBinder {
         return;
       }
       lastCheckpointAt = DateTime.now();
-      final blocks = checkpointBlocks();
+      final (changed, ids) = checkpointDelta();
+      // Mark before the (async, chained) write so the next checkpoint does not
+      // re-queue the same completed blocks; a failed write is recovered by the
+      // terminal persist, which always writes the full set.
+      persistedCompletedIds.addAll(completed.map((b) => b.id));
       checkpointChain = checkpointChain.then((_) async {
         try {
-          await _persistMessageBlocks(
+          await _checkpointMessageBlocks(
             messageId: assistantMessageId,
             status: MessageStatus.streaming,
-            blocks: blocks,
+            changedBlocks: changed,
+            blockIds: ids,
           );
         } on Object catch (_) {
           // Best-effort durability; never disrupt the live stream.
@@ -490,7 +534,6 @@ class TurnStreamBinder {
       if (finalizeTurn) unawaited(_refreshTopicPreview(turnTopicId));
     }
 
-    final cancelToken = LlmCancelToken();
     _registry.bindToken(turnTopicId, cancelToken);
     Object? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
@@ -532,6 +575,10 @@ class TurnStreamBinder {
       completed
         ..clear()
         ..addAll(leadingBlocks);
+      // The retry re-derives every block from scratch, so nothing a previous
+      // attempt checkpointed counts as persisted anymore. Blocks the abandoned
+      // attempt already wrote are dropped by the terminal prune.
+      persistedCompletedIds.clear();
       aggregatedForCount = -1;
       buffer.clear();
       messages = List<LlmMessage>.of(request.messages);
