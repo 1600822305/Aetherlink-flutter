@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/working_indicator_tile.dart';
 
 void main() {
   final at = DateTime(2026, 1, 1);
