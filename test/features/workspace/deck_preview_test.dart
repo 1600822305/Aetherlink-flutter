@@ -45,6 +45,22 @@ void main() {
                 ],
               },
               {
+                'type': 'chart',
+                'chart': 'bar',
+                'x': 6,
+                'y': 3,
+                'w': 5,
+                'h': 3,
+                'title': '图表',
+                'categories': ['A', 'B'],
+                'series': [
+                  {
+                    'name': 'S1',
+                    'values': [1, 2],
+                  },
+                ],
+              },
+              {
                 'type': 'shape',
                 'shape': 'roundRect',
                 'x': 1,

@@ -11,14 +11,14 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '1.1.0',
+  version: '1.2.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
 ## 能力概览
 
 `@aether/pptx` 把结构化 deck.json 源渲染成**原生可编辑**的 .pptx
-（文本框/形状/图片/表格都是原生 PowerPoint 对象，不是截图）。两个工具：
+（文本框/形状/图片/表格/图表都是原生 PowerPoint 对象，不是截图）。两个工具：
 
 - `pptx_check`：校验 deck 源 + 布局 QA（不写文件，免审批）。
 - `pptx_render`：QA 通过后导出 .pptx 到工作区（需用户确认）；
@@ -67,7 +67,12 @@ const Skill kPptSkill = Skill(
           "borderColor": "DADCE0",
           "rows": [ ["表头1", "表头2"],
                     [ { "text": "值", "align": "center" },
-                      { "runs": [ { "text": "加粗值", "bold": true } ] } ] ] }
+                      { "runs": [ { "text": "加粗值", "bold": true } ] } ] ] },
+        { "type": "chart", "chart": "bar", "x": 1, "y": 1.5,
+          "w": 6, "h": 4.5, "title": "季度营收",
+          "categories": ["Q1", "Q2", "Q3"],
+          "series": [ { "name": "2025", "values": [12, 18, 15],
+                        "color": "1A73E8" } ] }
       ]
     }
   ]
@@ -79,6 +84,9 @@ const Skill kPptSkill = Skill(
 - shape 取值：`rect` / `roundRect`（radius 0-0.5，短边比例）/
   `ellipse` / `line`（h 可为 0，用 lineColor+lineWidth）。
 - align：left/center/right；valign：top/middle/bottom。
+- chart 取值：`bar` / `line` / `pie`（导出为原生 OOXML 图表，可在
+  PowerPoint 里改样式）；每个 series 的 values 长度必须等于
+  categories 长度；饼图只支持 1 个 series；color 省略时用默认色板。
 
 ## 硬性规则（违反会被拒绝或产出损坏文件）
 
