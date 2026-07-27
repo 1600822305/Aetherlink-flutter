@@ -39,6 +39,10 @@ class AgentEventRows extends Table {
   TextColumn get payloadJson => text()();
   IntColumn get createdAt => integer()();
 
+  /// 行版本号：DAO 每次写入单调递增。原位更新（流式文本、工具状态）
+  /// 不改 seq/createdAt，watchEvents 的轻量投影靠它判定 payload 变更。
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }

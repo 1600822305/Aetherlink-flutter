@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_engin
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -2489,6 +2490,259 @@ void main() {
       expect(toolEvent.state, AgentToolCallState.failure);
     });
   });
+
+  group('异常/取消路径的流式产物收尾', () {
+    test('工具参数流到一半遇一般性 LLM 异常 → failed 且工具行不留永久 running', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final sink = RecordingToolStreamSink();
+      final engine = AgentEngine(
+        llm: StreamingThenGenericErrorLlm(),
+        tools: const FakeAgentToolExecutor(delay: Duration.zero),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+        toolStream: sink,
+      );
+      final task = newTask();
+      await store.appendUserMessage(task.id, '读文件');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.status, AgentTaskStatus.failed);
+      final toolEvents = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().toList();
+      expect(toolEvents, hasLength(1));
+      // 流式预建事件被回填失败，而不是永久 running（UI 永远转圈）。
+      expect(toolEvents.single.state, AgentToolCallState.failure);
+      expect(toolEvents.single.resultSummary, '已中断 ✗');
+      // 实时预览通道条目也被清理，不残留。
+      expect(sink.live, isEmpty);
+      final events = await store.getEvents(task.id);
+      expect(
+        events.whereType<StatusChangeEvent>().any(
+          (e) => e.description.contains('执行出错'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('工具执行中用户强制终止 → cancelled 且同轮剩余预建事件回填失败', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final engine = AgentEngine(
+        llm: TwoPrecreatedToolsLlm(),
+        tools: CancelDuringExecuteExecutor(),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+      );
+      final task = newTask();
+      await store.appendUserMessage(task.id, '连做两件事');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.status, AgentTaskStatus.cancelled);
+      final toolEvents = (await store.getEvents(
+        task.id,
+      )).whereType<ToolCallEvent>().toList();
+      expect(toolEvents, hasLength(2));
+      // 第二个预建事件在终态前被回填，不留永久 running。
+      expect(
+        toolEvents.map((e) => e.state),
+        isNot(contains(AgentToolCallState.running)),
+      );
+    });
+  });
+
+  group('续跑/重试额度耗尽的明确提示', () {
+    test('截断续跑额度耗尽 → done 但落「内容可能不完整」状态行，不静默', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final llm = TruncatedThenFinishLlm(truncatedTurns: 99);
+      final engine = AgentEngine(
+        llm: llm,
+        tools: const FakeAgentToolExecutor(delay: Duration.zero),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+      );
+      final task = newTask();
+      await store.appendUserMessage(task.id, '写一份完整报告');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final statuses = (await store.getEvents(
+        task.id,
+      )).whereType<StatusChangeEvent>().toList();
+      expect(
+        statuses.where((e) => e.description.contains('续跑额度已用尽')),
+        hasLength(1),
+      );
+      expect(
+        statuses.any((e) => e.description.contains('可能不完整')),
+        isTrue,
+      );
+    });
+
+    test('截断后成功续完 → 不落「内容可能不完整」提示（不误报）', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final engine = AgentEngine(
+        llm: TruncatedThenFinishLlm(),
+        tools: const FakeAgentToolExecutor(delay: Duration.zero),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+      );
+      final task = newTask();
+      await store.appendUserMessage(task.id, '写一份完整报告');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final statuses = (await store.getEvents(
+        task.id,
+      )).whereType<StatusChangeEvent>().toList();
+      expect(
+        statuses.any((e) => e.description.contains('续跑额度已用尽')),
+        isFalse,
+      );
+    });
+
+    test('空回复重试额度耗尽 → done 但落「重试额度已用尽」状态行', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final llm = EmptyThenFinishLlm(emptyTurns: 99);
+      final engine = AgentEngine(
+        llm: llm,
+        tools: const FakeAgentToolExecutor(delay: Duration.zero),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+      );
+      final task = newTask();
+      await store.appendUserMessage(task.id, '帮我写个总结');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final statuses = (await store.getEvents(
+        task.id,
+      )).whereType<StatusChangeEvent>().toList();
+      expect(
+        statuses.where((e) => e.description.contains('重试额度已用尽')),
+        hasLength(1),
+      );
+    });
+  });
+}
+
+/// 记录实时预览条目的假 sink（测异常路径清理不残留）。
+class RecordingToolStreamSink implements AgentToolStreamSink {
+  final Map<String, String> live = {};
+
+  @override
+  void update(String eventId, String toolName, String argsText) {
+    live[eventId] = argsText;
+  }
+
+  @override
+  void clear(String eventId) {
+    live.remove(eventId);
+  }
+}
+
+/// 工具参数流到一半抛非超限的一般性异常（模拟网络断/供应商 5xx）。
+class StreamingThenGenericErrorLlm implements AgentLlmClient {
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )?
+    onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+    onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    await onToolCallDelta?.call('sk-1', 'read_file', '{"path":"a.');
+    throw Exception('connection reset by peer');
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async => '摘要';
+}
+
+/// 一轮经 onToolCall 预建两个写类工具调用并都随 turn 返回
+///（测第一个执行中被取消时第二个预建事件的回填）。
+class TwoPrecreatedToolsLlm implements AgentLlmClient {
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )?
+    onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+    onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    final calls = [
+      for (var i = 1; i <= 2; i++)
+        AgentToolCallRequest(
+          id: 'write-$i',
+          name: 'terminal_execute',
+          argsJson: jsonEncode({'command': 'step$i'}),
+          argSummary: 'step$i',
+        ),
+    ];
+    for (final call in calls) {
+      await onToolCall?.call(call, null);
+    }
+    return AgentLlmTurn(toolCalls: calls);
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async => '摘要';
+}
+
+/// 执行第一个调用时用户强制终止（测取消终态前的预建事件回填）。
+class CancelDuringExecuteExecutor extends AgentToolExecutor {
+  @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => false;
+
+  @override
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  ) async {
+    cancel.requestCancel();
+    return const AgentToolResult(ok: true, summary: 'ok ✓');
+  }
 }
 
 /// 按脚本逐轮返回 turn 的 LLM（计划模式流程测试用）。

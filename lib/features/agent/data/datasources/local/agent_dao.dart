@@ -90,35 +90,60 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
 
   /// 某话题事件流的实时查询（按 seq 升序，UI watch 即得增量更新）。
   /// drift 的 watch 每次变更都全表读回；长任务（数千事件）流式期间
-  /// 逐条 jsonDecode 的开销很大，这里按行缓存已解码对象：payload
-  /// 未变的行直接复用上一次的事件，只重解码新增/变更行。
+  /// 全量 payload 每次跨 isolate 拷贝的开销随事件数线性增长。这里
+  /// watch 一个不含 payload 的轻量投影，用 [rev]（每次写入单调递增，
+  /// 原位更新时 seq/createdAt 不变但 rev 必变）判定变更，只对新增/
+  /// 变更行二次取 payload 并解码，未变行复用缓存的同一事件实例
+  /// （时间线折叠器靠 identical 校验前缀，实例复用是其契约）。
   Stream<List<AgentEvent>> watchEvents(String taskId) {
-    final query = select(agentEventRows)
-      ..where((e) => e.taskId.equals(taskId))
-      ..orderBy([(e) => OrderingTerm(expression: e.seq)]);
-    var cache = <String, (int, int, String, AgentEvent)>{};
-    return query.watch().map((rows) {
-      final next = <String, (int, int, String, AgentEvent)>{};
-      final events = <AgentEvent>[];
-      for (final row in rows) {
-        final hit = cache[row.id];
-        final AgentEvent event;
-        if (hit != null &&
-            hit.$1 == row.seq &&
-            hit.$2 == row.createdAt &&
-            hit.$3 == row.payloadJson) {
-          event = hit.$4;
-        } else {
-          event = decodeAgentEvent(
-            id: row.id,
-            seq: row.seq,
-            at: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
-            kind: row.kind,
-            payloadJson: row.payloadJson,
+    final projection = selectOnly(agentEventRows)
+      ..addColumns([agentEventRows.id, agentEventRows.rev])
+      ..where(agentEventRows.taskId.equals(taskId))
+      ..orderBy([OrderingTerm(expression: agentEventRows.seq)]);
+    // id → (rev, 已解码事件)。
+    var cache = <String, (int, AgentEvent)>{};
+    return projection.watch().asyncMap((rows) async {
+      final metas = [
+        for (final row in rows)
+          (row.read(agentEventRows.id)!, row.read(agentEventRows.rev)!),
+      ];
+      final stale = [
+        for (final (id, rev) in metas)
+          if (cache[id]?.$1 != rev) id,
+      ];
+      final fetched = <String, (int, AgentEvent)>{};
+      // 分块避免超出 SQLite 绑定变量上限。
+      for (var i = 0; i < stale.length; i += 400) {
+        final chunk = stale.sublist(
+          i,
+          i + 400 > stale.length ? stale.length : i + 400,
+        );
+        final detailRows = await (select(
+          agentEventRows,
+        )..where((e) => e.id.isIn(chunk))).get();
+        for (final row in detailRows) {
+          fetched[row.id] = (
+            row.rev,
+            decodeAgentEvent(
+              id: row.id,
+              seq: row.seq,
+              at: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
+              kind: row.kind,
+              payloadJson: row.payloadJson,
+            ),
           );
         }
-        next[row.id] = (row.seq, row.createdAt, row.payloadJson, event);
-        events.add(event);
+      }
+      final next = <String, (int, AgentEvent)>{};
+      final events = <AgentEvent>[];
+      for (final (id, rev) in metas) {
+        // 取详情窗口内行又被改/删时以详情为准；已删且无缓存的行跳过，
+        // 删除本身会触发下一次发射兜底修正。
+        final entry =
+            (cache[id]?.$1 == rev ? cache[id] : fetched[id]) ?? cache[id];
+        if (entry == null) continue;
+        next[id] = entry;
+        events.add(entry.$2);
       }
       cache = next;
       return events;
@@ -185,7 +210,17 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
     agentEventRows,
   )..where((e) => e.taskId.equals(taskId) & e.seq.isBiggerThanValue(seq))).go();
 
+  /// 进程内单调 rev 发生器：以微秒时钟为底、同微秒内自增，重启后
+  /// 时钟前进保证仍大于历史值（存量迁移行为 0）。
+  static int _lastRev = 0;
+  static int _nextRev() {
+    final now = DateTime.now().microsecondsSinceEpoch;
+    _lastRev = now > _lastRev ? now : _lastRev + 1;
+    return _lastRev;
+  }
+
   /// 追加（或按 id 覆盖，用于流式文本/工具状态原位更新）一批事件。
+  /// 每行盖上新 rev，watchEvents 的投影据此感知原位更新。
   Future<void> upsertEvents(String taskId, List<AgentEvent> events) {
     return batch((b) {
       for (final event in events) {
@@ -198,6 +233,7 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
             kind: agentEventKind(event),
             payloadJson: encodeAgentEventPayload(event),
             createdAt: event.at.millisecondsSinceEpoch,
+            rev: Value(_nextRev()),
           ),
           mode: InsertMode.insertOrReplace,
         );

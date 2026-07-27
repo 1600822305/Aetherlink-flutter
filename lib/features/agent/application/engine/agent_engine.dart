@@ -200,6 +200,13 @@ class AgentEngine {
       return restart;
     }
 
+    // 本轮流式产物的兜底收尾：一般性异常穿透到外层 catch、或上一轮
+    // 强停 break 后走到 cancelled 终态时，把半途的思考/正文定格、
+    // 流式预建与提前执行的工具事件按中断回填，避免工具行永久停在
+    // running。每轮循环重新指向当轮的 writer/binder/eager；各组件
+    // 收尾均幂等（超限路径已就地收尾过的，这里重复调用无害）。
+    Future<void> Function()? failTurnArtifacts;
+
     try {
       if (current.status != AgentTaskStatus.running) {
         current = await save(
@@ -251,6 +258,9 @@ class AgentEngine {
 
         // ② 取消/暂停/预算检查。
         if (cancel.cancelRequested) {
+          // 上一轮因强停 break 出工具循环时可能残留未执行的预建事件，
+          // 终态前统一按中断回填（幂等），不留永久 running 的工具行。
+          await failTurnArtifacts?.call();
           current = await transition(AgentTaskStatus.cancelled, '用户强制终止');
           return;
         }
@@ -385,6 +395,11 @@ class AgentEngine {
           await eager.abortAndDrain();
           await binder.failAllPending();
         }
+        failTurnArtifacts = () async {
+          await writer.finish('');
+          await binder.failStreaming();
+          await failPendingToolEvents();
+        };
 
         Future<AgentLlmTurn> callTurn() => llm.completeTurn(
           AgentLlmContext(
@@ -552,6 +567,26 @@ class AgentEngine {
               '[stop hook 阻止收尾] $blocked',
             );
             continue;
+          }
+          // 截断续跑额度耗尽后走到这里的是断尾正文：不能静默判 done，
+          // 明确告知用户内容可能不完整（能到此处说明上方续跑分支
+          // 未命中，即额度已用尽）。
+          if (turn.truncated) {
+            await store.appendStatusChange(
+              current.id,
+              '输出因 token 上限被截断，自动续跑额度已用尽'
+              '（$_kMaxLengthContinues/$_kMaxLengthContinues），'
+              '以上内容可能不完整',
+            );
+          } else if (turn.text.trim().isEmpty &&
+              _emptyRetries >= _kMaxEmptyRetries) {
+            // 空回复重试额度耗尽后收尾：同样明确告知，避免用户以为
+            // 模型正常完成却拿不到结论。
+            await store.appendStatusChange(
+              current.id,
+              '模型持续返回空回复，重试额度已用尽'
+              '（$_kMaxEmptyRetries/$_kMaxEmptyRetries），任务以当前进度结束',
+            );
           }
           // 正文就是结束语；状态行只留元信息，避免重复。
           await store.appendStatusChange(
@@ -774,6 +809,13 @@ class AgentEngine {
         }
       }
     } catch (e) {
+      // 非超限的一般性异常（网络断/供应商 5xx 等）也要收尾本轮流式
+      // 产物，否则半途的流式工具事件永久停在 running（UI 永远转圈）。
+      // 超限路径已就地收尾过，这里重复调用是幂等 no-op；收尾自身
+      // 失败不掩盖原始错误。
+      try {
+        await failTurnArtifacts?.call();
+      } catch (_) {}
       await store.appendStatusChange(current.id, '执行出错：$e');
       await gateway.save(
         current.copyWith(
