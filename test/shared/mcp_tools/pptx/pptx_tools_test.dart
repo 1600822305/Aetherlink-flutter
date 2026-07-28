@@ -54,6 +54,7 @@ void main() {
           'pptx_read',
           'pptx_check',
           'pptx_draft',
+          'pptx_snapshot',
           'pptx_render',
           'pptx_schema',
         ]),
@@ -93,6 +94,10 @@ void main() {
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_read')), isTrue);
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_render')), isFalse);
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_draft')), isFalse);
+      expect(
+        toolRouteIsReadOnly(const PptxToolRoute('pptx_snapshot')),
+        isFalse,
+      );
     });
 
     test('M6：pptx_outline 只读、pptx_modify 非只读', () {

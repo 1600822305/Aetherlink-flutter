@@ -16,6 +16,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_pptx/aetherlink_pptx.dart';
 
+import 'package:path_provider/path_provider.dart';
+
+import 'package:aetherlink_flutter/app/di/deck_snapshot_access.dart';
 import 'package:aetherlink_flutter/app/di/media_generation_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
@@ -23,6 +26,7 @@ import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_write_handlers.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/tools/tool_helpers.dart';
 
 /// The built-in MCP server name this router serves.
 const String kPptxServerName = '@aether/pptx';
@@ -60,6 +64,8 @@ Future<McpToolResult> runPptxTool(
         return await _check(ref, args);
       case 'pptx_draft':
         return await _draft(ref, args);
+      case 'pptx_snapshot':
+        return await _snapshot(ref, args);
       case 'pptx_render':
         return await _render(ref, args);
       case 'pptx_edit':
@@ -305,6 +311,63 @@ Future<McpToolResult> _draft(Ref ref, Map<String, Object?> args) async {
     'deck': deckRaw,
     'qa': _qaSummary(issues),
   });
+}
+
+/// 视觉自检：把 deck 的某一页离屏渲染成 PNG（与编辑器预览同一几何
+/// 模型），图片以多模态消息随结果注入上下文，模型直接看图自查。
+/// 截图落在应用内部目录，不写工作区。
+Future<McpToolResult> _snapshot(Ref ref, Map<String, Object?> args) async {
+  final source = args['source'];
+  final Object rawDeck;
+  if (source is String && source.trim().isNotEmpty) {
+    if (!source.toLowerCase().endsWith('.deck.json')) {
+      throw const FileEditorError('source 必须以 .deck.json 结尾');
+    }
+    final resolved = await resolvePathArg(ref, args, source);
+    final String sourceText;
+    try {
+      sourceText = await resolved.backend.readFile(resolved.path);
+    } catch (e) {
+      throw FileEditorError('读取 deck 源失败：$source（$e）');
+    }
+    try {
+      rawDeck = jsonDecode(sourceText) as Object;
+    } on FormatException catch (e) {
+      throw FileEditorError('deck 源不是合法 JSON：$source（${e.message}）');
+    }
+  } else {
+    rawDeck = _deckToTransferable(args);
+  }
+  final inlined = await _inlineWorkspaceStyle(ref, args, rawDeck);
+  if (inlined is! Map) throw const FileEditorError('deck 必须是 JSON 对象');
+  final expanded = await _resolveImageSources(ref, args, inlined);
+  final deck = DeckDocument.fromJson(expanded);
+
+  final page = asIntOr(args['page'], 1);
+  if (page < 1 || page > deck.slides.length) {
+    throw FileEditorError(
+      'page 超出范围：$page（deck 共 ${deck.slides.length} 页，从 1 起）',
+    );
+  }
+  final width = asIntOr(args['width'], 1280).clamp(480, 2560).toDouble();
+
+  final render = ref.read(deckSlideSnapshotRendererProvider);
+  final png = await render(deck, page - 1, width: width);
+
+  final docs = await getApplicationDocumentsDirectory();
+  final dir = Directory('${docs.path}/pptx_snapshots');
+  await dir.create(recursive: true);
+  final path =
+      '${dir.path}/${DateTime.now().microsecondsSinceEpoch}_p$page.png';
+  await File(path).writeAsBytes(png);
+
+  return McpToolResult(
+    '已渲染第 $page/${deck.slides.length} 页截图（PNG，${png.length} 字节）；'
+    '智能体模式下将以图片消息随本结果注入上下文，请对照设计规范自查：'
+    '文字溢出/遮挡、对比度、留白与对齐；发现问题用 pptx_edit 修。',
+    imagePath: path,
+    imageMimeType: 'image/png',
+  );
 }
 
 bool _hasUnresolvedImageSrc(Object raw) {
