@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
-import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
-import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
 /// 状态色板（全局统一，UI 稿 §三）。
@@ -93,20 +91,6 @@ class AgentStatusLine extends ConsumerWidget {
     final contextInfo = task.contextTokens > 0
         ? ' · 上下文${formatTokens(task.contextTokens)}/${formatTokens(limit)}'
         : '';
-    // 运行中且计划有进行中条目时，状态文案改为该条目
-    // （对标 CC spinner 用 activeForm 驱动动词）。
-    String statusText = agentStatusLabel(task.status);
-    if (task.status == AgentTaskStatus.running) {
-      final active = ref.watch(
-        agentTimelineProvider(task.id).select(
-          (v) => v.latestPlan?.items
-              .where((it) => it.status == AgentPlanItemStatus.inProgress)
-              .firstOrNull
-              ?.content,
-        ),
-      );
-      if (active != null && active.isNotEmpty) statusText = active;
-    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -121,7 +105,7 @@ class AgentStatusLine extends ConsumerWidget {
         ],
         Flexible(
           child: Text(
-            statusText,
+            agentStatusLabel(task.status),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelSmall?.copyWith(
