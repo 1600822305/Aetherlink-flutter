@@ -22,22 +22,22 @@ Color agentStatusColor(BuildContext context, AgentTaskStatus status) {
 }
 
 String agentStatusLabel(AgentTaskStatus status) => switch (status) {
-      AgentTaskStatus.draft => '未开始',
-      AgentTaskStatus.running => '运行中',
-      AgentTaskStatus.waitingApproval => '等待授权',
-      AgentTaskStatus.waitingInput => '等待回答',
-      AgentTaskStatus.paused => '已暂停',
-      AgentTaskStatus.done => '已完成',
-      AgentTaskStatus.failed => '失败',
-      AgentTaskStatus.cancelled => '已取消',
-    };
+  AgentTaskStatus.draft => '未开始',
+  AgentTaskStatus.running => '运行中',
+  AgentTaskStatus.waitingApproval => '等待授权',
+  AgentTaskStatus.waitingInput => '等待回答',
+  AgentTaskStatus.paused => '已暂停',
+  AgentTaskStatus.done => '已完成',
+  AgentTaskStatus.failed => '失败',
+  AgentTaskStatus.cancelled => '已取消',
+};
 
 String agentModeLabel(AgentSessionMode mode) => switch (mode) {
-      AgentSessionMode.code => 'Code',
-      AgentSessionMode.auto => 'Auto',
-      AgentSessionMode.ask => 'Ask',
-      AgentSessionMode.plan => 'Plan',
-    };
+  AgentSessionMode.code => 'Code',
+  AgentSessionMode.auto => 'Auto',
+  AgentSessionMode.ask => 'Ask',
+  AgentSessionMode.plan => 'Plan',
+};
 
 /// auto 模式醒目徽标（琥珀色胶囊）：提醒当前任务在工作区内
 /// 免审批执行，挂在状态条、输入区等显示位。
@@ -110,7 +110,10 @@ class AgentStatusLine extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _StatusDot(color: color, breathing: task.status == AgentTaskStatus.running),
+        _StatusDot(
+          color: color,
+          breathing: task.status == AgentTaskStatus.running,
+        ),
         const SizedBox(width: 5),
         if (task.mode == AgentSessionMode.auto) ...[
           const AgentAutoBadge(),
@@ -118,14 +121,21 @@ class AgentStatusLine extends ConsumerWidget {
         ],
         Flexible(
           child: Text(
-            '$statusText · 第${task.rounds}轮'
-            '$contextInfo · '
-            '${formatElapsed(task.elapsed)}',
+            statusText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
             ),
+          ),
+        ),
+        Text(
+          ' · 第${task.rounds}轮'
+          '$contextInfo · '
+          '${formatElapsed(task.elapsed)}',
+          maxLines: 1,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
           ),
         ),
       ],
