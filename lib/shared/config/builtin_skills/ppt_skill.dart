@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '2.1.0',
+  version: '2.2.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -32,7 +32,7 @@ const Skill kPptSkill = Skill(
 
 - `pptx_schema`：返回 deck.json 的 JSON Schema（只读，免审批）——格式的
   单一权威来源，含别名容错说明；字段/结构不确定或 check 报错时先调它自查。
-- `pptx_styles`：列出内置视觉风格库（只读，免审批）。
+- `pptx_styles`：列出视觉风格库（只读，免审批）：内置 12 套 + 工作区自定义。
 - `pptx_read`：读取工作区里已有的 .pptx/.potx（只读，免审批），逐页提取
   文本/表格/图表数据/演讲者备注；`format: "markdown"`（默认，适合总结
   和问答）或 `format: "deck"`（输出 deck.json 骨架，适合把已有 PPT 转成源
@@ -154,6 +154,13 @@ const Skill kPptSkill = Skill(
 背景、文字色、卡片色、图表配色、字体全部自动推导，元素**不写颜色**即可；
 显式写了的颜色优先。也可传内联对象自定义（background/cardFill/
 textPrimary/textSecondary/accents 必填）。不传 style 则完全手动控制。
+
+**工作区自定义风格**：把风格 JSON 存为工作区
+`.aetherlink/deck_styles/<id>.json`（文件名即风格 id，字段同内联对象，
+可选 name/category/cardBorder/backgroundAccent/titleSize 等），deck 直接
+`"style": "<id>"` 引用；同名覆盖内置风格，`pptx_styles` 会一并列出
+（source: workspace）。用户要求按公司 VI 做风格时：用 file-editor 把
+风格文件写进该目录，后续所有 deck 都能复用。
 
 ## Bento 布局引擎（页级 layout，强烈推荐）
 

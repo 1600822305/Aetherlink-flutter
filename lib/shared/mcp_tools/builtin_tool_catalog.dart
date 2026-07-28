@@ -1636,11 +1636,21 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'pptx_styles',
       description:
-          '列出 PPT 内置视觉风格库（只读，不写任何文件）：返回每个风格的 id/'
-          '名称/板块/背景色/强调色。在 deck.json 顶层传 "style": "<id>" 即可'
-          '套用：背景/文字色/卡片色/图表配色/字体全部自动推导，元素可不写颜色；'
-          '也可传内联风格 JSON 对象自定义。选风格前先调本工具看目录。',
-      inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
+          '列出 PPT 视觉风格库（只读，不写任何文件）：内置 12 套 + 工作区'
+          '自定义（.aetherlink/deck_styles/<id>.json，同名覆盖内置），返回'
+          '每个风格的 id/名称/板块/背景色/强调色/来源。在 deck.json 顶层传 '
+          '"style": "<id>" 即可套用：背景/文字色/卡片色/图表配色/字体全部'
+          '自动推导，元素可不写颜色；也可传内联风格 JSON 对象自定义。'
+          '选风格前先调本工具看目录。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+        },
+      },
     ),
     McpToolDefinition(
       name: 'pptx_check',
@@ -1657,7 +1667,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'object',
             'description':
                 'deck.json 源对象（也接受 JSON 字符串）。顶层：layout(16x9/4x3)、'
-                'style(内置风格 id 或内联风格对象，见 pptx_styles)、title、'
+                'style(内置或工作区风格 id，或内联风格对象，见 pptx_styles)、title、'
                 'slides[]；每页：background(6位hex)、notes(演讲者备注)、'
                 'layout(Bento 布局声明：cover/toc/section/end/focus/split/'
                 'asymmetric/columns/hierarchy/hero/grid + cards[]，坐标自动计算)、'
