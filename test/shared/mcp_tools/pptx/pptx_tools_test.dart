@@ -441,6 +441,85 @@ void main() {
     });
   });
 
+  group('id 寻址与 ensureSlideIds', () {
+    Map<String, Object?> deckWithIds() => {
+      'slides': [
+        {
+          'id': 'cover',
+          'elements': [
+            {'id': 'title', 'type': 'text', 'text': '封面'},
+          ],
+        },
+        {
+          'id': 's2',
+          'elements': [
+            {'type': 'text', 'text': '第二页'},
+          ],
+        },
+      ],
+    };
+
+    test('ensureSlideIds 补齐缺失 id，已有的不动、不撞号', () {
+      final out = ensureSlideIds({
+        'slides': [
+          {'elements': <Object?>[]},
+          {'id': 's1', 'elements': <Object?>[]},
+          {'elements': <Object?>[]},
+        ],
+      });
+      final ids = [for (final s in out['slides']! as List) (s as Map)['id']];
+      expect(ids, ['s2', 's1', 's3']);
+    });
+
+    test('remove_slide/set_element 可用字符串 id 寻址', () {
+      var deck = deckWithIds();
+      deck = applyDeckEditOp(deck, {
+        'op': 'set_element',
+        'slide': 'cover',
+        'index': 'title',
+        'element': {'type': 'text', 'text': '新封面'},
+      }, 'ops[0]');
+      deck = applyDeckEditOp(deck, {
+        'op': 'remove_slide',
+        'index': 's2',
+      }, 'ops[1]');
+      final slides = deck['slides']! as List;
+      expect(slides, hasLength(1));
+      final el = ((slides.first as Map)['elements']! as List).first as Map;
+      expect(el['text'], '新封面');
+      expect(el['id'], 'title', reason: '整体替换元素时未写 id 应继承旧 id');
+    });
+
+    test('id 不存在时报错并带 op 定位', () {
+      expect(
+        () => applyDeckEditOp(deckWithIds(), {
+          'op': 'remove_slide',
+          'index': '不存在',
+        }, 'ops[0]'),
+        throwsA(
+          isA<FileEditorError>().having(
+            (e) => e.message,
+            'message',
+            contains('ops[0]'),
+          ),
+        ),
+      );
+    });
+
+    test('set_slide 整页替换时继承旧 id', () {
+      final deck = applyDeckEditOp(deckWithIds(), {
+        'op': 'set_slide',
+        'index': 'cover',
+        'slide': {
+          'elements': [
+            {'type': 'text', 'text': '重排后的封面'},
+          ],
+        },
+      }, 'ops[0]');
+      expect(((deck['slides']! as List).first as Map)['id'], 'cover');
+    });
+  });
+
   group('parseSnapshotPages', () {
     test('默认单页 page，越界报错', () {
       expect(parseSnapshotPages(const {}, 3), [1]);

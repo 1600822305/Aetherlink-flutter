@@ -263,10 +263,13 @@ Future<McpToolResult> _check(Ref ref, Map<String, Object?> args) async {
   if (raw is! Map) throw const FileEditorError('deck 必须是 JSON 对象');
   final deck = DeckDocument.fromJson(raw.cast<String, Object?>());
   final issues = runDeckQa(deck);
-  // deck_validate：实际构建一次 pptx 包并做结构自检（内容类型覆盖/
-  // 关系完整性/图表与备注引用），对齐 validate.py 的检查面。
+  // 包结构自检（实际构建一次 pptx 包：内容类型覆盖/关系完整性/
+  // 图表与备注引用）是生成器自身 bug 的兜底，正常恒为空；默认跳过，
+  // QA 循环里每轮 check 都全量构建是纯浪费，导出时（render/edit 的
+  // export）仍必做；传 deep=true 可在 check 阶段提前跑。
+  final deep = optionalBool(args, 'deep');
   final hasUnresolvedImages = _hasUnresolvedImageSrc(raw);
-  final structureIssues = hasUnresolvedImages
+  final structureIssues = !deep || hasUnresolvedImages
       ? const <Map<String, Object?>>[]
       : await (() {
           final deckJson = jsonEncode(raw);
@@ -282,12 +285,14 @@ Future<McpToolResult> _check(Ref ref, Map<String, Object?> args) async {
     'valid': true,
     'slides': deck.slides.length,
     'qa': _qaSummary(issues),
-    'structure': {'errors': structureIssues},
+    if (deep) 'structure': {'errors': structureIssues},
     'message': hasErrors
         ? 'deck 结构合法，但有错误需要修正后再导出'
         : hasUnresolvedImages
         ? 'deck 通过校验（含未展开的图片 src，导出时自动下载/读取并做包结构自检）'
-        : 'deck 通过校验，可以调用 pptx_render 导出',
+        : deep
+        ? 'deck 通过校验（含包结构自检），可以调用 pptx_render 导出'
+        : 'deck 通过校验，可以调用 pptx_render 导出（导出时自动做包结构自检）',
   });
 }
 
@@ -319,7 +324,7 @@ Future<McpToolResult> _draft(Ref ref, Map<String, Object?> args) async {
     throw const FileEditorError('path 必须以 .deck.json 结尾');
   }
 
-  final deckRaw = buildDeckDraft(outline);
+  final deckRaw = ensureSlideIds(buildDeckDraft(outline));
   final inlined = await _inlineWorkspaceStyle(ref, args, deckRaw);
   final deck = DeckDocument.fromJson((inlined as Map).cast<String, Object?>());
   final issues = runDeckQa(deck);
@@ -348,7 +353,38 @@ Future<McpToolResult> _draft(Ref ref, Map<String, Object?> args) async {
   });
 }
 
-/// deck 的逐页轻量摘要（页号/布局型/标题/元素数）：取代在 draft 结果里
+/// 给 deck 的每页补上稳定 id（s1、s2 …，已有的不动）：pptx_edit 的 ops
+/// 可用 id 寻址，增删页后不会像位置下标那样连环错位。解析器忽略
+/// 未知字段，id 不影响导出。
+@visibleForTesting
+Map<String, Object?> ensureSlideIds(Map<String, Object?> deckRaw) {
+  final slides = deckRaw['slides'];
+  if (slides is! List) return deckRaw;
+  final used = <String>{
+    for (final s in slides)
+      if (s is Map && s['id'] is String) s['id']! as String,
+  };
+  var next = 1;
+  final newSlides = <Object?>[
+    for (final s in slides)
+      if (s is Map && s['id'] is! String)
+        (() {
+          while (used.contains('s$next')) {
+            next++;
+          }
+          used.add('s$next');
+          return <String, Object?>{
+            'id': 's${next++}',
+            ...s.cast<String, Object?>(),
+          };
+        })()
+      else
+        s,
+  ];
+  return {...deckRaw, 'slides': newSlides};
+}
+
+/// deck 的逐页轻量摘要（页号/id/布局型/标题/元素数）：取代在 draft 结果里
 /// 回传完整 deck，同一份内容已落盘，再全量注入上下文是纯浪费。
 @visibleForTesting
 List<Map<String, Object?>> deckSlideSummary(Map<String, Object?> deckRaw) {
@@ -359,6 +395,7 @@ List<Map<String, Object?>> deckSlideSummary(Map<String, Object?> deckRaw) {
       if (s is Map)
         {
           'page': i + 1,
+          if (s['id'] is String) 'id': s['id'],
           'layout': switch (s['layout']) {
             final Map<Object?, Object?> layout =>
               '${layout['type'] ?? 'manual'}',
@@ -869,6 +906,20 @@ Future<McpToolResult> _edit(Ref ref, Map<String, Object?> args) async {
     );
   }
 
+  // dry_run：只预演 ops 并返回 QA 报告，不写回、不导出——拿不准的改动
+  // 先验证再落盘，避免「写坏了再改回来」的往返。
+  if (optionalBool(args, 'dry_run')) {
+    return fileEditorOk({
+      'message':
+          'dry_run：ops 可施加，未写回源文件、未导出。'
+          '确认后去掉 dry_run 重发同一批 ops 即可生效',
+      'source': source,
+      'slides': deck.slides.length,
+      'ops': ops.length,
+      'qa': _qaSummary(issues),
+    });
+  }
+
   await resolved.backend.writeFile(
     resolved.path,
     const JsonEncoder.withIndent('  ').convert(deckRaw),
@@ -927,6 +978,24 @@ int _opIndex(Map<String, Object?> op, String key, int max, String where) {
   return v;
 }
 
+/// 解析一个引用既有条目的下标：整数位置，或字符串 id（匹配条目的
+/// "id" 字段）。id 寻址不受前序增删 op 引起的下标漂移影响。
+int _opRef(
+  Map<String, Object?> op,
+  String key,
+  List<Object?> entries,
+  String where,
+) {
+  final v = op[key];
+  if (v is String) {
+    for (final (i, e) in entries.indexed) {
+      if (e is Map && e['id'] == v) return i;
+    }
+    throw FileEditorError('$where 的 $key 没有匹配 id「$v」的条目');
+  }
+  return _opIndex(op, key, entries.length, where);
+}
+
 /// 对 deck JSON 应用一条 `pptx_edit` 操作，返回新的 deck（不改入参）。
 /// [where] 是出错时定位到第几条 op 的前缀。
 @visibleForTesting
@@ -943,6 +1012,21 @@ Map<String, Object?> applyDeckEditOp(
     return [...?(s['elements'] as List?)];
   }
 
+  // 替换整页/整个元素时，新对象没写 id 就继承旧 id，保证后续 op
+  // 还能用同一 id 寻址。
+  Object? carryId(Object? oldEntry, Object? newEntry) {
+    if (oldEntry is Map &&
+        oldEntry['id'] is String &&
+        newEntry is Map &&
+        newEntry['id'] == null) {
+      return <String, Object?>{
+        'id': oldEntry['id'],
+        ...newEntry.cast<String, Object?>(),
+      };
+    }
+    return newEntry;
+  }
+
   void setElements(int slideIndex, List<Object?> elements) {
     final s = Map<String, Object?>.from(
       (slides[slideIndex] as Map).cast<String, Object?>(),
@@ -957,31 +1041,33 @@ Map<String, Object?> applyDeckEditOp(
         if (op.containsKey(key)) result[key] = op[key];
       }
     case 'set_slide':
-      slides[_opIndex(op, 'index', slides.length, where)] = op['slide'];
+      final index = _opRef(op, 'index', slides, where);
+      slides[index] = carryId(slides[index], op['slide']);
     case 'insert_slide':
       final index = op['index'] == null
           ? slides.length
           : _opIndex(op, 'index', slides.length + 1, where);
       slides.insert(index, op['slide']);
     case 'remove_slide':
-      slides.removeAt(_opIndex(op, 'index', slides.length, where));
+      slides.removeAt(_opRef(op, 'index', slides, where));
     case 'move_slide':
-      final from = _opIndex(op, 'from', slides.length, where);
+      final from = _opRef(op, 'from', slides, where);
       final to = _opIndex(op, 'to', slides.length, where);
       slides.insert(to, slides.removeAt(from));
     case 'set_element':
-      final si = _opIndex(op, 'slide', slides.length, where);
+      final si = _opRef(op, 'slide', slides, where);
       final elements = elementsOf(si);
-      elements[_opIndex(op, 'index', elements.length, where)] = op['element'];
+      final ei = _opRef(op, 'index', elements, where);
+      elements[ei] = carryId(elements[ei], op['element']);
       setElements(si, elements);
     case 'append_element':
-      final si = _opIndex(op, 'slide', slides.length, where);
+      final si = _opRef(op, 'slide', slides, where);
       final elements = elementsOf(si)..add(op['element']);
       setElements(si, elements);
     case 'remove_element':
-      final si = _opIndex(op, 'slide', slides.length, where);
-      final elements = elementsOf(si)
-        ..removeAt(_opIndex(op, 'index', elementsOf(si).length, where));
+      final si = _opRef(op, 'slide', slides, where);
+      final elements = elementsOf(si);
+      elements.removeAt(_opRef(op, 'index', elements, where));
       setElements(si, elements);
     default:
       throw FileEditorError(

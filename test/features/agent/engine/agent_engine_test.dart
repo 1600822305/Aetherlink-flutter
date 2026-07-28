@@ -1598,6 +1598,50 @@ void main() {
     expect(llm.calls, 4, reason: '最多重试 2 次，之后正文缺失拦截再续一轮后收尾');
   });
 
+  test('空回复重试额度按连续空 turn 计：中途有产出就归零', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    // 先耗满 2 次空重试 → 产出一轮工具调用（额度应归零）→ 再来
+    // 2 次空 turn：若额度未归零会直接判收尾，看不到后续 finish 轮。
+    const empty = AgentLlmTurn(text: '', finishReason: 'stop');
+    final llm = ScriptedLlm([
+      empty,
+      empty,
+      AgentLlmTurn(
+        toolCalls: [
+          AgentToolCallRequest(
+            id: 'call-productive',
+            name: 'read_file',
+            argsJson: jsonEncode({'path': 'lib/main.dart'}),
+            argSummary: 'lib/main.dart',
+          ),
+        ],
+      ),
+      empty,
+      empty,
+      const AgentLlmTurn(text: '收尾结论。', finishReason: 'stop'),
+    ]);
+    final engine = AgentEngine(
+      llm: llm,
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '帮我写个总结');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    expect(
+      llm.seenModes.length,
+      6,
+      reason: '工具轮之后额度归零，后两次空 turn 仍能重试到 finish',
+    );
+  });
+
   test('每轮都截断 → 自动续跑有界，耗尽后正常收尾不死循环', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
@@ -2584,10 +2628,7 @@ void main() {
         statuses.where((e) => e.description.contains('续跑额度已用尽')),
         hasLength(1),
       );
-      expect(
-        statuses.any((e) => e.description.contains('可能不完整')),
-        isTrue,
-      );
+      expect(statuses.any((e) => e.description.contains('可能不完整')), isTrue);
     });
 
     test('截断后成功续完 → 不落「内容可能不完整」提示（不误报）', () async {
@@ -2610,10 +2651,7 @@ void main() {
       final statuses = (await store.getEvents(
         task.id,
       )).whereType<StatusChangeEvent>().toList();
-      expect(
-        statuses.any((e) => e.description.contains('续跑额度已用尽')),
-        isFalse,
-      );
+      expect(statuses.any((e) => e.description.contains('续跑额度已用尽')), isFalse);
     });
 
     test('空回复重试额度耗尽 → done 但落「重试额度已用尽」状态行', () async {
