@@ -896,7 +896,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
         '- ${s.name}${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}'
             '${_catalog.current.deferred.containsKey(s.id) ? '（读取本技能后，对应工具将在下一轮可用）' : ''}',
       for (final s in project)
-        '- ${s.name}（项目技能）'
+        '- ${s.name}（项目技能${s.packageDir != null ? '·含资源包' : ''}）'
             '${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}',
     ];
   }
@@ -1476,7 +1476,33 @@ class _McpAgentToolExecutor extends AgentToolExecutor {
     try {
       skills.addAll(await ref.read(skillsProvider.future));
     } catch (_) {}
-    return executeReadSkill(skills, args);
+    final result = executeReadSkill(skills, args);
+    if (result.isError) return result;
+
+    // 项目技能包（Agent Skills 规范）：正文之外附 scripts/references/
+    // assets 资源清单与使用指引（渐进披露）。清单失败不影响正文。
+    final name = (args['skill_name'] as String?)?.trim();
+    final matched = name == null ? null : matchSkillByName(skills, name);
+    if (matched?.packageDir == null) return result;
+    List<String> files = const [];
+    try {
+      files = await listSkillPackageFiles(
+        _refOf(),
+        _boundWorkspaceId,
+        matched!,
+      );
+    } catch (_) {}
+    if (files.isEmpty) return result;
+    return McpToolResult(
+      '${result.text}\n\n'
+      '## 技能包资源（${matched!.packageDir}，共 ${files.length} 项）\n\n'
+      '${files.map((f) => '- $f').join('\n')}\n\n'
+      '使用指引：以上是随本技能附带的资源文件（工作区相对路径）。'
+      '参考文档（references/ 等）按需用 read_file 读取，不要一次全读；'
+      '脚本（scripts/ 等）在终端可用时用 terminal_execute 执行'
+      '（cwd 建议设为技能目录，依赖缺失先按脚本说明安装）；'
+      '终端不可用时忽略脚本，只按正文指令执行，不算失败。',
+    );
   }
 
   /// 大输出截断落盘（循环设计稿 §5.2）：超阈值时头尾保留、砍中间，

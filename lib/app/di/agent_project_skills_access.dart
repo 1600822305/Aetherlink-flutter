@@ -57,13 +57,18 @@ Future<List<Skill>> loadProjectSkills(Ref ref, String? workspaceId) async {
       try {
         String raw;
         String fallbackName;
+        String? packageDir;
         if (entry.isDirectory) {
-          final md = (await backend.listDir(
-            entry.path,
-          )).where((e) => !e.isDirectory && e.name == 'SKILL.md').firstOrNull;
+          final children = await backend.listDir(entry.path);
+          final md = children
+              .where((e) => !e.isDirectory && e.name == 'SKILL.md')
+              .firstOrNull;
           if (md == null) continue;
           raw = await backend.readFile(md.path);
           fallbackName = entry.name;
+          // 只有 SKILL.md 之外还有内容（scripts/references/assets…）
+          // 才算带资源包，read_skill 才附清单。
+          if (children.length > 1) packageDir = '$dir/${entry.name}';
         } else if (entry.name.endsWith('.md')) {
           raw = await backend.readFile(entry.path);
           fallbackName = entry.name.substring(0, entry.name.length - 3);
@@ -74,6 +79,7 @@ Future<List<Skill>> loadProjectSkills(Ref ref, String? workspaceId) async {
           fallbackName,
           raw,
           sourceDir: dir,
+          packageDir: packageDir,
         );
         if (seen.add(skill.name)) skills.add(skill);
       } catch (_) {}
@@ -88,6 +94,7 @@ Skill parseProjectSkillMarkdown(
   String fallbackName,
   String raw, {
   required String sourceDir,
+  String? packageDir,
 }) {
   var name = fallbackName;
   var description = '';
@@ -113,8 +120,69 @@ Skill parseProjectSkillMarkdown(
     description: description,
     source: SkillSource.user,
     content: body,
+    packageDir: packageDir,
     enabled: true,
   );
+}
+
+/// 单个技能包清单的上限（条目数 / 递归深度）：防慢后端上的大目录
+/// 扫描拖死 read_skill，也防清单膨胀挤爆上下文。
+const int kSkillPackageMaxEntries = 80;
+const int kSkillPackageMaxDepth = 3;
+
+/// 列出项目技能包里 SKILL.md 之外的资源文件（scripts/references/
+/// assets 等，限深度与条数），返回工作区相对路径清单；非目录型技能、
+/// 目录不可读或没有额外文件时返回空。渐进披露：扫描/列清单时
+/// 不读正文，模型按需用 read_file 读、用终端跑 scripts。
+Future<List<String>> listSkillPackageFiles(
+  Ref ref,
+  String? workspaceId,
+  Skill skill,
+) async {
+  final packageDir = skill.packageDir;
+  if (packageDir == null) return const [];
+  final resolved = await resolveAgentWorkspace(ref, workspaceId);
+  if (resolved == null) return const [];
+  final (workspace, backend) = resolved;
+  final root = workspace.root.endsWith('/')
+      ? workspace.root.substring(0, workspace.root.length - 1)
+      : workspace.root;
+  return walkSkillPackageFiles(backend, root, packageDir);
+}
+
+/// [listSkillPackageFiles] 的后端无关实现，便于用内存后端测试。
+Future<List<String>> walkSkillPackageFiles(
+  WorkspaceBackend backend,
+  String root,
+  String packageDir,
+) async {
+  final files = <String>[];
+  Future<void> walk(String absDir, String relDir, int depth) async {
+    if (depth > kSkillPackageMaxDepth ||
+        files.length >= kSkillPackageMaxEntries) {
+      return;
+    }
+    List<WorkspaceEntry> entries;
+    try {
+      entries = await backend.listDir(absDir);
+    } catch (_) {
+      return;
+    }
+    for (final entry in entries) {
+      if (files.length >= kSkillPackageMaxEntries) return;
+      final rel = '$relDir/${entry.name}';
+      if (entry.isDirectory) {
+        // 子目录用 listDir 返回的 entry.path 递归（SAF 等后端的
+        // path 可能是不透明 URI，不能字符串拼接）。
+        await walk(entry.path, rel, depth + 1);
+      } else if (!(depth == 0 && entry.name == 'SKILL.md')) {
+        files.add(rel);
+      }
+    }
+  }
+
+  await walk('$root/$packageDir', packageDir, 0);
+  return files..sort();
 }
 
 String _stripQuotes(String value) {
