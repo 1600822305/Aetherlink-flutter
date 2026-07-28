@@ -13,8 +13,8 @@
 |---|---|---|---|---|
 | P1 | 工作区自定义风格 JSON（约定目录 + pptx_styles 集成） | 高 | ✅ 已完成 | [#825](https://github.com/1600822305/Aetherlink-flutter/pull/825) |
 | P2 | 效率：大纲 → 引擎自动展开初稿（模型只做增量修改） | 高 | ✅ 已完成 | [#826](https://github.com/1600822305/Aetherlink-flutter/pull/826) |
-| P3 | 视觉自检闭环（整 deck 截图 → 多模态自查） | 高 | ⬜ 未开始 | — |
-| P4 | 外部 Agent Skills 通路（skill 包 + 内置终端执行） | 中 | ⬜ 未开始 | — |
+| P3 | 视觉自检闭环（整 deck 截图 → 多模态自查） | 高 | ✅ 已完成 | [#827](https://github.com/1600822305/Aetherlink-flutter/pull/827) |
+| P4 | 外部 Agent Skills 通路（skill 包 + 内置终端执行） | 中 | ✅ 已完成 | [#828](https://github.com/1600822305/Aetherlink-flutter/pull/828) |
 | P5 | PPT 风格库设置页（全局设置入口，可选） | 低 | ⬜ 未开始 | — |
 | P6 | 多页并行生成（subagent 分页写） | 低 | ⬜ 未开始 | — |
 

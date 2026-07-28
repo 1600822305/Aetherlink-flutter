@@ -43,6 +43,11 @@ abstract class Skill with _$Skill {
     /// Associated MCP server id.
     String? mcpServerId,
 
+    /// 项目技能包目录（工作区相对路径，如 `.claude/skills/pptx`）。
+    /// 目录型项目技能才有：read_skill 据此列出 scripts/references/assets
+    /// 资源清单（渐进披露），全局技能库恒为 null。
+    String? packageDir,
+
     /// Recommended model / temperature.
     String? modelOverride,
     double? temperatureOverride,
