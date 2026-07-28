@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '2.5.1',
+  version: '2.6.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -44,11 +44,14 @@ const Skill kPptSkill = Skill(
 - `pptx_draft`：把结构化大纲确定性展开为完整 deck.json 初稿并落盘
   （.deck.json），布局/坐标/卡片分配/叙事节奏全部引擎内置；
   大纲格式调 `pptx_schema` 看 outlineSchema。
-- `pptx_check`：校验 deck 源 + 布局 QA + 包结构自检（不写文件，免审批）。
-- `pptx_snapshot`：视觉自检——把某一页离屏渲染成 PNG 截图随结果注入
-  上下文，直接看图检查美丑（不写工作区，免审批）。
-- `pptx_render`：QA 通过后导出 .pptx 到工作区；
-  可传 `preview: true` 同时导出 .preview.html 预览。
+- `pptx_check`：校验 deck 源 + 布局 QA + 包结构自检（不写文件，免审批）；
+  已落盘的 deck 用 `source: "*.deck.json"` 引用，不要重发完整 deck。
+- `pptx_snapshot`：视觉自检——把页面离屏渲染成 PNG 截图随结果注入
+  上下文，直接看图检查美丑（不写工作区，免审批）；多页用
+  `pages: [1,2,3]` 或 `pages: "all"`（单次≤12 页）拼成一张带页码
+  角标的网格拼图，一次看完。
+- `pptx_render`：QA 通过后导出 .pptx 到工作区，同样支持 `source` 引用
+  已落盘的 deck 源；可传 `preview: true` 同时导出 .preview.html 预览。
 - `pptx_edit`：增量编辑——以工作区的 .deck.json 为源应用 ops（只改一页/
   一个元素），写回源文件；传 `export` 同时重导出 .pptx（可覆盖旧导出）。
 - `pptx_illustrate`：AI 配图——用已配置的图像生成模型把 prompt 生成为
@@ -75,17 +78,21 @@ const Skill kPptSkill = Skill(
    没有图像模型时用色块/形状/infographic 装饰代替，不算失败。
 6. **引擎展开初稿**：`pptx_draft(outline, path: "主题.deck.json")` ——
    布局、坐标、卡片分配、叙事节奏（密度交替/章节序号/目录自动生成）
-   全部引擎确定性完成，**不要逐字手写整份 deck**；需要手写坐标的
+   全部引擎确定性完成，**不要逐字手写整份 deck**；结果只回逐页摘要
+   （完整 deck 已落盘，后续工具都用 source 引用它）；需要手写坐标的
    特殊页（全幅图/图表页）再用 `pptx_edit` 对单页精修。
 7. **QA 循环**：初稿自带 QA 报告；按 errors/warnings 用 `pptx_edit`
-   逐条改 → `pptx_check` 重查，直到 errors 为空（修复顺序见「失败模式」）。
-   几何 QA 通过后做**视觉自检**：逐页 `pptx_snapshot(source, page)`
-   看截图，检查文字溢出/遮挡、对比度不足、留白失衡、对齐问题，
-   发现问题用 `pptx_edit` 改完再截图复查；看不到图（非多模态模型）
-   则跳过此步，不算失败。
-8. **导出**：`pptx_render` 导出（路径如 `演示文稿/主题.pptx`），deck 源
-   已由 draft 落盘为 `主题.deck.json`：用户点开可直接预览；
-   要人工视觉复核时可传 `preview: true` 同时导出 .preview.html。
+   逐条改 → `pptx_check(source)` 重查，直到 errors 为空
+   （修复顺序见「失败模式」）。
+   几何 QA 通过后做**视觉自检**：`pptx_snapshot(source, pages: "all")`
+   （超 12 页分批传 pages 数组）一次拿到全部页的拼图，逐页检查
+   文字溢出/遮挡、对比度不足、留白失衡、对齐问题；可疑页再
+   `pptx_snapshot(source, page)` 单页高清复查，发现问题用 `pptx_edit`
+   改完再截图复查；看不到图（非多模态模型）则跳过此步，不算失败。
+8. **导出**：`pptx_render(source: "主题.deck.json", path: "演示文稿/主题.pptx")`
+   ——deck 源已由 draft 落盘，用 source 引用即可，不要重发完整 deck；
+   用户点开 .deck.json 可直接预览；要人工视觉复核时可传
+   `preview: true` 同时导出 .preview.html。
 9. **增量迭代**：后续修改一律 `pptx_edit`，不要重发完整 deck：
    `pptx_edit(source: "主题.deck.json", ops: [...], export: "主题.pptx")`。
    ops 支持 set_meta(title/style/layout) / set_slide / insert_slide /

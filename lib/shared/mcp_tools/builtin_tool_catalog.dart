@@ -1659,14 +1659,20 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '（内容类型/关系完整性/图表与备注引用），不写任何文件。'
           '返回结构化报告（errors 必须修正、warnings 酌情优化）。'
           '建议先 check、按报告改源、再 pptx_render 导出。deck.json 格式详见'
-          '内置技能「PPT 设计师」。',
+          '内置技能「PPT 设计师」。source 与 deck 二选一，已落盘的 deck '
+          '优先用 source 引用，不要重发完整 JSON。',
       inputSchema: {
         'type': 'object',
         'properties': {
+          'source': {
+            'type': 'string',
+            'description': '工作区里的 deck 源文件路径（.deck.json 结尾），推荐用它避免重发 deck',
+          },
           'deck': {
             'type': 'object',
             'description':
-                'deck.json 源对象（也接受 JSON 字符串）。顶层：layout(16x9/4x3)、'
+                'deck.json 源对象（也接受 JSON 字符串），不传 source 时用。'
+                '顶层：layout(16x9/4x3)、'
                 'style(内置或工作区风格 id，或内联风格对象，见 pptx_styles)、title、'
                 'slides[]；每页：background(6位hex)、notes(演讲者备注)、'
                 'layout(Bento 布局声明：cover/toc/section/end/focus/split/'
@@ -1677,8 +1683,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
                 'stackedBar/horizontalBar/radar；infographic 支持 progress/kpi/'
                 'waffle/timeline/funnel/gauge）',
           },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
         },
-        'required': ['deck'],
       },
     ),
     McpToolDefinition(
@@ -1689,7 +1698,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '目录自动生成）全部引擎内置，不用逐字手写 deck。大纲每页只写 '
           'kind(cover/toc/section/content/end)+标题+要点（1-6 条，字符串或 '
           '{title,desc}/{value,label}/{items}/{tags}/{steps} 对象），格式调 '
-          'pptx_schema 看 outlineSchema。返回展开后的 deck 与 QA 报告；'
+          'pptx_schema 看 outlineSchema。返回逐页轻量摘要与 QA 报告'
+          '（完整 deck 已落盘，需要全量回传时传 echo=true）；'
           '后续修改一律 pptx_edit 增量改，确认后 pptx_render 导出。',
       inputSchema: {
         'type': 'object',
@@ -1713,6 +1723,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'description': '目标文件已存在时是否覆盖（默认 false）',
             'default': false,
           },
+          'echo': {
+            'type': 'boolean',
+            'description': '是否在结果里回传完整 deck（默认 false，只回逐页摘要；deck 已落盘）',
+            'default': false,
+          },
         },
         'required': ['outline', 'path'],
       },
@@ -1723,7 +1738,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '视觉自检：把 deck 的某一页离屏渲染成 PNG 截图（与编辑器预览同一'
           '几何模型），截图以图片消息随结果注入上下文——直接看图检查文字'
           '溢出/遮挡、对比度、留白与对齐，发现问题用 pptx_edit 修。'
-          '截图存应用内部目录，不写工作区、免确认。deck 与 source 二选一。',
+          '截图存应用内部目录，不写工作区、免确认。deck 与 source 二选一。'
+          '多页自检用 pages（数组或 "all"，单次≤12 页）一次拼成带页码角标的'
+          '网格拼图，比逐页单独截图省得多；可疑页再用 page 单页高清复查。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1737,12 +1754,19 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'page': {
             'type': 'integer',
-            'description': '要截图的页码（从 1 起，默认 1）',
+            'description': '要截图的页码（从 1 起，默认 1）；与 pages 二选一',
             'default': 1,
+          },
+          'pages': {
+            'description':
+                '多页拼图：页码整数数组（如 [1,2,3]）或 "all"（全部页），'
+                '单次最多 12 页；传了就忽略 page',
           },
           'width': {
             'type': 'integer',
-            'description': '截图宽度像素（480-2560，默认 1280，高度按画布比例）',
+            'description':
+                '截图宽度像素（480-2560，默认 1280，高度按画布比例）；'
+                '多页拼图时是整张拼图的宽度',
             'default': 1280,
           },
           'workspace': {
@@ -1759,13 +1783,19 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '图片/表格/图表都是原生 PowerPoint 对象，不是截图；每页可选 notes '
           '写入演讲者备注）。导出前自动运行 QA 与包结构自检：'
           '有 error 时默认拒绝导出并返回报告（可传 force=true 强制）。'
-          '纯 Dart 端上生成、后台 isolate 执行，不依赖任何外部运行时。',
+          '纯 Dart 端上生成、后台 isolate 执行，不依赖任何外部运行时。'
+          'source 与 deck 二选一，已落盘的 deck 优先用 source 引用。',
       inputSchema: {
         'type': 'object',
         'properties': {
+          'source': {
+            'type': 'string',
+            'description': '工作区里的 deck 源文件路径（.deck.json 结尾），推荐用它避免重发 deck',
+          },
           'deck': {
             'type': 'object',
-            'description': 'deck.json 源对象（也接受 JSON 字符串），格式同 pptx_check',
+            'description':
+                'deck.json 源对象（也接受 JSON 字符串），不传 source 时用，格式同 pptx_check',
           },
           'path': {
             'type': 'string',
@@ -1786,7 +1816,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'default': false,
           },
         },
-        'required': ['deck', 'path'],
+        'required': ['path'],
       },
     ),
     McpToolDefinition(
