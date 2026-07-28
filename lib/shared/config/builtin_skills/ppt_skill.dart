@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '2.6.0',
+  version: '2.7.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -44,7 +44,8 @@ const Skill kPptSkill = Skill(
 - `pptx_draft`：把结构化大纲确定性展开为完整 deck.json 初稿并落盘
   （.deck.json），布局/坐标/卡片分配/叙事节奏全部引擎内置；
   大纲格式调 `pptx_schema` 看 outlineSchema。
-- `pptx_check`：校验 deck 源 + 布局 QA + 包结构自检（不写文件，免审批）；
+- `pptx_check`：校验 deck 源 + 布局 QA（不写文件，免审批）；默认跳过
+  包结构自检（导出时恒做，传 `deep: true` 可提前跑）；
   已落盘的 deck 用 `source: "*.deck.json"` 引用，不要重发完整 deck。
 - `pptx_snapshot`：视觉自检——把页面离屏渲染成 PNG 截图随结果注入
   上下文，直接看图检查美丑（不写工作区，免审批）；多页用
@@ -53,7 +54,8 @@ const Skill kPptSkill = Skill(
 - `pptx_render`：QA 通过后导出 .pptx 到工作区，同样支持 `source` 引用
   已落盘的 deck 源；可传 `preview: true` 同时导出 .preview.html 预览。
 - `pptx_edit`：增量编辑——以工作区的 .deck.json 为源应用 ops（只改一页/
-  一个元素），写回源文件；传 `export` 同时重导出 .pptx（可覆盖旧导出）。
+  一个元素），写回源文件；传 `export` 同时重导出 .pptx（可覆盖旧导出）；
+  传 `dry_run: true` 只预演 ops 并返回 QA，不写回不导出。
 - `pptx_illustrate`：AI 配图——用已配置的图像生成模型把 prompt 生成为
   图片存进工作区，image 元素用 `"src": "<路径>"` 引用；没有图像模型时
   返回错误（此时降级为色块/形状装饰，不要反复重试）。
@@ -97,8 +99,12 @@ const Skill kPptSkill = Skill(
    `pptx_edit(source: "主题.deck.json", ops: [...], export: "主题.pptx")`。
    ops 支持 set_meta(title/style/layout) / set_slide / insert_slide /
    remove_slide / move_slide / set_element / append_element /
-   remove_element（索引从 0 起，按顺序应用）。例：只改第 3 页标题 →
-   `{"op":"set_element","slide":2,"index":0,"element":{…新文本元素…}}`。
+   remove_element（按顺序应用）。引用已有页/元素的 index/slide/from
+   既接受从 0 起的下标，也接受字符串 id（draft 自动给每页编 s1、s2 …，
+   推荐用 id，增删页不会错位）；插入位置（insert_slide.index、
+   move_slide.to）仅整数。例：只改 s3 页标题 →
+   `{"op":"set_element","slide":"s3","index":0,"element":{…新文本元素…}}`；
+   拿不准的改动先加 `dry_run: true` 预演。
 
 ## 多页并行精修（可选，需要 spawn_subagent）
 

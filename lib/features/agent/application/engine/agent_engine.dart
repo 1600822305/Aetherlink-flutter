@@ -395,6 +395,7 @@ class AgentEngine {
           await eager.abortAndDrain();
           await binder.failAllPending();
         }
+
         failTurnArtifacts = () async {
           await writer.finish('');
           await binder.failStreaming();
@@ -469,6 +470,13 @@ class AgentEngine {
             await binder.failStreaming() +
             await binder.failUnreturned(returnedIds) +
             await eager.drainUnreturned(returnedIds);
+
+        // 空回复重试额度按「连续空 turn」计：产出过正文或工具调用就
+        // 归零，否则长任务里早年的两次偶发空回复会永久吃掉额度，
+        // 后面一出现空 turn 就直接判收尾（看起来像误报）。
+        if (turn.toolCalls.isNotEmpty || turn.text.trim().isNotEmpty) {
+          _emptyRetries = 0;
+        }
 
         budget.recordTurnUsage(
           totalTokens: turn.tokensUsed,

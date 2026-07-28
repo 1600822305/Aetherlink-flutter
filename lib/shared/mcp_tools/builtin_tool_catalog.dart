@@ -1655,8 +1655,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'pptx_check',
       description:
-          '校验 deck.json 幻灯片源：运行布局 QA（溢出/密度/字号）+ 包结构自检'
-          '（内容类型/关系完整性/图表与备注引用），不写任何文件。'
+          '校验 deck.json 幻灯片源：运行布局 QA（溢出/密度/字号），'
+          '不写任何文件。默认跳过包结构自检（导出时仍自动做），'
+          '传 deep=true 可提前完整构建一次 pptx 包自检。'
           '返回结构化报告（errors 必须修正、warnings 酌情优化）。'
           '建议先 check、按报告改源、再 pptx_render 导出。deck.json 格式详见'
           '内置技能「PPT 设计师」。source 与 deck 二选一，已落盘的 deck '
@@ -1667,6 +1668,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'source': {
             'type': 'string',
             'description': '工作区里的 deck 源文件路径（.deck.json 结尾），推荐用它避免重发 deck',
+          },
+          'deep': {
+            'type': 'boolean',
+            'description': '是否额外构建 pptx 包做结构自检（较慢，默认 false；导出时恒做）',
+            'default': false,
           },
           'deck': {
             'type': 'object',
@@ -1824,8 +1830,12 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       description:
           '增量编辑：以工作区里的 .deck.json 为源应用编辑操作（只改一页/'
           '一个元素，不用重发完整 deck），QA 通过后写回源文件；传 export '
-          '可同时重导出 .pptx（允许覆盖旧导出）。适合 pptx_render + '
-          '同名 .deck.json 落盘后的后续迭代。',
+          '可同时重导出 .pptx（允许覆盖旧导出）。引用已有页/元素的 '
+          'index/slide/from 既接受从 0 起的位置下标，也接受字符串 id'
+          '（匹配条目的 "id" 字段，pptx_draft 会自动给每页编 s1、s2 …）；'
+          '多条 ops 涉及增删页时优先用 id 寻址，避免下标连环错位。'
+          '传 dry_run=true 只预演 ops 并返回 QA，不写回不导出。'
+          '适合 pptx_render + 同名 .deck.json 落盘后的后续迭代。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1841,7 +1851,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
                 'remove_slide(index) | move_slide(from, to) | '
                 'set_element(slide, index, element) | '
                 'append_element(slide, element) | '
-                'remove_element(slide, index)}，索引从 0 起',
+                'remove_element(slide, index)}；引用已有条目的 index/slide/'
+                'from 可传从 0 起的整数或字符串 id（推荐），插入位置'
+                '（insert_slide.index、move_slide.to）仅整数',
             'items': {'type': 'object'},
           },
           'export': {
@@ -1855,6 +1867,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'force': {
             'type': 'boolean',
             'description': 'QA 有 error 时仍强制写回/导出（默认 false）',
+            'default': false,
+          },
+          'dry_run': {
+            'type': 'boolean',
+            'description': '只预演 ops 并返回 QA 报告，不写回源文件、不导出（默认 false）',
             'default': false,
           },
         },
