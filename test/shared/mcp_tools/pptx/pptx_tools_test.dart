@@ -50,7 +50,13 @@ void main() {
       final names = builtinToolsFor(kPptxServerName).map((t) => t.name);
       expect(
         names,
-        containsAll(['pptx_read', 'pptx_check', 'pptx_render', 'pptx_schema']),
+        containsAll([
+          'pptx_read',
+          'pptx_check',
+          'pptx_draft',
+          'pptx_render',
+          'pptx_schema',
+        ]),
       );
       for (final tool in builtinToolsFor(kPptxServerName)) {
         expect(tool.inputSchema['type'], 'object');
@@ -86,6 +92,7 @@ void main() {
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_check')), isTrue);
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_read')), isTrue);
       expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_render')), isFalse);
+      expect(toolRouteIsReadOnly(const PptxToolRoute('pptx_draft')), isFalse);
     });
 
     test('M6：pptx_outline 只读、pptx_modify 非只读', () {
