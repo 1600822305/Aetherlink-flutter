@@ -440,4 +440,75 @@ void main() {
       expect(textAt(deck, 0, 2), 'z');
     });
   });
+
+  group('parseSnapshotPages', () {
+    test('默认单页 page，越界报错', () {
+      expect(parseSnapshotPages(const {}, 3), [1]);
+      expect(parseSnapshotPages(const {'page': 2}, 3), [2]);
+      expect(
+        () => parseSnapshotPages(const {'page': 4}, 3),
+        throwsA(isA<FileEditorError>()),
+      );
+    });
+
+    test('pages 数组去重保序，"all" 展开全部页', () {
+      expect(
+        parseSnapshotPages(const {
+          'pages': [3, 1, 3],
+        }, 3),
+        [3, 1],
+      );
+      expect(parseSnapshotPages(const {'pages': 'all'}, 4), [1, 2, 3, 4]);
+    });
+
+    test('pages 非法/越界/超上限报错', () {
+      expect(
+        () => parseSnapshotPages(const {'pages': 'first'}, 3),
+        throwsA(isA<FileEditorError>()),
+      );
+      expect(
+        () => parseSnapshotPages(const {
+          'pages': [0],
+        }, 3),
+        throwsA(isA<FileEditorError>()),
+      );
+      expect(
+        () => parseSnapshotPages(const {'pages': <Object?>[]}, 3),
+        throwsA(isA<FileEditorError>()),
+      );
+      expect(
+        () => parseSnapshotPages({
+          'pages': [for (var p = 1; p <= kSnapshotMaxPages + 1; p++) p],
+        }, 99),
+        throwsA(isA<FileEditorError>()),
+      );
+    });
+  });
+
+  group('deckSlideSummary', () {
+    test('输出页号/布局型/标题/元素数的轻量摘要', () {
+      final summary = deckSlideSummary({
+        'slides': [
+          {
+            'layout': {'type': 'cover', 'title': '封面标题'},
+            'elements': <Object?>[],
+          },
+          {
+            'elements': [
+              {'type': 'text', 'text': '首个文本'},
+              {'type': 'shape', 'shape': 'rect'},
+            ],
+          },
+        ],
+      });
+      expect(summary, [
+        {'page': 1, 'layout': 'cover', 'title': '封面标题', 'elements': 0},
+        {'page': 2, 'layout': 'manual', 'title': '首个文本', 'elements': 2},
+      ]);
+    });
+
+    test('slides 缺失时返回空摘要', () {
+      expect(deckSlideSummary(const {}), isEmpty);
+    });
+  });
 }

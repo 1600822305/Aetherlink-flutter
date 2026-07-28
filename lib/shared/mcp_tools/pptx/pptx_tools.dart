@@ -10,7 +10,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -225,10 +227,39 @@ Map<String, Object?> _qaSummary(List<DeckQaIssue> issues) => {
       .toList(),
 };
 
+/// 读 deck 输入：优先 `source`（工作区 .deck.json 路径），否则 `deck`
+/// 参数（对象或 JSON 字符串）。check/render/snapshot 共用，落盘后的
+/// deck 用 source 引用即可，不用重发完整 JSON。
+Future<Object> _deckFromSourceOrArg(Ref ref, Map<String, Object?> args) async {
+  final source = args['source'];
+  if (source is String && source.trim().isNotEmpty) {
+    if (!source.toLowerCase().endsWith('.deck.json')) {
+      throw const FileEditorError('source 必须以 .deck.json 结尾');
+    }
+    final resolved = await resolvePathArg(ref, args, source);
+    final String sourceText;
+    try {
+      sourceText = await resolved.backend.readFile(resolved.path);
+    } catch (e) {
+      throw FileEditorError('读取 deck 源失败：$source（$e）');
+    }
+    try {
+      return jsonDecode(sourceText) as Object;
+    } on FormatException catch (e) {
+      throw FileEditorError('deck 源不是合法 JSON：$source（${e.message}）');
+    }
+  }
+  return _deckToTransferable(args);
+}
+
 Future<McpToolResult> _check(Ref ref, Map<String, Object?> args) async {
   // check 除工作区风格文件外不做 IO：未展开的 src 只验证结构，
   // 真正下载/读取在 render/edit。
-  final raw = await _inlineWorkspaceStyle(ref, args, _deckToTransferable(args));
+  final raw = await _inlineWorkspaceStyle(
+    ref,
+    args,
+    await _deckFromSourceOrArg(ref, args),
+  );
   if (raw is! Map) throw const FileEditorError('deck 必须是 JSON 对象');
   final deck = DeckDocument.fromJson(raw.cast<String, Object?>());
   final issues = runDeckQa(deck);
@@ -305,69 +336,239 @@ Future<McpToolResult> _draft(Ref ref, Map<String, Object?> args) async {
   return fileEditorOk({
     'message':
         'deck 初稿已展开落盘。后续修改用 pptx_edit(source: "$path", ops: [...]) '
-        '增量改，不要重发完整 deck；确认无误后 pptx_render 导出',
+        '增量改，不要重发完整 deck；check/render/snapshot 都可用 source '
+        '引用该文件；确认无误后 pptx_render 导出',
     'path': savedPath,
     'slides': deck.slides.length,
-    'deck': deckRaw,
+    if (optionalBool(args, 'echo'))
+      'deck': deckRaw
+    else
+      'outline': deckSlideSummary(deckRaw),
     'qa': _qaSummary(issues),
   });
+}
+
+/// deck 的逐页轻量摘要（页号/布局型/标题/元素数）：取代在 draft 结果里
+/// 回传完整 deck，同一份内容已落盘，再全量注入上下文是纯浪费。
+@visibleForTesting
+List<Map<String, Object?>> deckSlideSummary(Map<String, Object?> deckRaw) {
+  final slides = deckRaw['slides'];
+  if (slides is! List) return const [];
+  return [
+    for (final (i, s) in slides.indexed)
+      if (s is Map)
+        {
+          'page': i + 1,
+          'layout': switch (s['layout']) {
+            final Map<Object?, Object?> layout =>
+              '${layout['type'] ?? 'manual'}',
+            final String layout => layout,
+            _ => 'manual',
+          },
+          if (_slideTitleOf(s) case final String title) 'title': title,
+          'elements': s['elements'] is List
+              ? (s['elements']! as List).length
+              : 0,
+        },
+  ];
+}
+
+/// 从页的 layout 声明或首个文本元素里猜一个标题（纯展示用）。
+String? _slideTitleOf(Map<Object?, Object?> slide) {
+  final layout = slide['layout'];
+  if (layout is Map && layout['title'] is String) {
+    return layout['title']! as String;
+  }
+  final elements = slide['elements'];
+  if (elements is List) {
+    for (final e in elements) {
+      if (e is Map && e['type'] == 'text') {
+        if (e['text'] is String) return e['text']! as String;
+        final paragraphs = e['paragraphs'];
+        if (paragraphs is List && paragraphs.isNotEmpty) {
+          final runs = paragraphs.first is Map
+              ? (paragraphs.first as Map)['runs']
+              : null;
+          if (runs is List && runs.isNotEmpty && runs.first is Map) {
+            final text = (runs.first as Map)['text'];
+            if (text is String) return text;
+          }
+        }
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 /// 视觉自检：把 deck 的某一页离屏渲染成 PNG（与编辑器预览同一几何
 /// 模型），图片以多模态消息随结果注入上下文，模型直接看图自查。
 /// 截图落在应用内部目录，不写工作区。
 Future<McpToolResult> _snapshot(Ref ref, Map<String, Object?> args) async {
-  final source = args['source'];
-  final Object rawDeck;
-  if (source is String && source.trim().isNotEmpty) {
-    if (!source.toLowerCase().endsWith('.deck.json')) {
-      throw const FileEditorError('source 必须以 .deck.json 结尾');
-    }
-    final resolved = await resolvePathArg(ref, args, source);
-    final String sourceText;
-    try {
-      sourceText = await resolved.backend.readFile(resolved.path);
-    } catch (e) {
-      throw FileEditorError('读取 deck 源失败：$source（$e）');
-    }
-    try {
-      rawDeck = jsonDecode(sourceText) as Object;
-    } on FormatException catch (e) {
-      throw FileEditorError('deck 源不是合法 JSON：$source（${e.message}）');
-    }
-  } else {
-    rawDeck = _deckToTransferable(args);
-  }
+  final rawDeck = await _deckFromSourceOrArg(ref, args);
   final inlined = await _inlineWorkspaceStyle(ref, args, rawDeck);
   if (inlined is! Map) throw const FileEditorError('deck 必须是 JSON 对象');
   final expanded = await _resolveImageSources(ref, args, inlined);
   final deck = DeckDocument.fromJson(expanded);
 
-  final page = asIntOr(args['page'], 1);
-  if (page < 1 || page > deck.slides.length) {
-    throw FileEditorError(
-      'page 超出范围：$page（deck 共 ${deck.slides.length} 页，从 1 起）',
-    );
-  }
+  final pages = parseSnapshotPages(args, deck.slides.length);
   final width = asIntOr(args['width'], 1280).clamp(480, 2560).toDouble();
 
   final render = ref.read(deckSlideSnapshotRendererProvider);
-  final png = await render(deck, page - 1, width: width);
-
   final docs = await getApplicationDocumentsDirectory();
   final dir = Directory('${docs.path}/pptx_snapshots');
   await dir.create(recursive: true);
-  final path =
-      '${dir.path}/${DateTime.now().microsecondsSinceEpoch}_p$page.png';
-  await File(path).writeAsBytes(png);
 
+  if (pages.length == 1) {
+    final page = pages.first;
+    final png = await render(deck, page - 1, width: width);
+    final path =
+        '${dir.path}/${DateTime.now().microsecondsSinceEpoch}_p$page.png';
+    await File(path).writeAsBytes(png);
+    return McpToolResult(
+      '已渲染第 $page/${deck.slides.length} 页截图（PNG，${png.length} 字节）；'
+      '智能体模式下将以图片消息随本结果注入上下文，请对照设计规范自查：'
+      '文字溢出/遮挡、对比度、留白与对齐；发现问题用 pptx_edit 修。',
+      imagePath: path,
+      imageMimeType: 'image/png',
+    );
+  }
+
+  // 多页：每页按格子宽渲染后拼成一张 contact-sheet，一次注入上下文，
+  // 把逐页自检的往返次数从 O(页数) 降到 O(1)。
+  final cols = pages.length <= 4 ? 2 : 3;
+  final cellWidth = (width / cols).clamp(320.0, 2560.0);
+  final pngs = <Uint8List>[];
+  for (final page in pages) {
+    pngs.add(await render(deck, page - 1, width: cellWidth));
+  }
+  final sheet = await _composeContactSheet(pngs, pages, cols);
+  final path =
+      '${dir.path}/${DateTime.now().microsecondsSinceEpoch}'
+      '_p${pages.first}-${pages.last}.png';
+  await File(path).writeAsBytes(sheet);
   return McpToolResult(
-    '已渲染第 $page/${deck.slides.length} 页截图（PNG，${png.length} 字节）；'
-    '智能体模式下将以图片消息随本结果注入上下文，请对照设计规范自查：'
-    '文字溢出/遮挡、对比度、留白与对齐；发现问题用 pptx_edit 修。',
+    '已渲染第 ${pages.join('、')} 页（共 ${deck.slides.length} 页）拼图，'
+    '按行优先排列、左上角标注页码；逐页对照设计规范自查：文字溢出/遮挡、'
+    '对比度、留白与对齐；可疑页再单页高清复查（page 参数），发现问题用 pptx_edit 修。',
     imagePath: path,
     imageMimeType: 'image/png',
   );
+}
+
+/// 单次 contact-sheet 最多拼的页数（再多单格太小看不清）。
+const int kSnapshotMaxPages = 12;
+
+/// 解析 snapshot 的页码参数：`pages`（数组或 "all"）优先，否则单页 `page`。
+/// 返回去重后的 1 基页码列表（保持传入顺序）。
+@visibleForTesting
+List<int> parseSnapshotPages(Map<String, Object?> args, int slideCount) {
+  final rawPages = args['pages'];
+  if (rawPages == null) {
+    final page = asIntOr(args['page'], 1);
+    if (page < 1 || page > slideCount) {
+      throw FileEditorError('page 超出范围：$page（deck 共 $slideCount 页，从 1 起）');
+    }
+    return [page];
+  }
+  final List<int> pages;
+  if (rawPages is String && rawPages.trim().toLowerCase() == 'all') {
+    pages = [for (var p = 1; p <= slideCount; p++) p];
+  } else if (rawPages is List) {
+    final seen = <int>{};
+    pages = [];
+    for (final raw in rawPages) {
+      if (raw is! int) {
+        throw const FileEditorError('pages 必须是页码整数数组或 "all"');
+      }
+      if (raw < 1 || raw > slideCount) {
+        throw FileEditorError('pages 超出范围：$raw（deck 共 $slideCount 页，从 1 起）');
+      }
+      if (seen.add(raw)) pages.add(raw);
+    }
+  } else {
+    throw const FileEditorError('pages 必须是页码整数数组或 "all"');
+  }
+  if (pages.isEmpty) {
+    throw const FileEditorError('pages 不能为空');
+  }
+  if (pages.length > kSnapshotMaxPages) {
+    throw FileEditorError(
+      'pages 一次最多 $kSnapshotMaxPages 页（收到 ${pages.length} 页），请分批截图',
+    );
+  }
+  return pages;
+}
+
+/// 把逐页 PNG 拼成 [cols] 列的网格拼图，左上角画页码角标，返回 PNG 字节。
+Future<Uint8List> _composeContactSheet(
+  List<Uint8List> pngs,
+  List<int> pageNumbers,
+  int cols,
+) async {
+  const gap = 8.0;
+  final images = <ui.Image>[];
+  try {
+    for (final png in pngs) {
+      final codec = await ui.instantiateImageCodec(png);
+      try {
+        images.add((await codec.getNextFrame()).image);
+      } finally {
+        codec.dispose();
+      }
+    }
+    final cellW = images.first.width.toDouble();
+    final cellH = images.first.height.toDouble();
+    final rows = (images.length + cols - 1) ~/ cols;
+    final sheetW = cols * cellW + (cols + 1) * gap;
+    final sheetH = rows * cellH + (rows + 1) * gap;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawRect(
+      ui.Rect.fromLTWH(0, 0, sheetW, sheetH),
+      ui.Paint()..color = const ui.Color(0xFF202124),
+    );
+    for (final (i, image) in images.indexed) {
+      final x = gap + (i % cols) * (cellW + gap);
+      final y = gap + (i ~/ cols) * (cellH + gap);
+      canvas.drawImageRect(
+        image,
+        ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        ui.Rect.fromLTWH(x, y, cellW, cellH),
+        ui.Paint(),
+      );
+      final builder =
+          ui.ParagraphBuilder(
+              ui.ParagraphStyle(fontSize: 18, fontWeight: ui.FontWeight.bold),
+            )
+            ..pushStyle(ui.TextStyle(color: const ui.Color(0xFFFFFFFF)))
+            ..addText(' p${pageNumbers[i]} ');
+      final paragraph = builder.build()
+        ..layout(const ui.ParagraphConstraints(width: 120));
+      canvas.drawRect(
+        ui.Rect.fromLTWH(x, y, paragraph.longestLine + 8, 26),
+        ui.Paint()..color = const ui.Color(0xCC202124),
+      );
+      canvas.drawParagraph(paragraph, ui.Offset(x + 4, y + 2));
+    }
+    final picture = recorder.endRecording();
+    final sheet = await picture.toImage(sheetW.ceil(), sheetH.ceil());
+    picture.dispose();
+    try {
+      final bytes = await sheet.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null) {
+        throw const FileEditorError('拼图 PNG 编码失败');
+      }
+      return bytes.buffer.asUint8List();
+    } finally {
+      sheet.dispose();
+    }
+  } finally {
+    for (final image in images) {
+      image.dispose();
+    }
+  }
 }
 
 bool _hasUnresolvedImageSrc(Object raw) {
@@ -406,6 +607,38 @@ Future<Map<String, Object?>> _resolveImageSources(
   final deck = Map<String, Object?>.from(raw.cast<String, Object?>());
   final slides = deck['slides'];
   if (slides is! List) return deck;
+
+  bool isUnresolvedImage(Object? e) =>
+      e is Map &&
+      e['type'] == 'image' &&
+      e['data'] == null &&
+      e['src'] is String;
+
+  // 先收集去重后的 src 并发加载（命中缓存的直接读盘），同一 src
+  // 多处引用只拉一次；再回填到各元素。
+  final srcs = <String>{};
+  for (final s in slides) {
+    if (s is! Map) continue;
+    final elements = s['elements'];
+    if (elements is! List) continue;
+    for (final e in elements) {
+      if (isUnresolvedImage(e)) {
+        srcs.add(((e as Map)['src']! as String).trim());
+      }
+    }
+  }
+  final dataBySrc = <String, String>{};
+  await Future.wait([
+    for (final src in srcs)
+      (() async {
+        final bytes = await _loadImageCached(ref, args, src);
+        if (detectImageFormat(Uint8List.fromList(bytes)) == null) {
+          throw FileEditorError('图片 src 不是 PNG/JPEG：$src');
+        }
+        dataBySrc[src] = base64Encode(bytes);
+      })(),
+  ]);
+
   final newSlides = <Object?>[];
   for (final s in slides) {
     if (s is! Map) {
@@ -417,17 +650,12 @@ Future<Map<String, Object?>> _resolveImageSources(
     if (elements is List) {
       final newElements = <Object?>[];
       for (final e in elements) {
-        if (e is Map &&
-            e['type'] == 'image' &&
-            e['data'] == null &&
-            e['src'] is String) {
-          final el = Map<String, Object?>.from(e.cast<String, Object?>());
+        if (isUnresolvedImage(e)) {
+          final el = Map<String, Object?>.from(
+            (e as Map).cast<String, Object?>(),
+          );
           final src = (el.remove('src')! as String).trim();
-          final bytes = await _loadImage(ref, args, src);
-          if (detectImageFormat(Uint8List.fromList(bytes)) == null) {
-            throw FileEditorError('图片 src 不是 PNG/JPEG：$src');
-          }
-          el['data'] = base64Encode(bytes);
+          el['data'] = dataBySrc[src];
           newElements.add(el);
         } else {
           newElements.add(e);
@@ -439,6 +667,48 @@ Future<Map<String, Object?>> _resolveImageSources(
   }
   deck['slides'] = newSlides;
   return deck;
+}
+
+/// 远程图片磁盘缓存：同一 URL 在 QA 循环里每次 render/snapshot/export
+/// 都会重新展开，不缓存就是重复下载。只缓存 http(s)（工作区文件本地
+/// 读很便宜），且只缓存通过格式校验的内容。
+Future<List<int>> _loadImageCached(
+  Ref ref,
+  Map<String, Object?> args,
+  String src,
+) async {
+  final isRemote = src.startsWith('http://') || src.startsWith('https://');
+  if (!isRemote) return _loadImage(ref, args, src);
+
+  File? cacheFile;
+  try {
+    final cacheRoot = await getApplicationCacheDirectory();
+    cacheFile = File(
+      '${cacheRoot.path}/pptx_image_cache/'
+      '${sha256.convert(utf8.encode(src))}',
+    );
+    if (await cacheFile.exists()) {
+      final cached = await cacheFile.readAsBytes();
+      if (cached.isNotEmpty &&
+          detectImageFormat(Uint8List.fromList(cached)) != null) {
+        return cached;
+      }
+    }
+  } catch (_) {
+    cacheFile = null; // 缓存不可用不影响主流程，直接下载。
+  }
+
+  final bytes = await _loadImage(ref, args, src);
+  if (cacheFile != null &&
+      detectImageFormat(Uint8List.fromList(bytes)) != null) {
+    try {
+      await cacheFile.parent.create(recursive: true);
+      await cacheFile.writeAsBytes(bytes);
+    } catch (_) {
+      // 写缓存失败忽略。
+    }
+  }
+  return bytes;
 }
 
 Future<List<int>> _loadImage(
@@ -488,7 +758,11 @@ Future<McpToolResult> _render(Ref ref, Map<String, Object?> args) async {
   final deckRaw = await _resolveImageSources(
     ref,
     args,
-    await _inlineWorkspaceStyle(ref, args, _deckToTransferable(args)),
+    await _inlineWorkspaceStyle(
+      ref,
+      args,
+      await _deckFromSourceOrArg(ref, args),
+    ),
   );
   final deck = DeckDocument.fromJson(deckRaw.cast<String, Object?>());
   final path = requireString(args, 'path');
