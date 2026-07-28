@@ -27,6 +27,12 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_writ
 /// The built-in MCP server name this router serves.
 const String kPptxServerName = '@aether/pptx';
 
+/// 工作区自定义风格目录：`<id>.json` 文件名即风格 id，deck.json 用
+/// `"style": "<id>"` 引用；同名覆盖内置风格。
+const String kDeckStylesDirName = '.aetherlink/deck_styles';
+
+final RegExp _styleIdPattern = RegExp(r'^[A-Za-z0-9_][A-Za-z0-9_\-]*$');
+
 /// 这次 `@aether/pptx` 调用是否要先经用户确认。
 ///
 /// 只有 `pptx_modify` 原地改写用户既有文件时需要——它替换的是别人给的
@@ -51,7 +57,7 @@ Future<McpToolResult> runPptxTool(
   try {
     switch (toolName) {
       case 'pptx_check':
-        return await _check(args);
+        return await _check(ref, args);
       case 'pptx_render':
         return await _render(ref, args);
       case 'pptx_edit':
@@ -65,12 +71,7 @@ Future<McpToolResult> runPptxTool(
       case 'pptx_modify':
         return await _modify(ref, args);
       case 'pptx_styles':
-        return fileEditorOk({
-          'styles': builtinDeckStyleCatalog(),
-          'usage':
-              '在 deck.json 顶层加 "style": "<id>" 套用；元素可省略颜色，'
-              '背景/文字/卡片/图表配色自动推导；也可传内联风格对象自定义',
-        });
+        return await _styles(ref, args);
       case 'pptx_schema':
         return fileEditorOk({
           'schema': kDeckJsonSchema,
@@ -95,15 +96,113 @@ Future<McpToolResult> runPptxTool(
   }
 }
 
-DeckDocument _parseDeckArg(Map<String, Object?> args) {
-  final raw = args['deck'];
-  if (raw is Map) {
-    return DeckDocument.fromJson(raw.cast<String, Object?>());
+/// 解析并校验一份工作区风格 JSON，返回可内联进 deck 的风格对象
+/// （id 强制为文件名，保证 `"style": "<文件名>"` 与实际一致）。
+@visibleForTesting
+Map<String, Object?> parseWorkspaceDeckStyle(String id, String jsonText) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(jsonText);
+  } on FormatException catch (e) {
+    throw FileEditorError(
+      '工作区风格 $kDeckStylesDirName/$id.json 不是合法 JSON：${e.message}',
+    );
   }
-  if (raw is String && raw.trim().isNotEmpty) {
-    return DeckDocument.parse(raw);
+  if (decoded is! Map) {
+    throw FileEditorError('工作区风格 $kDeckStylesDirName/$id.json 必须是 JSON 对象');
   }
-  throw const FileEditorError('缺少必需参数: deck（deck.json 对象或其 JSON 字符串）');
+  final style = Map<String, Object?>.from(decoded.cast<String, Object?>());
+  style['id'] = id;
+  try {
+    DeckStyle.fromJson(style, '工作区风格 $kDeckStylesDirName/$id.json');
+  } on DeckParseException catch (e) {
+    throw FileEditorError(e.message);
+  }
+  return style;
+}
+
+/// 读工作区里 id 对应的自定义风格文件；目录/文件不存在返回 null
+/// （回退内置风格），存在但内容非法则报明确错误。
+Future<Map<String, Object?>?> _loadWorkspaceStyle(
+  Ref ref,
+  Map<String, Object?> args,
+  String id,
+) async {
+  if (!_styleIdPattern.hasMatch(id)) return null;
+  final String text;
+  try {
+    final resolved = await resolvePathArg(
+      ref,
+      args,
+      '$kDeckStylesDirName/$id.json',
+    );
+    text = await resolved.backend.readFile(resolved.path);
+  } catch (_) {
+    return null;
+  }
+  return parseWorkspaceDeckStyle(id, text);
+}
+
+/// 把 deck 顶层 `"style": "<id>"` 引用的工作区自定义风格内联为风格
+/// 对象后返回新 deck（同名覆盖内置）；非字符串 style 或无对应文件时
+/// 原样返回。只影响解析/导出，不改写用户的 deck 源。
+Future<Object> _inlineWorkspaceStyle(
+  Ref ref,
+  Map<String, Object?> args,
+  Object raw,
+) async {
+  if (raw is! Map) return raw;
+  final styleId = raw['style'];
+  if (styleId is! String) return raw;
+  final custom = await _loadWorkspaceStyle(ref, args, styleId.trim());
+  if (custom == null) return raw;
+  final deck = Map<String, Object?>.from(raw.cast<String, Object?>());
+  deck['style'] = custom;
+  return deck;
+}
+
+/// 风格目录：内置 12 套 + 工作区自定义（$kDeckStylesDirName/*.json）。
+Future<McpToolResult> _styles(Ref ref, Map<String, Object?> args) async {
+  final styles = <Map<String, Object?>>[
+    for (final s in builtinDeckStyleCatalog()) {...s, 'source': 'builtin'},
+  ];
+  try {
+    final resolved = await resolvePathArg(ref, args, kDeckStylesDirName);
+    final entries = await resolved.backend.listDir(resolved.path);
+    for (final e in entries) {
+      if (e.isDirectory || !e.name.endsWith('.json')) continue;
+      final id = e.name.substring(0, e.name.length - '.json'.length);
+      if (!_styleIdPattern.hasMatch(id)) continue;
+      try {
+        final map = parseWorkspaceDeckStyle(
+          id,
+          await resolved.backend.readFile(e.path),
+        );
+        final s = DeckStyle.fromJson(map, id);
+        styles.add({
+          'id': id,
+          'name': s.name,
+          'category': s.category,
+          'background': s.background.value,
+          'accents': [for (final a in s.accents) a.value],
+          'source': 'workspace',
+        });
+      } on FileEditorError catch (err) {
+        styles.add({'id': id, 'source': 'workspace', 'error': err.message});
+      }
+    }
+  } catch (_) {
+    // 无工作区或目录不存在：只列内置风格。
+  }
+  return fileEditorOk({
+    'styles': styles,
+    'usage':
+        '在 deck.json 顶层加 "style": "<id>" 套用；元素可省略颜色，'
+        '背景/文字/卡片/图表配色自动推导；也可传内联风格对象自定义。'
+        '工作区 $kDeckStylesDirName/<id>.json 可增加自定义风格'
+        '（字段同内联风格对象：background/cardFill/textPrimary/'
+        'textSecondary/accents 必填），同名覆盖内置',
+  });
 }
 
 Map<String, Object?> _qaSummary(List<DeckQaIssue> issues) => {
@@ -117,13 +216,15 @@ Map<String, Object?> _qaSummary(List<DeckQaIssue> issues) => {
       .toList(),
 };
 
-Future<McpToolResult> _check(Map<String, Object?> args) async {
-  final deck = _parseDeckArg(args);
-  // check 不做 IO：未展开的 src 只验证结构，真正下载/读取在 render/edit。
+Future<McpToolResult> _check(Ref ref, Map<String, Object?> args) async {
+  // check 除工作区风格文件外不做 IO：未展开的 src 只验证结构，
+  // 真正下载/读取在 render/edit。
+  final raw = await _inlineWorkspaceStyle(ref, args, _deckToTransferable(args));
+  if (raw is! Map) throw const FileEditorError('deck 必须是 JSON 对象');
+  final deck = DeckDocument.fromJson(raw.cast<String, Object?>());
   final issues = runDeckQa(deck);
   // deck_validate：实际构建一次 pptx 包并做结构自检（内容类型覆盖/
   // 关系完整性/图表与备注引用），对齐 validate.py 的检查面。
-  final raw = _deckToTransferable(args);
   final hasUnresolvedImages = _hasUnresolvedImageSrc(raw);
   final structureIssues = hasUnresolvedImages
       ? const <Map<String, Object?>>[]
@@ -268,7 +369,7 @@ Future<McpToolResult> _render(Ref ref, Map<String, Object?> args) async {
   final deckRaw = await _resolveImageSources(
     ref,
     args,
-    _deckToTransferable(args),
+    await _inlineWorkspaceStyle(ref, args, _deckToTransferable(args)),
   );
   final deck = DeckDocument.fromJson(deckRaw.cast<String, Object?>());
   final path = requireString(args, 'path');
@@ -360,9 +461,11 @@ Future<McpToolResult> _edit(Ref ref, Map<String, Object?> args) async {
     deckRaw = applyDeckEditOp(deckRaw, op.cast<String, Object?>(), 'ops[$i]');
   }
 
-  // 结构校验 + QA 用未展开的源（src 引用是合法结构）；写回也保留 src，
-  // 避免把 base64 膨胀进 .deck.json——只有导出 pptx 时才展开图片。
-  final deck = DeckDocument.fromJson(deckRaw);
+  // 结构校验 + QA 用未展开的源（src 引用是合法结构）；写回也保留 src
+  // 与风格 id 字符串，避免把 base64/风格对象膨胀进 .deck.json——
+  // 只有解析与导出时才展开。
+  final inlined = await _inlineWorkspaceStyle(ref, args, deckRaw);
+  final deck = DeckDocument.fromJson((inlined as Map).cast<String, Object?>());
   final issues = runDeckQa(deck);
   final force = optionalBool(args, 'force');
   final hasErrors = issues.any((i) => i.severity == DeckQaSeverity.error);
@@ -385,7 +488,7 @@ Future<McpToolResult> _edit(Ref ref, Map<String, Object?> args) async {
     if (!export.toLowerCase().endsWith('.pptx')) {
       throw const FileEditorError('export 必须以 .pptx 结尾');
     }
-    final resolvedRaw = await _resolveImageSources(ref, args, deckRaw);
+    final resolvedRaw = await _resolveImageSources(ref, args, inlined);
     final deckJson = jsonEncode(resolvedRaw);
     final built = await Isolate.run(() {
       final bytes = buildPptxBytes(DeckDocument.parse(deckJson));
@@ -401,7 +504,13 @@ Future<McpToolResult> _edit(Ref ref, Map<String, Object?> args) async {
         '${jsonEncode(structureIssues)}',
       );
     }
-    pptxPath = await _writeBytes(ref, args, export, built.bytes, overwrite: true);
+    pptxPath = await _writeBytes(
+      ref,
+      args,
+      export,
+      built.bytes,
+      overwrite: true,
+    );
   }
 
   return fileEditorOk({
@@ -685,9 +794,7 @@ Future<McpToolResult> _modify(Ref ref, Map<String, Object?> args) async {
     throw const FileEditorError('output 必须以 .pptx 结尾');
   }
   if (output == null && path.toLowerCase().endsWith('.potx')) {
-    throw const FileEditorError(
-      '.potx 是模板，不能原地改写。请传 output 指定要生成的 .pptx 路径。',
-    );
+    throw const FileEditorError('.potx 是模板，不能原地改写。请传 output 指定要生成的 .pptx 路径。');
   }
 
   final bytes = await _readPptxArg(ref, args, path, 'path');
@@ -715,7 +822,12 @@ Future<McpToolResult> _modify(Ref ref, Map<String, Object?> args) async {
     final applied = <String>[];
     for (final (i, raw) in decoded.indexed) {
       applied.add(
-        _applyPptxOp(pkg, (raw as Map).cast<String, Object?>(), 'ops[$i]', images[i]),
+        _applyPptxOp(
+          pkg,
+          (raw as Map).cast<String, Object?>(),
+          'ops[$i]',
+          images[i],
+        ),
       );
     }
     final saved = pkg.save();
@@ -737,7 +849,13 @@ Future<McpToolResult> _modify(Ref ref, Map<String, Object?> args) async {
   }
 
   final target = output ?? path;
-  final saved = await _writeBytes(ref, args, target, result.bytes, overwrite: true);
+  final saved = await _writeBytes(
+    ref,
+    args,
+    target,
+    result.bytes,
+    overwrite: true,
+  );
   return fileEditorOk({
     'message': output == null ? 'pptx 已原地编辑' : 'pptx 已编辑并另存',
     'path': saved,
@@ -831,7 +949,14 @@ String _applyPptxOp(
 Object _deckToTransferable(Map<String, Object?> args) {
   final raw = args['deck'];
   if (raw is Map) return raw;
-  return jsonDecode(raw as String) as Object;
+  if (raw is String && raw.trim().isNotEmpty) {
+    try {
+      return jsonDecode(raw) as Object;
+    } on FormatException catch (e) {
+      throw FileEditorError('deck JSON 解析失败: ${e.message}');
+    }
+  }
+  throw const FileEditorError('缺少必需参数: deck（deck.json 对象或其 JSON 字符串）');
 }
 
 /// 落盘 [bytes]。覆盖已存在的文件时走 write-temp-then-swap，
