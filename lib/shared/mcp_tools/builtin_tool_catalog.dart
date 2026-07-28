@@ -1718,6 +1718,41 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'pptx_snapshot',
+      description:
+          '视觉自检：把 deck 的某一页离屏渲染成 PNG 截图（与编辑器预览同一'
+          '几何模型），截图以图片消息随结果注入上下文——直接看图检查文字'
+          '溢出/遮挡、对比度、留白与对齐，发现问题用 pptx_edit 修。'
+          '截图存应用内部目录，不写工作区、免确认。deck 与 source 二选一。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'source': {
+            'type': 'string',
+            'description': '工作区里的 deck 源文件路径（.deck.json 结尾），推荐用它避免重发 deck',
+          },
+          'deck': {
+            'type': 'object',
+            'description': 'deck.json 源对象（也接受 JSON 字符串），不传 source 时用',
+          },
+          'page': {
+            'type': 'integer',
+            'description': '要截图的页码（从 1 起，默认 1）',
+            'default': 1,
+          },
+          'width': {
+            'type': 'integer',
+            'description': '截图宽度像素（480-2560，默认 1280，高度按画布比例）',
+            'default': 1280,
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
       name: 'pptx_render',
       description:
           '把 deck.json 源渲染成原生可编辑的 .pptx 文件写入工作区（文本框/形状/'

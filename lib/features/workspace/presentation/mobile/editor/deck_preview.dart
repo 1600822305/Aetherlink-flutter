@@ -41,7 +41,7 @@ class DeckPreview extends StatelessWidget {
             child: _QaBanner(errorCount: errorCount, warnCount: warnCount),
           ),
         for (final (index, slide) in deck.slides.indexed) ...[
-          _SlideCanvas(deck: deck, slide: slide),
+          DeckSlideCanvas(deck: deck, slide: slide),
           if (slide.notes != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -135,11 +135,23 @@ class _QaBanner extends StatelessWidget {
 
 /// One slide rendered at its 16:9（或 4:3）比例，内部用英寸→逻辑像素的
 /// 统一 scale 定位元素（与 pptx_writer / HTML 渲染同一几何模型）。
-class _SlideCanvas extends StatelessWidget {
-  const _SlideCanvas({required this.deck, required this.slide});
+///
+/// [showFrame] 控制编辑器预览态的外框/圆角装饰；离屏截图时关掉。
+/// [imageBuilder] 可替换图片元素的渲染（截图用预解码的 RawImage，
+/// 保证单帧内同步绘制），缺省用异步解码的 Image.memory。
+class DeckSlideCanvas extends StatelessWidget {
+  const DeckSlideCanvas({
+    super.key,
+    required this.deck,
+    required this.slide,
+    this.showFrame = true,
+    this.imageBuilder,
+  });
 
   final DeckDocument deck;
   final DeckSlide slide;
+  final bool showFrame;
+  final Widget Function(DeckImageElement element)? imageBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -153,11 +165,13 @@ class _SlideCanvas extends StatelessWidget {
             clipBehavior: Clip.hardEdge,
             decoration: BoxDecoration(
               color: _color(slide.background) ?? Colors.white,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: Theme.of(context).dividerColor,
-                width: 0.5,
-              ),
+              borderRadius: showFrame ? BorderRadius.circular(4) : null,
+              border: showFrame
+                  ? Border.all(
+                      color: Theme.of(context).dividerColor,
+                      width: 0.5,
+                    )
+                  : null,
             ),
             child: Stack(
               children: [
@@ -184,7 +198,9 @@ class _SlideCanvas extends StatelessWidget {
       DeckTextElement() => _TextBox(element: element, scale: scale),
       DeckShapeElement() => _Shape(element: element, scale: scale),
       DeckImageElement() =>
-        element.isResolved
+        imageBuilder != null
+            ? imageBuilder!(element)
+            : element.isResolved
             ? Image.memory(element.bytes, fit: BoxFit.fill)
             : const _ImagePlaceholder(),
       DeckTableElement() => _DeckTable(element: element, scale: scale),

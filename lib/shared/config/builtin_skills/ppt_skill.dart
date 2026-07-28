@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '2.3.0',
+  version: '2.4.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -28,7 +28,7 @@ const Skill kPptSkill = Skill(
 选错路线的典型后果：拿到用户的公司模板却走 A，母版和 VI 全丢；
 只想改一个错别字却走 A，整份 PPT 被重做一遍。
 
-十个工具：
+十一个工具：
 
 - `pptx_schema`：返回 deck.json 的 JSON Schema（只读，免审批）——格式的
   单一权威来源，含别名容错说明；字段/结构不确定或 check 报错时先调它自查。
@@ -41,6 +41,8 @@ const Skill kPptSkill = Skill(
   （.deck.json），布局/坐标/卡片分配/叙事节奏全部引擎内置；
   大纲格式调 `pptx_schema` 看 outlineSchema。
 - `pptx_check`：校验 deck 源 + 布局 QA + 包结构自检（不写文件，免审批）。
+- `pptx_snapshot`：视觉自检——把某一页离屏渲染成 PNG 截图随结果注入
+  上下文，直接看图检查美丑（不写工作区，免审批）。
 - `pptx_render`：QA 通过后导出 .pptx 到工作区；
   可传 `preview: true` 同时导出 .preview.html 预览。
 - `pptx_edit`：增量编辑——以工作区的 .deck.json 为源应用 ops（只改一页/
@@ -73,6 +75,10 @@ const Skill kPptSkill = Skill(
    特殊页（全幅图/图表页）再用 `pptx_edit` 对单页精修。
 7. **QA 循环**：初稿自带 QA 报告；按 errors/warnings 用 `pptx_edit`
    逐条改 → `pptx_check` 重查，直到 errors 为空（修复顺序见「失败模式」）。
+   几何 QA 通过后做**视觉自检**：逐页 `pptx_snapshot(source, page)`
+   看截图，检查文字溢出/遮挡、对比度不足、留白失衡、对齐问题，
+   发现问题用 `pptx_edit` 改完再截图复查；看不到图（非多模态模型）
+   则跳过此步，不算失败。
 8. **导出**：`pptx_render` 导出（路径如 `演示文稿/主题.pptx`），deck 源
    已由 draft 落盘为 `主题.deck.json`：用户点开可直接预览；
    要人工视觉复核时可传 `preview: true` 同时导出 .preview.html。
