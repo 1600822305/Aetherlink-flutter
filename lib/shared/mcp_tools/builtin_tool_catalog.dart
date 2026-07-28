@@ -1682,6 +1682,42 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'pptx_draft',
+      description:
+          '把结构化大纲确定性展开为完整 deck.json 初稿并落盘（.deck.json）：'
+          '页型映射、布局选择、卡片分配、叙事节奏（密度交替/章节序号递进/'
+          '目录自动生成）全部引擎内置，不用逐字手写 deck。大纲每页只写 '
+          'kind(cover/toc/section/content/end)+标题+要点（1-6 条，字符串或 '
+          '{title,desc}/{value,label}/{items}/{tags}/{steps} 对象），格式调 '
+          'pptx_schema 看 outlineSchema。返回展开后的 deck 与 QA 报告；'
+          '后续修改一律 pptx_edit 增量改，确认后 pptx_render 导出。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'outline': {
+            'type': 'object',
+            'description':
+                '结构化大纲对象（也接受 JSON 字符串）：顶层 title/style/'
+                'layout/slides[]，schema 见 pptx_schema 的 outlineSchema',
+          },
+          'path': {
+            'type': 'string',
+            'description': '初稿落盘路径（工作区相对路径，必须以 .deck.json 结尾，缺失目录自动创建）',
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认第一个工作区）',
+          },
+          'overwrite': {
+            'type': 'boolean',
+            'description': '目标文件已存在时是否覆盖（默认 false）',
+            'default': false,
+          },
+        },
+        'required': ['outline', 'path'],
+      },
+    ),
+    McpToolDefinition(
       name: 'pptx_render',
       description:
           '把 deck.json 源渲染成原生可编辑的 .pptx 文件写入工作区（文本框/形状/'

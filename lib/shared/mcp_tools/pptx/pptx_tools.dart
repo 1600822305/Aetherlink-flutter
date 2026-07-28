@@ -58,6 +58,8 @@ Future<McpToolResult> runPptxTool(
     switch (toolName) {
       case 'pptx_check':
         return await _check(ref, args);
+      case 'pptx_draft':
+        return await _draft(ref, args);
       case 'pptx_render':
         return await _render(ref, args);
       case 'pptx_edit':
@@ -75,6 +77,7 @@ Future<McpToolResult> runPptxTool(
       case 'pptx_schema':
         return fileEditorOk({
           'schema': kDeckJsonSchema,
+          'outlineSchema': kOutlineJsonSchema,
           'usage':
               'deck.json 格式的单一权威来源（与解析器同步，含别名容错说明）。'
               '解析报错时先对照 schema 自查字段名/枚举值/结构',
@@ -248,6 +251,59 @@ Future<McpToolResult> _check(Ref ref, Map<String, Object?> args) async {
         : hasUnresolvedImages
         ? 'deck 通过校验（含未展开的图片 src，导出时自动下载/读取并做包结构自检）'
         : 'deck 通过校验，可以调用 pptx_render 导出',
+  });
+}
+
+/// 大纲 → deck 初稿：引擎确定性展开（页型映射/卡片分配/密度交替），
+/// 落盘 .deck.json 并附 QA 报告；后续用 pptx_edit 增量精修。
+Future<McpToolResult> _draft(Ref ref, Map<String, Object?> args) async {
+  final rawOutline = args['outline'];
+  final Map<String, Object?> outline;
+  if (rawOutline is Map) {
+    outline = rawOutline.cast<String, Object?>();
+  } else if (rawOutline is String && rawOutline.trim().isNotEmpty) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(rawOutline);
+    } on FormatException catch (e) {
+      throw FileEditorError('outline JSON 解析失败: ${e.message}');
+    }
+    if (decoded is! Map) {
+      throw const FileEditorError('outline 必须是 JSON 对象');
+    }
+    outline = decoded.cast<String, Object?>();
+  } else {
+    throw const FileEditorError(
+      '缺少必需参数: outline（大纲对象或其 JSON 字符串，格式调 pptx_schema 看 outlineSchema）',
+    );
+  }
+  final path = requireString(args, 'path');
+  if (!path.toLowerCase().endsWith('.deck.json')) {
+    throw const FileEditorError('path 必须以 .deck.json 结尾');
+  }
+
+  final deckRaw = buildDeckDraft(outline);
+  final inlined = await _inlineWorkspaceStyle(ref, args, deckRaw);
+  final deck = DeckDocument.fromJson((inlined as Map).cast<String, Object?>());
+  final issues = runDeckQa(deck);
+
+  final savedPath = await _writeBytes(
+    ref,
+    args,
+    path,
+    Uint8List.fromList(
+      utf8.encode(const JsonEncoder.withIndent('  ').convert(deckRaw)),
+    ),
+    overwrite: optionalBool(args, 'overwrite'),
+  );
+  return fileEditorOk({
+    'message':
+        'deck 初稿已展开落盘。后续修改用 pptx_edit(source: "$path", ops: [...]) '
+        '增量改，不要重发完整 deck；确认无误后 pptx_render 导出',
+    'path': savedPath,
+    'slides': deck.slides.length,
+    'deck': deckRaw,
+    'qa': _qaSummary(issues),
   });
 }
 

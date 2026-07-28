@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '2.2.0',
+  version: '2.3.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -28,7 +28,7 @@ const Skill kPptSkill = Skill(
 选错路线的典型后果：拿到用户的公司模板却走 A，母版和 VI 全丢；
 只想改一个错别字却走 A，整份 PPT 被重做一遍。
 
-九个工具：
+十个工具：
 
 - `pptx_schema`：返回 deck.json 的 JSON Schema（只读，免审批）——格式的
   单一权威来源，含别名容错说明；字段/结构不确定或 check 报错时先调它自查。
@@ -37,6 +37,9 @@ const Skill kPptSkill = Skill(
   文本/表格/图表数据/演讲者备注；`format: "markdown"`（默认，适合总结
   和问答）或 `format: "deck"`（输出 deck.json 骨架，适合把已有 PPT 转成源
   继续迭代；骨架里图片不内嵌、布局是估算值，要按设计规范重排）。
+- `pptx_draft`：把结构化大纲确定性展开为完整 deck.json 初稿并落盘
+  （.deck.json），布局/坐标/卡片分配/叙事节奏全部引擎内置；
+  大纲格式调 `pptx_schema` 看 outlineSchema。
 - `pptx_check`：校验 deck 源 + 布局 QA + 包结构自检（不写文件，免审批）。
 - `pptx_render`：QA 通过后导出 .pptx 到工作区；
   可传 `preview: true` 同时导出 .preview.html 预览。
@@ -56,20 +59,22 @@ const Skill kPptSkill = Skill(
    语言。信息不全先问，不要凭空猜。
 2. **收集资料**：用户给的材料优先；数据/案例不足时可用网络搜索补充
    （有该工具时），标注来源。
-3. **写大纲并落盘**：每页一行「页型 + 一句话主旨」，用 file-editor 的
-   `write` 存为 `主题.outline.json`（或 .md），发给用户过目再继续——
-   大纲返工比整 deck 返工便宜一个量级。
+3. **写结构化大纲并落盘**：按 outlineSchema 写 `主题.outline.json`
+   （每页：kind + 标题 + 1-6 条要点），用 file-editor 的 `write` 落盘，
+   发给用户过目再继续——大纲返工比整 deck 返工便宜一个量级。
 4. **选风格**：`pptx_styles` 看目录，按主题/受众选 `style` 并说明理由
    （科技发布→dark_tech，医疗→medical_pulse，年报→champagne_gold …）。
 5. **配图（可选）**：需要照片/插画的页先 `pptx_illustrate` 生成进工作区
    （prompt 贴合风格：写清主体、构图、配色关键词，不要要求文字入图）；
    没有图像模型时用色块/形状/infographic 装饰代替，不算失败。
-6. **展开 deck 源**：按大纲逐页展开成 deck.json（优先页级 layout 声明，
-   少手写坐标），同时应用下面的「叙事节奏」。
-7. **QA 循环**：`pptx_check` → 按 errors/warnings 逐条改源 → 重查，
-   直到 errors 为空（修复顺序见「失败模式」）。
-8. **导出**：`pptx_render` 导出（路径如 `演示文稿/主题.pptx`），并用
-   file-editor 把 deck 源存为同名 `主题.deck.json`：用户点开可直接预览；
+6. **引擎展开初稿**：`pptx_draft(outline, path: "主题.deck.json")` ——
+   布局、坐标、卡片分配、叙事节奏（密度交替/章节序号/目录自动生成）
+   全部引擎确定性完成，**不要逐字手写整份 deck**；需要手写坐标的
+   特殊页（全幅图/图表页）再用 `pptx_edit` 对单页精修。
+7. **QA 循环**：初稿自带 QA 报告；按 errors/warnings 用 `pptx_edit`
+   逐条改 → `pptx_check` 重查，直到 errors 为空（修复顺序见「失败模式」）。
+8. **导出**：`pptx_render` 导出（路径如 `演示文稿/主题.pptx`），deck 源
+   已由 draft 落盘为 `主题.deck.json`：用户点开可直接预览；
    要人工视觉复核时可传 `preview: true` 同时导出 .preview.html。
 9. **增量迭代**：后续修改一律 `pptx_edit`，不要重发完整 deck：
    `pptx_edit(source: "主题.deck.json", ops: [...], export: "主题.pptx")`。
