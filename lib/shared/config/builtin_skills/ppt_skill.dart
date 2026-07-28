@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '2.4.0',
+  version: '2.5.0',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -88,6 +88,26 @@ const Skill kPptSkill = Skill(
    remove_slide / move_slide / set_element / append_element /
    remove_element（索引从 0 起，按顺序应用）。例：只改第 3 页标题 →
    `{"op":"set_element","slide":2,"index":0,"element":{…新文本元素…}}`。
+
+## 多页并行精修（可选，需要 spawn_subagent）
+
+页数多（≥ 8 页）且逐页精修工作量大时，可用子代理并行加速：
+
+- 分片：按章节把页分成 2-4 组，同一轮发多个
+  `spawn_subagent(type: "fork", …)` 即并行；每个子代理的 prompt
+  写明：负责的页号范围、大纲与风格、待修问题（QA/视觉自检发现）。
+- **子代理只产出 ops，不写文件**：它们可用 pptx_read/pptx_check/
+  pptx_snapshot 看现状，但结论必须是一段 `pptx_edit` 的 ops JSON
+  数组（只碰自己负责的页），**禁止子代理直接 pptx_edit 写同一个
+  .deck.json**——并行读改写同一文件会互相覆盖。
+- 汇总：全部子代理返回后，主代理把各组 ops 合并成一次
+  `pptx_edit(source, ops: […按页号升序…])` 应用，再 `pptx_check` +
+  抽页 `pptx_snapshot` 复查。注意 insert_slide/remove_slide 会改变
+  后续页索引，并行分片时只允许页内 op（set_slide/set_element/
+  append_element/remove_element），增删页由主代理最后统一做。
+- 叙事节奏（密度交替/章节色/序号）是跨页约束，由 draft 引擎保证，
+  子代理只在页内改，不要改风格/布局类型。
+- 没有 spawn_subagent 工具时跳过本节，主代理逐页修即可，不算失败。
 
 ## deck.json 源格式
 
