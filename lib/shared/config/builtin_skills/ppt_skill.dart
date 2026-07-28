@@ -11,7 +11,7 @@ const Skill kPptSkill = Skill(
   emoji: '📊',
   tags: ['PPT', '幻灯片', '演示文稿', '设计'],
   source: SkillSource.builtin,
-  version: '2.5.0',
+  version: '2.5.1',
   author: 'AetherLink',
   enabled: true,
   content: '''
@@ -27,6 +27,10 @@ const Skill kPptSkill = Skill(
 
 选错路线的典型后果：拿到用户的公司模板却走 A，母版和 VI 全丢；
 只想改一个错别字却走 A，整份 PPT 被重做一遍。
+
+另外：工作区装了外部 PPT 技能包（如 .claude/skills/ 下的 pptx，
+含 scripts/references）且用户要求用它时，优先读那个项目技能按其
+指引走外部路线（需要终端）；本技能是离线/无终端场景的默认路径。
 
 十一个工具：
 
@@ -241,7 +245,7 @@ textPrimary/textSecondary/accents 必填）。不传 style 则完全手动控制
 
 - 每页可选 `"notes": "..."`（纯文本，支持 \\n 分段），导出时写入原生
   notesSlide 备注页，演示者视图可见。
-- 备注写给演讲人看：讲稿口弩、数据出处、过渡提示；**不要**把备注
+- 备注写给演讲人看：讲稿口播、数据出处、过渡提示；**不要**把备注
   内容做成页面上的文本框。
 
 ## 读取已有 PPT（pptx_read）
