@@ -5,6 +5,7 @@
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/chat_error_capture.dart';
 import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_context.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate/translate_controller.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
@@ -127,7 +128,7 @@ class TranslateSendService {
     } on Object catch (error) {
       await _persistTranslationBlock(
         translationBlockId,
-        '翻译失败：${_ctx.errorMessage(error)}',
+        '翻译失败：${ChatErrorCapture.messageOf(error)}',
         MessageBlockStatus.error,
       );
       await _ctx.reloadIntoState(messageId);

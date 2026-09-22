@@ -4,11 +4,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/chat_error.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/error_detail_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
@@ -241,12 +243,12 @@ const Map<int, String> _httpErrorMessages = {
 
 /// The user-facing message for an [ErrorBlock], mirroring
 /// `getUserFriendlyMessage` in `ErrorBlock.tsx`.
-String _friendlyError(ErrorBlock block) {
-  final code = int.tryParse(block.code ?? '');
+String _friendlyError(ChatError error) {
+  final code = error.statusCode;
   if (code != null && _httpErrorMessages.containsKey(code)) {
     return _httpErrorMessages[code]!;
   }
-  final raw = block.message ?? block.content;
+  final raw = error.message;
   if (raw.isNotEmpty) {
     for (final c in _httpErrorCodes) {
       if (raw.contains('$c')) return _httpErrorMessages[c]!;
@@ -257,8 +259,9 @@ String _friendlyError(ErrorBlock block) {
 }
 
 /// Renders an `ERROR` block, mirroring `ErrorBlock.tsx`: a clickable error
-/// alert (red tint, alert icon, friendly message + 「详情」) that opens a detail
-/// dialog with the raw error fields.
+/// alert (red tint, alert icon, friendly message + 「详情」). Tap opens the
+/// [ErrorDetailSheet] with the structured diagnostics; long-press copies the
+/// whole report directly.
 class ErrorBlockView extends StatelessWidget {
   const ErrorBlockView({required this.block, super.key});
 
@@ -268,14 +271,13 @@ class ErrorBlockView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final errorColor = theme.colorScheme.error;
+    final error = ChatError.fromBlock(block);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => showDialog<void>(
-          context: context,
-          builder: (_) => _ErrorDetailDialog(block: block),
-        ),
+        onTap: () => showErrorDetailSheet(context, error),
+        onLongPress: () => copyErrorReport(context, error),
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
@@ -293,7 +295,7 @@ class ErrorBlockView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _friendlyError(block),
+                      _friendlyError(error),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: errorColor,
                         fontSize: 12,
@@ -301,7 +303,7 @@ class ErrorBlockView extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '详情',
+                      '详情 · 长按复制',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: errorColor,
                         fontWeight: FontWeight.w600,
@@ -314,58 +316,6 @@ class ErrorBlockView extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ErrorDetailDialog extends StatelessWidget {
-  const _ErrorDetailDialog({required this.block});
-
-  final ErrorBlock block;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final rows = <(String, String?)>[
-      ('错误信息', block.message),
-      ('错误代码', block.code),
-      ('详细信息', block.details),
-      ('原始内容', block.content),
-    ].where((r) => (r.$2 ?? '').isNotEmpty).toList();
-
-    return AlertDialog(
-      title: Row(
-        children: [
-          Icon(LucideIcons.circleAlert, color: theme.colorScheme.error),
-          const SizedBox(width: 8),
-          const Text('错误详情'),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final (label, value) in rows) ...[
-              Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 2),
-              SelectableText(value!),
-              const SizedBox(height: 12),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('关闭'),
-        ),
-      ],
     );
   }
 }
