@@ -10,6 +10,8 @@ import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_context.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/chat_error_capture.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/chat_error.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
@@ -178,10 +180,19 @@ class MediaGenerationSendService {
       );
       assistantView = await _ctx.reloadView(assistantMessageId, assistantView);
       _ctx.replace(views, assistantView);
-    } catch (error) {
+    } on Object catch (error, stackTrace) {
+      final chatError = _ctx.ref
+          .read(chatErrorCaptureProvider)
+          .capture(
+            error,
+            stackTrace,
+            phase: ChatErrorPhase.media,
+            provider: current.provider,
+            model: effective,
+          );
       final messageText = error is StateError
           ? error.message
-          : _ctx.errorMessage(error);
+          : chatError.message;
       await _ctx.persistMessageBlocks(
         messageId: assistantMessageId,
         status: MessageStatus.error,
@@ -194,6 +205,7 @@ class MediaGenerationSendService {
             updatedAt: DateTime.now(),
             content: '',
             message: messageText,
+            error: chatError.toJson(),
           ),
         ],
       );

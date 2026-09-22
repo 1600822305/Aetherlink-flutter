@@ -1,4 +1,5 @@
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/chat_error.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
@@ -139,6 +140,13 @@ Future<void> settleInterruptedMessages(
               createdAt: DateTime.now(),
               content: '',
               message: '回复在应用退出时被中断',
+              error: ChatError(
+                phase: ChatErrorPhase.interrupted,
+                type: 'interrupted',
+                message: '回复在应用退出时被中断',
+                occurredAt: DateTime.now(),
+                modelId: message.modelId,
+              ).toJson(),
             ),
         ],
       );

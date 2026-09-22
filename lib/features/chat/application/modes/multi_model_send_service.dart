@@ -16,8 +16,10 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_context.dart';
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/chat_error_capture.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/llm_request_params.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/chat_error.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
@@ -238,7 +240,7 @@ class MultiModelSendService {
             kbInjection: kbInjection,
           ),
       ]);
-    } on Object catch (error) {
+    } on Object catch (error, stackTrace) {
       // Shared prep failed before any sibling streamed (记忆/知识库检索、MCP
       // setup…): mark every still-streaming sibling errored so none is left as
       // a hollow streaming bubble.
@@ -248,6 +250,7 @@ class MultiModelSendService {
           topicId: topicId,
           views: views,
           error: error,
+          stackTrace: stackTrace,
         );
       }
     } finally {
@@ -353,7 +356,7 @@ class MultiModelSendService {
         ],
         finalizeTurn: false,
       );
-    } on Object catch (error) {
+    } on Object catch (error, stackTrace) {
       // Anything that slipped past streamInto's own handling (request
       // building, gateway construction, terminal persistence): mark this
       // sibling errored so the group renders the failure and 重试失败 can
@@ -363,6 +366,7 @@ class MultiModelSendService {
         topicId: topicId,
         views: views,
         error: error,
+        stackTrace: stackTrace,
       );
     }
   }
@@ -375,8 +379,18 @@ class MultiModelSendService {
     required String topicId,
     required List<ChatMessageView> views,
     required Object error,
+    StackTrace? stackTrace,
   }) async {
-    final messageText = _ctx.errorMessage(error);
+    final chatError = _ctx.ref
+        .read(chatErrorCaptureProvider)
+        .capture(
+          error,
+          stackTrace,
+          phase: ChatErrorPhase.request,
+          provider: sibling.current.provider,
+          model: sibling.effective,
+        );
+    final messageText = chatError.message;
     try {
       await _ctx.persistMessageBlocks(
         messageId: sibling.assistantMessageId,
@@ -390,6 +404,7 @@ class MultiModelSendService {
             updatedAt: DateTime.now(),
             content: '',
             message: messageText,
+            error: chatError.toJson(),
           ),
         ],
       );

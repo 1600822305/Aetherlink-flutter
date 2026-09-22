@@ -9,7 +9,6 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
 import 'package:aetherlink_flutter/app/di/model_combo_access.dart';
 import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
-import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
@@ -176,7 +175,6 @@ class ChatController extends _$ChatController {
     reloadView: _reloadView,
     reloadIntoState: _reloadIntoState,
     replace: _replace,
-    errorMessage: _errorMessage,
     orderBlocks: _orderBlocks,
     trimViews: _trimViews,
     filterSiblingsForContext: _filterSiblingsForContext,
@@ -238,7 +236,6 @@ class ChatController extends _$ChatController {
     reloadView: _reloadView,
     persistMessageBlocks: _persistMessageBlocks,
     checkpointMessageBlocks: _checkpointMessageBlocks,
-    errorMessage: _errorMessage,
     markTruncated: (messageId) => _truncatedMessageId = messageId,
     refreshTopicPreview: (topicId) =>
         _turnFinisher.refreshTopicPreview(topicId),
@@ -1585,11 +1582,6 @@ class ChatController extends _$ChatController {
   void _replace(List<ChatMessageView> views, ChatMessageView view) {
     final index = views.indexWhere((v) => v.id == view.id);
     if (index != -1) views[index] = view;
-  }
-
-  String _errorMessage(Object error) {
-    if (error is Failure) return error.message;
-    return error.toString();
   }
 
   // --- 模式发送服务的公开入口（facade，转发到 application/modes/ 的服务） ---

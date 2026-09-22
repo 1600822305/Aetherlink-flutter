@@ -72,7 +72,6 @@ class ChatModeContext {
     required this.reloadView,
     required this.reloadIntoState,
     required this.replace,
-    required this.errorMessage,
     required this.orderBlocks,
     required this.trimViews,
     required this.filterSiblingsForContext,
@@ -180,7 +179,6 @@ class ChatModeContext {
   final Future<void> Function(String messageId) reloadIntoState;
   final void Function(List<ChatMessageView> views, ChatMessageView view)
   replace;
-  final String Function(Object error) errorMessage;
   final List<MessageBlock> Function(
     List<String> order,
     List<MessageBlock> blocks,

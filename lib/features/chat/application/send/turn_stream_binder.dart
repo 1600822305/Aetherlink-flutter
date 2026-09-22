@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:aetherlink_devtools/aetherlink_devtools.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -7,11 +8,13 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/chat_error_capture.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/llm_history_builder.dart';
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/chat_error.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
@@ -37,6 +40,8 @@ import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.da
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart'
     show terminalCommandIsHighRisk;
+
+final _log = createLogger('TurnStreamBinder');
 
 /// Raised when a provider has a multi-key pool but every key is disabled,
 /// errored or still cooling down and there is no single-key fallback — surfaced
@@ -89,7 +94,6 @@ class TurnStreamBinder {
       required List<String> blockIds,
     })
     checkpointMessageBlocks,
-    required String Function(Object error) errorMessage,
     required void Function(String messageId) markTruncated,
     required Future<void> Function(String turnTopicId) refreshTopicPreview,
     required Future<void> Function(String turnTopicId) generateTitle,
@@ -106,7 +110,6 @@ class TurnStreamBinder {
        _reloadView = reloadView,
        _persistMessageBlocks = persistMessageBlocks,
        _checkpointMessageBlocks = checkpointMessageBlocks,
-       _errorMessage = errorMessage,
        _markTruncated = markTruncated,
        _refreshTopicPreview = refreshTopicPreview,
        _generateTitle = generateTitle,
@@ -144,7 +147,6 @@ class TurnStreamBinder {
     required List<String> blockIds,
   })
   _checkpointMessageBlocks;
-  final String Function(Object error) _errorMessage;
   final void Function(String messageId) _markTruncated;
   final Future<void> Function(String turnTopicId) _refreshTopicPreview;
   final Future<void> Function(String turnTopicId) _generateTitle;
@@ -535,7 +537,16 @@ class TurnStreamBinder {
     }
 
     _registry.bindToken(turnTopicId, cancelToken);
+    // Diagnostics for the terminal error block: the last throw with its stack
+    // and where the turn was when it happened (round / tool), plus every
+    // failed-over attempt before it.
     Object? lastError;
+    StackTrace? lastStackTrace;
+    var lastAttemptCommitted = false;
+    var currentRound = 0;
+    String? activeToolName;
+    Map<String, Object?>? activeToolArgs;
+    final failedAttempts = <ChatErrorAttempt>[];
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       // Pick the key for this attempt. With a pool: strategy-select a usable
       // key; if none is usable, fall back once to the single [effective] key
@@ -602,6 +613,7 @@ class TurnStreamBinder {
         // overlapping copies.
         var continuationIndex = -1;
         for (var round = 0; ; round++) {
+          currentRound = round;
           // NB: [buffer] is NOT cleared here — an auto-continue round resumes
           // into the same buffer/block so the reply stays one seamless
           // MainText. Tool rounds clear it below after flushing prose, and
@@ -819,25 +831,36 @@ class TurnStreamBinder {
               route,
               call.name,
             );
+            // The active tool stays recorded if the route throws, so the
+            // terminal error block can name the tool and its arguments.
             Future<McpToolResult> runRoute() async {
+              activeToolName = call.name;
+              activeToolArgs = args;
+              final McpToolResult result;
               if (!isCancelableCommand) {
-                return _toolExecutor.runTool(route, call.name, args);
-              }
-              final running = _ref.read(runningCommandsProvider.notifier);
-              final liveOutput = _ref.read(commandLiveOutputProvider.notifier);
-              final cancelSignal = running.start(blockId);
-              try {
-                return await _toolExecutor.runTool(
-                  route,
-                  call.name,
-                  args,
-                  cancelSignal: cancelSignal,
-                  onOutput: (chunk) => liveOutput.append(blockId, chunk),
+                result = await _toolExecutor.runTool(route, call.name, args);
+              } else {
+                final running = _ref.read(runningCommandsProvider.notifier);
+                final liveOutput = _ref.read(
+                  commandLiveOutputProvider.notifier,
                 );
-              } finally {
-                running.finish(blockId);
-                liveOutput.clear(blockId);
+                final cancelSignal = running.start(blockId);
+                try {
+                  result = await _toolExecutor.runTool(
+                    route,
+                    call.name,
+                    args,
+                    cancelSignal: cancelSignal,
+                    onOutput: (chunk) => liveOutput.append(blockId, chunk),
+                  );
+                } finally {
+                  running.finish(blockId);
+                  liveOutput.clear(blockId);
+                }
               }
+              activeToolName = null;
+              activeToolArgs = null;
+              return result;
             }
 
             // Show a processing block immediately so the user sees the tool
@@ -992,7 +1015,7 @@ class TurnStreamBinder {
           unawaited(_maybeExtractMemory(turnTopicId));
         }
         return;
-      } on Object catch (error) {
+      } on Object catch (error, stackTrace) {
         // User pressed Stop: cancelling the token aborts the HTTP request, which
         // surfaces here as a stream error. Keep the partial output rather than
         // treating it as a failure.
@@ -1001,13 +1024,15 @@ class TurnStreamBinder {
           return;
         }
         lastError = error;
+        lastStackTrace = stackTrace;
+        lastAttemptCommitted = committed;
         if (selectedIndex != -1) {
           failedKeyIds.add(workingKeys[selectedIndex].id);
           recordKeyOutcome(
             selectedIndex,
             success: false,
             rateLimited: ApiKeyManager.isRateLimitError(error),
-            error: _errorMessage(error),
+            error: ChatErrorCapture.messageOf(error),
           );
         }
         // The single-key fallback is a one-shot last resort — once it fails
@@ -1016,6 +1041,17 @@ class TurnStreamBinder {
         // Fail over to the next key only if nothing streamed yet and another
         // attempt remains; otherwise fall through to the terminal error below.
         if (useKeyPool && !committed && attempt < maxAttempts - 1) {
+          failedAttempts.add(
+            _ref
+                .read(chatErrorCaptureProvider)
+                .attempt(
+                  attempt,
+                  error,
+                  keyId: selectedIndex == -1
+                      ? null
+                      : workingKeys[selectedIndex].id,
+                ),
+          );
           await Future<void>.delayed(_keyRetryDelay(attempt));
           continue;
         }
@@ -1029,9 +1065,30 @@ class TurnStreamBinder {
     _ref.read(runningCommandsProvider.notifier).cancelAll();
     await checkpointChain;
     await persistKeyUpdates();
-    final messageText = _errorMessage(
-      lastError ?? const NoUsableApiKeyException(),
+    final chatError = _ref
+        .read(chatErrorCaptureProvider)
+        .capture(
+          lastError ?? const NoUsableApiKeyException(),
+          lastStackTrace,
+          phase: activeToolName != null
+              ? ChatErrorPhase.tool
+              : lastAttemptCommitted
+              ? ChatErrorPhase.stream
+              : ChatErrorPhase.request,
+          provider: provider,
+          model: effective,
+          round: currentRound,
+          toolName: activeToolName,
+          toolArguments: activeToolArgs,
+          attempts: failedAttempts,
+        );
+    _log.error(
+      '回复失败 [${chatError.phase.name}] ${chatError.providerId}/${chatError.modelId}'
+      '${chatError.toolName != null ? ' tool=${chatError.toolName}' : ''}',
+      error: lastError,
+      stackTrace: lastStackTrace,
     );
+    final messageText = chatError.message;
     final partial = roundDisplay();
     await _persistMessageBlocks(
       messageId: assistantMessageId,
@@ -1065,6 +1122,7 @@ class TurnStreamBinder {
           updatedAt: DateTime.now(),
           content: partial,
           message: messageText,
+          error: chatError.toJson(),
         ),
       ],
     );
