@@ -795,6 +795,10 @@ class TurnStreamBinder {
           // Settings tools with `confirm` permission additionally pause for
           // user approval before execution.
           final results = <({LlmToolCall call, McpToolResult result})>[];
+          // generate_image 产物 URL 先暂存，统一在本轮全部工具块之后落 IMAGE
+          // 块 —— 插在工具块中间会切断 toolHistoryMessages 的相邻分组，导致
+          // 下一轮重放把一个工具回合拆成多条消息。
+          final generatedImageUrls = <String>[];
           for (final call in runnable) {
             final route = mcp.routes[call.name]!;
             final args = decodeToolArguments(call.arguments);
@@ -939,25 +943,33 @@ class TurnStreamBinder {
                 },
               ),
             );
-            // generate_image 的产物直接落 IMAGE 块展示在工具块后面（与直接
-            // 图像生成模式的块形状一致）；URL 不回填进模型上下文。
             if (route is GenerateImageToolRoute && !result.isError) {
-              for (final url in result.imageUrls ?? const <String>[]) {
-                completed.add(
-                  MessageBlock.image(
-                    id: generateId('block'),
-                    messageId: assistantMessageId,
-                    status: MessageBlockStatus.success,
-                    createdAt: assistantTime,
-                    updatedAt: DateTime.now(),
-                    url: url,
-                    mimeType: url.startsWith('data:image/jpeg')
-                        ? 'image/jpeg'
-                        : 'image/png',
-                  ),
-                );
-              }
+              generatedImageUrls.addAll(
+                result.imageUrls ?? const <String>[],
+              );
             }
+            update();
+            checkpoint(force: true);
+          }
+
+          // generate_image 的产物落 IMAGE 块，展示在本轮全部工具块之后（与
+          // 直接图像生成模式的块形状一致）；URL 不回填进模型上下文。
+          for (final url in generatedImageUrls) {
+            completed.add(
+              MessageBlock.image(
+                id: generateId('block'),
+                messageId: assistantMessageId,
+                status: MessageBlockStatus.success,
+                createdAt: assistantTime,
+                updatedAt: DateTime.now(),
+                url: url,
+                mimeType: url.startsWith('data:image/jpeg')
+                    ? 'image/jpeg'
+                    : 'image/png',
+              ),
+            );
+          }
+          if (generatedImageUrls.isNotEmpty) {
             update();
             checkpoint(force: true);
           }
