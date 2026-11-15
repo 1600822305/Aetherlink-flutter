@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/core/database/database_provider.dart';
@@ -6,9 +8,14 @@ import 'package:aetherlink_flutter/features/backup/domain/storage_repository.dar
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart'
     show chatRepositoryProvider;
 import 'package:aetherlink_flutter/features/chat/application/sidebar/topics_providers.dart';
+import 'package:aetherlink_flutter/features/notes/application/notes_controller.dart';
 
 final storageRepositoryProvider = Provider<StorageRepository>(
-  (ref) => StorageRepositoryImpl(ref.watch(appDatabaseProvider)),
+  (ref) => StorageRepositoryImpl(
+    ref.watch(appDatabaseProvider),
+    notesDirectory: () async =>
+        Directory(await ref.read(notesFileStoreProvider).rootPath()),
+  ),
 );
 
 final storageTopicDeletionProvider = Provider<Future<void> Function(String)>(

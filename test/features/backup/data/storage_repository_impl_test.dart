@@ -133,6 +133,35 @@ void main() {
     expect(report.totalFiles, 12);
   });
 
+  test('scan uses the currently configured notes directory', () async {
+    await write('notes/default.md', 100);
+    var selected = await Directory('${root.path}/custom_notes').create();
+    await File('${selected.path}/custom.md').writeAsBytes([1, 2, 3]);
+    final configured = StorageRepositoryImpl(
+      db,
+      documentsDirectory: () async => documents,
+      notesDirectory: () async => selected,
+      canCleanCache: false,
+    );
+    final usage = (await configured.scan()).categories[StorageCategory.notes]!;
+    expect(usage.bytes, 3);
+    expect(usage.fileCount, 1);
+    selected = Directory('${root.path}/missing_notes');
+    final missing = (await configured.scan()).categories[StorageCategory.notes]!;
+    expect(missing.bytes, 0);
+    expect(missing.fileCount, 0);
+  });
+
+  test('notes directory resolution errors are not hidden by defaults', () async {
+    final configured = StorageRepositoryImpl(
+      db,
+      documentsDirectory: () async => documents,
+      notesDirectory: () async => throw FileSystemException('notes unavailable'),
+      canCleanCache: false,
+    );
+    await expectLater(configured.scan(), throwsA(isA<FileSystemException>()));
+  });
+
   test('cleanup preserves imports and linked targets', () async {
     await write('fonts/imported.ttf', 6);
     await write('google_fonts_cache/download.ttf', 7);

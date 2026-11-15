@@ -14,10 +14,12 @@ class StorageRepositoryImpl implements StorageRepository {
     this._db, {
     Future<Directory> Function()? documentsDirectory,
     Future<Directory> Function()? temporaryDirectory,
+    Future<Directory> Function()? notesDirectory,
     bool? canCleanCache,
   }) : _documentsDirectory =
            documentsDirectory ?? getApplicationDocumentsDirectory,
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
+       _notesDirectory = notesDirectory,
        _canCleanCache =
            canCleanCache ??
            (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
@@ -25,6 +27,7 @@ class StorageRepositoryImpl implements StorageRepository {
   final AppDatabase _db;
   final Future<Directory> Function() _documentsDirectory;
   final Future<Directory> Function() _temporaryDirectory;
+  final Future<Directory> Function()? _notesDirectory;
   final bool _canCleanCache;
 
   static const topicUsageSql = '''
@@ -85,6 +88,10 @@ ORDER BY bytes DESC, t.id
   @override
   Future<StorageReport> scan() async {
     final documents = (await _documentsDirectory()).path;
+    final notesDirectory = _notesDirectory;
+    final notes = notesDirectory == null
+        ? p.join(documents, 'notes')
+        : (await notesDirectory()).path;
     final canCleanCache = _canCleanCache;
     final paths = <StorageCategory, List<String>>{
       StorageCategory.chat: [
@@ -105,7 +112,7 @@ ORDER BY bytes DESC, t.id
         p.join(documents, 'fonts'),
         p.join(documents, 'google_fonts_cache'),
       ],
-      StorageCategory.notes: [p.join(documents, 'notes')],
+      StorageCategory.notes: [notes],
       StorageCategory.cache: [
         if (canCleanCache) (await _temporaryDirectory()).path,
       ],
