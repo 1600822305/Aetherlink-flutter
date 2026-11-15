@@ -55,6 +55,24 @@ final RegExp _rerankingRegex = RegExp(
   caseSensitive: false,
 );
 
+// ASR / speech-to-text models (whisper family, SenseVoice, Paraformer, …).
+// Mirrors upstream's AUDIO_TRANSCRIPT capability; mapped onto
+// [ModelCapabilities.transcription]. `voxtral` is deliberately absent: the
+// Voxtral family is a conversational audio-input chat model, not ASR.
+final RegExp _speechToTextRegex = RegExp(
+  r'(?:whisper|sensevoice|paraformer|funasr|\basr\b|\bstt\b|transcribe)',
+  caseSensitive: false,
+);
+
+// TTS / audio-generation models (OpenAI tts-*, CosyVoice, Bark, MeloTTS, …).
+// Mirrors upstream's AUDIO_GENERATION capability. ModelCapabilities has no
+// dedicated flag for it yet, so it is checked via id inference at the call
+// site (see `isTextToSpeechModel` in model_checks.dart).
+final RegExp _textToSpeechRegex = RegExp(
+  r'(?:\btts\b|cosyvoice|\bbark\b|\bvits\b|melotts|edge-tts|\bsonic\b|\bspeech-[\w-]+)',
+  caseSensitive: false,
+);
+
 const List<String> _dedicatedImageModels = [
   r'dall-e(?:-[\w-]+)?',
   r'gpt-image(?:-[\w-]+)?',
@@ -390,6 +408,12 @@ bool inferEmbeddingFromModelId(String rawModelId) {
 bool inferRerankFromModelId(String rawModelId) =>
     _rerankingRegex.hasMatch(lowerBaseModelName(rawModelId));
 
+bool inferSpeechToTextFromModelId(String rawModelId) =>
+    _speechToTextRegex.hasMatch(lowerBaseModelName(rawModelId));
+
+bool inferTextToSpeechFromModelId(String rawModelId) =>
+    _textToSpeechRegex.hasMatch(lowerBaseModelName(rawModelId));
+
 bool inferImageGenerationFromModelId(String rawModelId) {
   final id = lowerBaseModelName(rawModelId);
   return _dedicatedImageRegex.hasMatch(id) ||
@@ -434,6 +458,7 @@ ModelCapabilities? inferCapabilitiesFromModelId(String rawModelId) {
   final rerank = inferRerankFromModelId(rawModelId);
   final webSearch = inferWebSearchFromModelId(rawModelId);
   final functionCalling = inferFunctionCallingFromModelId(rawModelId);
+  final transcription = inferSpeechToTextFromModelId(rawModelId);
 
   if (!reasoning &&
       !vision &&
@@ -441,7 +466,8 @@ ModelCapabilities? inferCapabilitiesFromModelId(String rawModelId) {
       !embedding &&
       !rerank &&
       !webSearch &&
-      !functionCalling) {
+      !functionCalling &&
+      !transcription) {
     return null;
   }
 
@@ -455,5 +481,6 @@ ModelCapabilities? inferCapabilitiesFromModelId(String rawModelId) {
     webSearch: webSearch ? true : null,
     functionCalling: functionCalling ? true : null,
     toolUse: functionCalling ? true : null,
+    transcription: transcription ? true : null,
   );
 }

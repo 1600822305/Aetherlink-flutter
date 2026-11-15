@@ -24,9 +24,11 @@ const String _assetPath = 'assets/model_registry/models.json';
 ModelCapabilities? mapRegistryEntryToCapabilities({
   required List<String> capabilities,
   required List<String> inputModalities,
+  List<String> outputModalities = const [],
 }) {
   final caps = capabilities.toSet();
   final inputs = inputModalities.toSet();
+  final outputs = outputModalities.toSet();
 
   final vision = caps.contains('image-recognition') || inputs.contains('image');
   final multimodal = vision ||
@@ -41,7 +43,15 @@ ModelCapabilities? mapRegistryEntryToCapabilities({
   final embedding = caps.contains('embedding');
   final rerank = caps.contains('rerank');
   final webSearch = caps.contains('web-search');
-  final transcription = caps.contains('audio-transcript');
+  // Dedicated ASR: explicit audio-transcript cap, or — mirroring upstream
+  // isSpeechToTextModel — audio recognition + audio input with NO text
+  // input and text output. The no-text-input guard keeps multimodal chat
+  // LLMs (Gemini, GPT-4o, Voxtral) out.
+  final transcription = caps.contains('audio-transcript') ||
+      (caps.contains('audio-recognition') &&
+          inputs.contains('audio') &&
+          !inputs.contains('text') &&
+          outputs.contains('text'));
 
   if (!vision &&
       !multimodal &&
@@ -123,7 +133,12 @@ class ModelRegistry {
       if (id == null || id.isEmpty) continue;
       final caps = _stringList(entry['c'] ?? entry['capabilities']);
       final inputs = _stringList(entry['in'] ?? entry['inputModalities']);
-      final mapped = mapRegistryEntryToCapabilities(capabilities: caps, inputModalities: inputs);
+      final outputs = _stringList(entry['out'] ?? entry['outputModalities']);
+      final mapped = mapRegistryEntryToCapabilities(
+        capabilities: caps,
+        inputModalities: inputs,
+        outputModalities: outputs,
+      );
       if (mapped == null) continue;
       _byId[id] = mapped;
       _byId[id.toLowerCase()] ??= mapped;
