@@ -280,22 +280,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           style: settings.modelSelectorDisplayStyle,
           current: current,
           comboName: comboName,
-          onPressed: () {
-            if (!hasModels) {
-              return context.push(AppRouter.defaultModelPath);
-            }
-            final selected = chatSelectorSelection(ref);
-            return showModelSelectorDialog(
-              context,
-              // 聊天模型 + 生图/生视频模型一起列出；选中媒体模型时
-              // 不占用聊天槽位，而是写媒体槽位并进直达模式。
-              filter: chatSelectorModelFilter,
-              selectedProviderId: selected.providerId,
-              selectedModelId: selected.modelId,
-              onSelect: (provider, model) =>
-                  selectChatSelectorModel(context, ref, provider, model),
-            );
-          },
+          onPressed: () => openChatModelSelector(context, ref),
         );
       case TopToolbarComponent.settingsButton:
         return ToolbarIconButton(

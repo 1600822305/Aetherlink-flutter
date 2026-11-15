@@ -20,6 +20,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/bra
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/mini_map_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
@@ -97,24 +98,33 @@ bool chatSelectorModelFilter(Model model) =>
     isGenerateImageModel(model) ||
     isGenerateVideoModel(model);
 
-/// 选择器打开时应高亮/定位的模型：媒体直达模式 armed 时是媒体槽位的模型，
-/// 否则是当前聊天模型（顶部栏与 DIY 工具栏入口共用）。
-({String? providerId, String? modelId}) chatSelectorSelection(WidgetRef ref) {
-  final mode = ref.read(inputModeControllerProvider);
-  if (mode == InputMode.image || mode == InputMode.video) {
-    final slot = ref
-        .read(
-          mode == InputMode.image
-              ? appMediaImageModelProvider
-              : appMediaVideoModelProvider,
-        )
-        .value;
-    return (providerId: slot?.provider.id, modelId: slot?.model.id);
+/// 聊天模型选择器的统一打开入口（顶部栏与 DIY 工具栏共用）：列出聊天 +
+/// 生图/生视频模型，高亮定位按当前状态取——媒体直达模式 armed 时高亮
+/// 媒体槽位的模型，否则高亮当前聊天模型。无可用模型时跳默认模型设置页。
+void openChatModelSelector(BuildContext context, WidgetRef ref) {
+  final providers = ref.read(appModelProvidersProvider).value ?? const [];
+  if (!providers.any((p) => p.models.isNotEmpty)) {
+    context.push(AppRouter.defaultModelPath);
+    return;
   }
-  final current = ref.read(appCurrentModelProvider).value;
-  return (
-    providerId: current?.provider.id,
-    modelId: current?.model.id,
+  final mode = ref.read(inputModeControllerProvider);
+  final CurrentModel? selected =
+      mode == InputMode.image || mode == InputMode.video
+      ? ref
+          .read(
+            mode == InputMode.image
+                ? appMediaImageModelProvider
+                : appMediaVideoModelProvider,
+          )
+          .value
+      : ref.read(appCurrentModelProvider).value;
+  showModelSelectorDialog(
+    context,
+    filter: chatSelectorModelFilter,
+    selectedProviderId: selected?.provider.id,
+    selectedModelId: selected?.model.id,
+    onSelect: (provider, model) =>
+        selectChatSelectorModel(context, ref, provider, model),
   );
 }
 
@@ -154,20 +164,7 @@ VoidCallback? componentAction(
     case TopToolbarComponent.searchButton:
       return () => showChatSearchDialog(context);
     case TopToolbarComponent.modelSelector:
-      final providers = ref.read(appModelProvidersProvider).value ?? const [];
-      final hasModels = providers.any((p) => p.models.isNotEmpty);
-      if (!hasModels) return () => context.push(AppRouter.defaultModelPath);
-      return () {
-        final selected = chatSelectorSelection(ref);
-        return showModelSelectorDialog(
-          context,
-          filter: chatSelectorModelFilter,
-          selectedProviderId: selected.providerId,
-          selectedModelId: selected.modelId,
-          onSelect: (provider, model) =>
-              selectChatSelectorModel(context, ref, provider, model),
-        );
-      };
+      return () => openChatModelSelector(context, ref);
     case TopToolbarComponent.settingsButton:
       return () => context.push(AppRouter.settingsPath);
     case TopToolbarComponent.condenseButton:
