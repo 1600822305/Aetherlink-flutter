@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -50,25 +51,82 @@ class ImagePreviewPage extends StatefulWidget {
   State<ImagePreviewPage> createState() => _ImagePreviewPageState();
 }
 
-class _ImagePreviewPageState extends State<ImagePreviewPage> {
+class _ImagePreviewPageState extends State<ImagePreviewPage>
+    with SingleTickerProviderStateMixin {
   static const _dismissDistance = 120.0;
   static const _zoomedScale = 2.5;
 
   final _viewerController = TransformationController();
   var _dragOffset = 0.0;
   var _busy = false;
+  Size? _imageSize;
+
+  /// 松手回弹动画（微信同款：拖不到位时弹性滑回原位，而不是瞬间跳回）。
+  late final AnimationController _springBack = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
+  late final Animation<double> _springAnim =
+      CurvedAnimation(parent: _springBack, curve: Curves.easeOutCubic);
+  var _springFrom = 0.0;
+
+  /// 跟手缩放：拖到阈值处约缩到 0.85，超出继续缓慢缩小（微信的手感）。
+  double _dragScaleFor(double offset) =>
+      (1.0 - offset.abs() / (_dismissDistance * 5)).clamp(0.8, 1.0);
+
+  /// True when a gesture began on the image itself (vs. the black margin).
+  /// 微信同款语义：拖拽关闭/双击缩放只在图片上生效，黑色区域只响应点按关闭。
+  var _gestureOnImage = false;
 
   bool get _zoomed => _viewerController.value.getMaxScaleOnAxis() > 1.01;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadImageSize();
+  }
+
+  /// The viewer child is sized exactly to the fitted image rect (no letterbox
+  /// inside the child), so `toScene` bounds checks can tell image from margin.
+  void _loadImageSize() {
+    final stream = widget.provider.resolve(const ImageConfiguration());
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        stream.removeListener(listener);
+        if (mounted) {
+          setState(() {
+            _imageSize = Size(
+              info.image.width.toDouble(),
+              info.image.height.toDouble(),
+            );
+          });
+        }
+      },
+      onError: (_, _) => stream.removeListener(listener),
+    );
+    stream.addListener(listener);
+  }
+
+  /// Maps a viewport position into child coords and checks the image bounds.
+  bool _insideImage(Offset viewportPosition) {
+    final size = _imageSize;
+    if (size == null) return true;
+    final scene = _viewerController.toScene(viewportPosition);
+    return scene.dx >= 0 &&
+        scene.dy >= 0 &&
+        scene.dx <= size.width &&
+        scene.dy <= size.height;
+  }
 
   void _toggleZoom(TapDownDetails details) {
     if (_zoomed) {
       _viewerController.value = Matrix4.identity();
       return;
     }
+    if (!_insideImage(details.localPosition)) return;
     // Anchor the zoom at the tapped point: map the viewport position into the
-    // child's (image) coordinate space via toScene — a letterboxed image is
-    // centered and smaller than the screen, so screen coords would anchor
-    // against the wrong origin and can push the image off-screen.
+    // child's (image) coordinate space via toScene.
     const s = _zoomedScale;
     final focal = details.localPosition;
     final scene = _viewerController.toScene(focal);
@@ -77,7 +135,13 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
       ..scale(s);
   }
 
+  void _onVerticalDragStart(DragStartDetails details) {
+    _gestureOnImage = _insideImage(details.localPosition);
+    _dragOffset = 0.0;
+  }
+
   void _onVerticalDrag(DragUpdateDetails details) {
+    if (!_gestureOnImage) return;
     if (_zoomed) {
       // The outer detector already claimed this drag; InteractiveViewer can't
       // take it back, so pan the zoomed image by translating its matrix.
@@ -89,11 +153,13 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
   }
 
   void _onVerticalDragEnd(DragEndDetails _) {
-    if (_dragOffset.abs() > _dismissDistance) {
+    if (_gestureOnImage && _dragOffset.abs() > _dismissDistance) {
       Navigator.of(context).pop();
       return;
     }
-    setState(() => _dragOffset = 0.0);
+    // 弹性回弹而不是瞬间归零。
+    _springFrom = _dragOffset;
+    _springBack.forward(from: 0);
   }
 
   Future<Uint8List> _imageBytes() async {
@@ -153,13 +219,17 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
 
   @override
   void dispose() {
+    _springBack.dispose();
     _viewerController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final opacity = (1 - _dragOffset.abs() / (_dismissDistance * 2))
+    final effectiveOffset = _springBack.isAnimating
+        ? _springFrom * (1 - _springAnim.value)
+        : _dragOffset;
+    final opacity = (1 - effectiveOffset.abs() / (_dismissDistance * 2))
         .clamp(0.0, 1.0);
     return Scaffold(
       backgroundColor: Colors.black.withValues(alpha: opacity),
@@ -170,20 +240,55 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
             onTap: () => Navigator.of(context).pop(),
             onDoubleTapDown: _toggleZoom,
             onDoubleTap: () {},
+            onVerticalDragStart: _onVerticalDragStart,
             onVerticalDragUpdate: _onVerticalDrag,
             onVerticalDragEnd: _onVerticalDragEnd,
-            child: Transform.translate(
-              offset: Offset(0, _dragOffset),
+            child: AnimatedBuilder(
+              animation: _springBack,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(0, effectiveOffset),
+                child: Transform.scale(
+                  scale: _dragScaleFor(effectiveOffset),
+                  child: child,
+                ),
+              ),
               child: Center(
                 child: Hero(
                   tag: widget.heroTag,
-                  child: InteractiveViewer(
-                    transformationController: _viewerController,
-                    maxScale: 8,
-                    child: Image(
-                      image: widget.provider,
-                      fit: BoxFit.contain,
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = _imageSize;
+                      if (size == null ||
+                          size.width <= 0 ||
+                          size.height <= 0) {
+                        return const SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white70,
+                          ),
+                        );
+                      }
+                      // BoxFit.contain math: the child IS the image, so the
+                      // black margin is outside the InteractiveViewer child.
+                      final scale = math.min(
+                        constraints.maxWidth / size.width,
+                        constraints.maxHeight / size.height,
+                      );
+                      return InteractiveViewer(
+                        transformationController: _viewerController,
+                        maxScale: 8,
+                        child: SizedBox(
+                          width: size.width * scale,
+                          height: size.height * scale,
+                          child: Image(
+                            image: widget.provider,
+                            fit: BoxFit.fill,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
