@@ -54,7 +54,8 @@ class MediaGenerationSendService {
     // Media models live in their own slots (设置 → 辅助模型 → 媒体), never
     // the app-level chat model — Cherry Studio does the same (painting model
     // in ModelSettings, separate from the default chat model).
-    final current = await _ctx.ref.read(_mediaSlotProvider(mode));
+    final current =
+        await _ctx.ref.read(_mediaSlotProvider(mode).future);
     final effective = current == null ? null : effectiveModelFor(current);
 
     final topicId = await _ctx.ensureTopic();
@@ -169,7 +170,8 @@ class MediaGenerationSendService {
     required int index,
     required List<ChatMessageView> views,
   }) async {
-    final current = await _ctx.ref.read(_mediaSlotProvider(mode));
+    final current =
+        await _ctx.ref.read(_mediaSlotProvider(mode).future);
     final effective = current == null ? null : effectiveModelFor(current);
     final now = DateTime.now();
 

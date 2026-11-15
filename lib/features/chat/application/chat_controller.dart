@@ -723,7 +723,7 @@ class ChatController extends _$ChatController {
     final useMedia =
         mediaMode != null && (withModel == null || withModelIsMedia);
     if (useMedia || withModelIsMedia) {
-      InputMode? modeFor(Model model) => isGenerateImageModel(model)
+      InputMode modeFor(Model model) => isGenerateImageModel(model)
           ? InputMode.image
           : isGenerateVideoModel(model)
           ? InputMode.video
@@ -733,7 +733,7 @@ class ChatController extends _$ChatController {
       // （比如给图片回复选了视频模型）忽略该 override —— 消息内容种类
       // 不变，写错槽位会让槽位解析直接失败。
       final withModelKind =
-          withModelIsMedia ? modeFor(withModel!.model) : null;
+          withModelIsMedia ? modeFor(withModel.model) : null;
       if (withModelIsMedia && withModelKind == mode) {
         final ctrl = ref.read(mediaModelControllerProvider.notifier);
         switch (mode) {

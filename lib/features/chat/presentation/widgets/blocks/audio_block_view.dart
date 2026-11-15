@@ -145,7 +145,7 @@ class _AudioBlockViewState extends State<AudioBlockView> {
           ),
           const SizedBox(width: 8),
           Flexible(
-            child: StreamBuilder<Duration>(
+            child: StreamBuilder<Duration?>(
               stream: _player.durationStream,
               builder: (context, durationSnap) {
                 final total = durationSnap.data ?? Duration.zero;
