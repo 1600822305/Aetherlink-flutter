@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/app/di/notes_attachment_access.dart';
 import 'package:aetherlink_flutter/app/di/quick_phrases_access.dart';
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
@@ -57,7 +58,10 @@ class ChatInputActions implements InputBoxActions {
   @override
   bool isActive(InputBoxAction action) => switch (action) {
     InputBoxAction.webSearch => _mode == InputMode.webSearch,
-    InputBoxAction.generateImage => _mode == InputMode.image,
+    // 点亮条件：直达模式（选了生图模型）或助手开了「图片生成工具」。
+    InputBoxAction.generateImage =>
+      _mode == InputMode.image ||
+          (_ref.read(currentAssistantProvider)?.enableGenerateImage ?? false),
     InputBoxAction.generateVideo => _mode == InputMode.video,
     InputBoxAction.clearTopic => _ref.read(inputClearConfirmProvider),
     InputBoxAction.mcpTools => _ref.read(mcpToolsControllerProvider).enabled,
@@ -103,7 +107,7 @@ class ChatInputActions implements InputBoxActions {
       case InputBoxAction.webSearch:
         _openSearchSettings(context);
       case InputBoxAction.generateImage:
-        _toggle(InputMode.image);
+        _toggleGenerateImage(context);
       case InputBoxAction.generateVideo:
         _toggle(InputMode.video);
       case InputBoxAction.newTopic:
@@ -167,6 +171,34 @@ class ChatInputActions implements InputBoxActions {
 
   void _toggle(InputMode mode) =>
       _ref.read(inputModeControllerProvider.notifier).toggle(mode);
+
+  /// 生成图片按钮是聊天模型的「图片生成工具」开关（CS `enableGenerateImage`
+  /// 输入框开关）：点亮后本轮对话把 `generate_image` 注入工具列表，由模型
+  /// 自行判断何时调用，执行后端是 设置→辅助模型→媒体 里的绘画模型。
+  /// 若正处于图像生成直达模式（选择器里选了生图模型），点按先退出直达模式。
+  Future<void> _toggleGenerateImage(BuildContext context) async {
+    if (_mode == InputMode.image) {
+      _toggle(InputMode.image);
+      return;
+    }
+    final assistant = _ref.read(currentAssistantProvider);
+    if (assistant == null) return;
+    if (assistant.enableGenerateImage == true) {
+      await _ref
+          .read(assistantsProvider.notifier)
+          .updateGenerateImageEnabled(assistant.id, false);
+      return;
+    }
+    if (_ref.read(appMediaImageModelProvider).value == null) {
+      if (context.mounted) {
+        _snack(context, '请先在 设置 → 辅助模型 → 媒体 配置绘画模型');
+      }
+      return;
+    }
+    await _ref
+        .read(assistantsProvider.notifier)
+        .updateGenerateImageEnabled(assistant.id, true);
+  }
 
   void _openSearchSettings(BuildContext context) =>
       showSearchSettingsSheet(context);

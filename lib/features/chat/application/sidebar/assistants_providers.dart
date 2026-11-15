@@ -211,6 +211,26 @@ class Assistants extends _$Assistants {
     await _reload();
   }
 
+  /// Persists [assistantId]'s 「图片生成工具」开关 (`enableGenerateImage`) —
+  /// same save+reload contract as [updateSystemPrompt]; the input-bar 生成图片
+  /// button is a shortcut for the assistant editor's switch.
+  Future<void> updateGenerateImageEnabled(
+    String assistantId,
+    bool enabled,
+  ) async {
+    final assistant = await _repo.getAssistant(assistantId);
+    if (assistant == null) {
+      throw StateError('没有找到助手信息');
+    }
+    await _repo.saveAssistant(
+      assistant.copyWith(
+        enableGenerateImage: enabled,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await _reload();
+  }
+
   /// Persists the fields edited in 编辑助手 (`EditAssistantDialog`):
   /// 名称 / 系统提示词 / 记忆开关 / 技能绑定 / 头像 / 模型参数 — the port of the
   /// web `handleSave` (`dexieStorage.saveAssistant` + the `assistantUpdated`

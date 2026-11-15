@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/model_combo_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_nav_providers.dart';
@@ -17,7 +20,9 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/bra
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/mini_map_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/top_toolbar_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -42,6 +47,51 @@ Future<void> openMiniMap(BuildContext context, WidgetRef ref) async {
     scrollNotifier.scrollTo(messageId);
   }
 }
+
+/// 聊天模型选择器的统一入口（顶部栏与 DIY 工具栏共用）：生图/生视频模型
+/// 不写 `isDefault`，而是写入对应媒体槽位并进入直达模式；选中聊天模型
+/// （含 combo）恢复默认语义，并顺带退出媒体直达模式。
+void selectChatSelectorModel(
+  BuildContext context,
+  WidgetRef ref,
+  ModelProvider provider,
+  Model model,
+) {
+  final inputMode = ref.read(inputModeControllerProvider.notifier);
+  if (isGenerateImageModel(model)) {
+    ref
+        .read(mediaModelControllerProvider.notifier)
+        .setImageModel(provider.id, model.id);
+    inputMode.set(InputMode.image);
+    AppToast.info(context, '已进入图像生成模式 · ${model.name}');
+    return;
+  }
+  if (isGenerateVideoModel(model)) {
+    ref
+        .read(mediaModelControllerProvider.notifier)
+        .setVideoModel(provider.id, model.id);
+    inputMode.set(InputMode.video);
+    AppToast.info(context, '已进入视频生成模式 · ${model.name}');
+    return;
+  }
+  inputMode.clear();
+  if (provider.id == kModelComboProviderId) {
+    ref.read(modelComboControllerProvider.notifier).selectCombo(model.id);
+    return;
+  }
+  ref.read(modelComboControllerProvider.notifier).clearComboSelection();
+  ref
+      .read(modelStoreProvider.notifier)
+      .selectCurrentModel(providerId: provider.id, modelId: model.id);
+}
+
+/// 聊天模型选择器的过滤：聊天模型 + 生图/生视频模型（媒体模型选中后走
+/// [selectChatSelectorModel] 的槽位分支）。其余上下文（翻译、重试、
+/// 多模型发送）仍用 `!isNonChatModel`。
+bool chatSelectorModelFilter(Model model) =>
+    !isNonChatModel(model) ||
+    isGenerateImageModel(model) ||
+    isGenerateVideoModel(model);
 
 Future<void> openCondenseDialog(BuildContext context) async {
   final result = await showContextCondenseDialog(context);
@@ -82,7 +132,12 @@ VoidCallback? componentAction(
       final providers = ref.read(appModelProvidersProvider).value ?? const [];
       final hasModels = providers.any((p) => p.models.isNotEmpty);
       return () => hasModels
-          ? showModelSelectorDialog(context, filter: (m) => !isNonChatModel(m))
+          ? showModelSelectorDialog(
+              context,
+              filter: chatSelectorModelFilter,
+              onSelect: (provider, model) =>
+                  selectChatSelectorModel(context, ref, provider, model),
+            )
           : context.push(AppRouter.defaultModelPath);
     case TopToolbarComponent.settingsButton:
       return () => context.push(AppRouter.settingsPath);
