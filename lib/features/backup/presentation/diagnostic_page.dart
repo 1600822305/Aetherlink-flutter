@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
-import 'package:aetherlink_flutter/features/backup/data/database_diagnostic_service.dart';
+import 'package:aetherlink_flutter/features/backup/application/storage_controller.dart';
+import 'package:aetherlink_flutter/features/backup/domain/database_diagnostic_result.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -72,9 +73,22 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
   }
 
   Future<void> _runDiagnostic(BackupController controller) async {
+    if (!await _confirm(
+      '运行健康检查',
+      '将读取数据库并检查话题、消息和消息块的关联，不会修改内容。',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    await _loadDiagnostic(controller);
+  }
+
+  Future<void> _loadDiagnostic(BackupController controller) async {
+    final storage = ref.read(storageControllerProvider.notifier);
     setState(() => _isRunning = true);
     try {
       final result = await controller.runDiagnostic();
+      await storage.refresh();
       if (mounted) {
         setState(() {
           _result = result;
@@ -90,17 +104,28 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
   }
 
   Future<void> _performRepair(BackupController controller) async {
+    if (!await _confirm(
+      '修复孤儿数据',
+      '将先自动备份，再移除失去所属话题的消息和失去所属消息的块。确定修复吗？',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    final storage = ref.read(storageControllerProvider.notifier);
     setState(() => _isRunning = true);
     try {
       final result = await controller.repairDatabase();
-      if (!mounted) return;
+      if (!mounted) {
+        await storage.refresh();
+        return;
+      }
       setState(() => _isRunning = false);
       AppToast.success(
         context,
         '修复完成: 清理了 ${result.orphanedMessagesRemoved} 条孤立消息, '
         '${result.orphanedBlocksRemoved} 个孤立消息块',
       );
-      _runDiagnostic(controller);
+      await _loadDiagnostic(controller);
     } catch (e) {
       if (mounted) {
         setState(() => _isRunning = false);
@@ -108,6 +133,26 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
       }
     }
   }
+
+  Future<bool> _confirm(String title, String message) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('继续'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
 
   Widget _buildResultCard(ThemeData theme) {
     final result = _result!;

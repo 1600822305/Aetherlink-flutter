@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/backup/data/webdav_client.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
+import 'package:aetherlink_flutter/features/backup/domain/database_diagnostic_result.dart';
 import 'package:aetherlink_flutter/features/backup/domain/restore_plan.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 

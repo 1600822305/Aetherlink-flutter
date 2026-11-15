@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
+import 'package:aetherlink_flutter/features/backup/application/storage_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/backup_preview_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/restore_selection_sheet.dart';
@@ -12,7 +13,9 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Detail page for local backup & restore operations.
 class LocalBackupPage extends ConsumerStatefulWidget {
-  const LocalBackupPage({super.key});
+  const LocalBackupPage({this.filesOnly = false, super.key});
+
+  final bool filesOnly;
 
   @override
   ConsumerState<LocalBackupPage> createState() => _LocalBackupPageState();
@@ -40,7 +43,7 @@ class _LocalBackupPageState extends ConsumerState<LocalBackupPage> {
     final isWorking = state.status == BackupStatus.working;
 
     return Scaffold(
-      appBar: const ModelSettingsAppBar(title: '本地备份'),
+      appBar: ModelSettingsAppBar(title: widget.filesOnly ? '备份文件' : '本地备份'),
       body: Stack(
         children: [
           ListView(
@@ -51,7 +54,13 @@ class _LocalBackupPageState extends ConsumerState<LocalBackupPage> {
               16 + MediaQuery.paddingOf(context).bottom,
             ),
             children: [
-              _buildActionsCard(theme, controller, isWorking),
+              if (!widget.filesOnly)
+                _buildActionsCard(theme, controller, isWorking),
+              if (widget.filesOnly && state.localBackups.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: Text('尚未保存本地备份文件')),
+                ),
               if (state.localBackups.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 _buildHistoryCard(theme, state, controller),
@@ -145,7 +154,33 @@ class _LocalBackupPageState extends ConsumerState<LocalBackupPage> {
             (item) => _BackupFileRow(
               item: item,
               theme: theme,
-              onDelete: () => controller.deleteLocalBackup(item.displayName),
+              onDelete: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('删除备份文件'),
+                    content: Text('将永久删除 ${item.displayName}，请先确认不再需要这份备份。'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('取消'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('删除'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true || !mounted) return;
+                final storage = ref.read(storageControllerProvider.notifier);
+                try {
+                  await controller.deleteLocalBackup(item.displayName);
+                  await storage.refresh();
+                } catch (error) {
+                  if (mounted) AppToast.error(context, '删除备份失败：$error');
+                }
+              },
             ),
           ),
         ],
@@ -533,34 +568,21 @@ class _RecommendedChip extends StatelessWidget {
   }
 }
 
-class _BackupFileRow extends StatefulWidget {
-  final BackupFileItem item;
-  final ThemeData theme;
-  final VoidCallback onDelete;
-
+class _BackupFileRow extends StatelessWidget {
   const _BackupFileRow({
     required this.item,
     required this.theme,
     required this.onDelete,
   });
 
-  @override
-  State<_BackupFileRow> createState() => _BackupFileRowState();
-}
-
-class _BackupFileRowState extends State<_BackupFileRow> {
-  bool _armed = false;
+  final BackupFileItem item;
+  final ThemeData theme;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final item = widget.item;
     return InkWell(
       onTap: () {
-        if (_armed) {
-          setState(() => _armed = false);
-          return;
-        }
         Navigator.of(context).push(
           PageRouteBuilder<void>(
             transitionDuration: Duration.zero,
@@ -610,15 +632,9 @@ class _BackupFileRowState extends State<_BackupFileRow> {
             ),
             const SizedBox(width: 4),
             IconButton(
-              icon: Icon(LucideIcons.trash2, size: 16),
-              color: _armed ? theme.colorScheme.error : null,
-              onPressed: () {
-                if (_armed) {
-                  widget.onDelete();
-                } else {
-                  setState(() => _armed = true);
-                }
-              },
+              icon: const Icon(LucideIcons.trash2, size: 16),
+              color: theme.colorScheme.error,
+              onPressed: onDelete,
               visualDensity: VisualDensity.compact,
             ),
           ],
