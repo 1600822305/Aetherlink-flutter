@@ -130,7 +130,8 @@ Future<void> settleInterruptedMessages(
         (b) =>
             (b is MainTextBlock && b.content.trim().isNotEmpty) ||
             (b is ThinkingBlock && b.content.trim().isNotEmpty) ||
-            b is ToolBlock,
+            b is ToolBlock ||
+            b is ErrorBlock,
       );
       await persistMessageBlocks(
         repo,
