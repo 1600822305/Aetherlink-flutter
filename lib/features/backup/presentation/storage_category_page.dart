@@ -18,6 +18,9 @@ class StorageCategoryPage extends ConsumerWidget {
     final state = ref.watch(storageControllerProvider);
     final controller = ref.read(storageControllerProvider.notifier);
     final usage = state.report?.categories[category] ?? const StorageUsage();
+    final isCacheUnavailable =
+        category == StorageCategory.cache &&
+        state.report?.canCleanCache != true;
     final target = switch (category) {
       StorageCategory.cache => StorageCleanup.cache,
       StorageCategory.tools => StorageCleanup.tools,
@@ -47,7 +50,12 @@ class StorageCategoryPage extends ConsumerWidget {
                     ),
                     Text('${usage.fileCount} 个文件'),
                     StorageNotice(category.description),
-                    if (target != null)
+                    if (isCacheUnavailable && state.report != null)
+                      const StorageNotice(
+                        '此平台的临时目录可能由多个应用共享，为避免影响其他程序，'
+                        '不统计或清理其中的缓存。',
+                      ),
+                    if (target != null && !isCacheUnavailable)
                       FilledButton.icon(
                         icon: const Icon(LucideIcons.trash2, size: 18),
                         label: Text(actionLabel),

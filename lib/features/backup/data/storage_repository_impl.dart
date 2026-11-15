@@ -14,13 +14,18 @@ class StorageRepositoryImpl implements StorageRepository {
     this._db, {
     Future<Directory> Function()? documentsDirectory,
     Future<Directory> Function()? temporaryDirectory,
+    bool? canCleanCache,
   }) : _documentsDirectory =
            documentsDirectory ?? getApplicationDocumentsDirectory,
-       _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory;
+       _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
+       _canCleanCache =
+           canCleanCache ??
+           (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
 
   final AppDatabase _db;
   final Future<Directory> Function() _documentsDirectory;
   final Future<Directory> Function() _temporaryDirectory;
+  final bool _canCleanCache;
 
   static const topicUsageSql = '''
 WITH block_usage AS (
@@ -80,7 +85,7 @@ ORDER BY bytes DESC, t.id
   @override
   Future<StorageReport> scan() async {
     final documents = (await _documentsDirectory()).path;
-    final temporary = (await _temporaryDirectory()).path;
+    final canCleanCache = _canCleanCache;
     final paths = <StorageCategory, List<String>>{
       StorageCategory.chat: [
         for (final suffix in ['', '-wal', '-shm'])
@@ -101,13 +106,16 @@ ORDER BY bytes DESC, t.id
         p.join(documents, 'google_fonts_cache'),
       ],
       StorageCategory.notes: [p.join(documents, 'notes')],
-      StorageCategory.cache: [temporary],
+      StorageCategory.cache: [
+        if (canCleanCache) (await _temporaryDirectory()).path,
+      ],
     };
-    return Isolate.run(() => _scan(paths));
+    return Isolate.run(() => _scan(paths, canCleanCache: canCleanCache));
   }
 
   @override
   Future<void> clean(StorageCleanup target) async {
+    if (target == StorageCleanup.cache && !_canCleanCache) return;
     final documents = (await _documentsDirectory()).path;
     final paths = switch (target) {
       StorageCleanup.cache => [(await _temporaryDirectory()).path],
@@ -135,7 +143,10 @@ ORDER BY bytes DESC, t.id
   }
 }
 
-StorageReport _scan(Map<StorageCategory, List<String>> paths) {
+StorageReport _scan(
+  Map<StorageCategory, List<String>> paths, {
+  required bool canCleanCache,
+}) {
   StorageUsage measure(String path) {
     try {
       switch (FileSystemEntity.typeSync(path, followLinks: false)) {
@@ -155,13 +166,16 @@ StorageReport _scan(Map<StorageCategory, List<String>> paths) {
     }
   }
 
-  return StorageReport({
-    for (final entry in paths.entries)
-      entry.key: entry.value.fold(
-        const StorageUsage(),
-        (total, path) => total + measure(path),
-      ),
-  });
+  return StorageReport(
+    {
+      for (final entry in paths.entries)
+        entry.key: entry.value.fold(
+          const StorageUsage(),
+          (total, path) => total + measure(path),
+        ),
+    },
+    canCleanCache: canCleanCache,
+  );
 }
 
 int _cleanContents(List<String> paths) {

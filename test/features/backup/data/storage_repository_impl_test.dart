@@ -24,6 +24,7 @@ void main() {
       db,
       documentsDirectory: () async => documents,
       temporaryDirectory: () async => temporary,
+      canCleanCache: true,
     );
   });
 
@@ -72,6 +73,38 @@ void main() {
       temporaryDirectory: () async => temporary,
     );
     await expectLater(unavailable.scan(), throwsA(isA<FileSystemException>()));
+  });
+
+  test('shared temporary directories are neither scanned nor cleaned', () async {
+    final otherAppFile = File('${temporary.path}/other_app.tmp');
+    await otherAppFile.writeAsBytes([1, 2, 3]);
+    var resolutions = 0;
+    final shared = StorageRepositoryImpl(
+      db,
+      documentsDirectory: () async => documents,
+      temporaryDirectory: () async {
+        resolutions++;
+        return temporary;
+      },
+      canCleanCache: false,
+    );
+    final report = await shared.scan();
+    expect(report.canCleanCache, isFalse);
+    expect(report.categories[StorageCategory.cache]!.bytes, 0);
+    expect(report.categories[StorageCategory.cache]!.fileCount, 0);
+    await shared.clean(StorageCleanup.cache);
+    expect(resolutions, 0);
+    expect(await otherAppFile.readAsBytes(), [1, 2, 3]);
+    expect((await repository.scan()).canCleanCache, isTrue);
+    if (Platform.isLinux || Platform.isWindows) {
+      final platformDefault = StorageRepositoryImpl(
+        db,
+        documentsDirectory: () async => documents,
+        temporaryDirectory: () async => throw StateError('shared directory'),
+      );
+      expect((await platformDefault.scan()).canCleanCache, isFalse);
+      await platformDefault.clean(StorageCleanup.cache);
+    }
   });
 
   test('scan sums categories and ignores links', () async {

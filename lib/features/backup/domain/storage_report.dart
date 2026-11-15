@@ -15,13 +15,16 @@ class StorageUsage {
 }
 
 class StorageReport {
-  StorageReport(Map<StorageCategory, StorageUsage> categories)
-    : categories = Map.unmodifiable({
+  StorageReport(
+    Map<StorageCategory, StorageUsage> categories, {
+    this.canCleanCache = false,
+  }) : categories = Map.unmodifiable({
         for (final category in StorageCategory.values)
           category: categories[category] ?? const StorageUsage(),
       });
 
   final Map<StorageCategory, StorageUsage> categories;
+  final bool canCleanCache;
 
   int get totalBytes =>
       categories.values.fold(0, (sum, item) => sum + item.bytes);
