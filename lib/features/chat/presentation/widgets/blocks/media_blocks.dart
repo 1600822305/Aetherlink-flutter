@@ -334,6 +334,23 @@ class _VideoBlockViewState extends State<VideoBlockView> {
   }
 
   @override
+  void didUpdateWidget(VideoBlockView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The processing placeholder is replaced in place by the completed block:
+    // same widget slot, new block — re-init so a finished video doesn't stay
+    // stuck on the placeholder's load error.
+    if (oldWidget.block.id != widget.block.id ||
+        oldWidget.block.url != widget.block.url) {
+      _chewieController?.dispose();
+      _videoController?.dispose();
+      _chewieController = null;
+      _videoController = null;
+      _error = false;
+      _init();
+    }
+  }
+
+  @override
   void dispose() {
     _chewieController?.dispose();
     _videoController?.dispose();
