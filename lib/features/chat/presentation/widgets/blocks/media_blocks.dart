@@ -126,6 +126,8 @@ class _MediaGeneratingPlaceholderState extends State<MediaGeneratingPlaceholder>
             height: 150,
             width: double.infinity,
             decoration: BoxDecoration(
+              border: Border.all(color: theme.dividerColor),
+              borderRadius: BorderRadius.circular(8),
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
