@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_context.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/chat_error_capture.dart';
@@ -92,27 +93,11 @@ class MediaGenerationSendService {
     //    崩溃恢复会把它落定，正常完成时整组块被最终结果替换。
     final assistantTime = now.add(const Duration(microseconds: 1));
     final assistantMessageId = generateId('msg');
-    final mediaBlockId = generateId('block');
-    final progressText = mode == InputMode.image
-        ? '正在生成图像'
-        : '正在生成视频（通常需要几分钟）';
-    final placeholderBlock = mode == InputMode.image
-        ? MessageBlock.image(
-            id: mediaBlockId,
-            messageId: assistantMessageId,
-            status: MessageBlockStatus.processing,
-            createdAt: assistantTime,
-            url: '',
-            mimeType: 'image/png',
-          )
-        : MessageBlock.video(
-            id: mediaBlockId,
-            messageId: assistantMessageId,
-            status: MessageBlockStatus.processing,
-            createdAt: assistantTime,
-            url: '',
-            mimeType: 'video/mp4',
-          );
+    final placeholderBlock = _mediaPlaceholder(
+      mode,
+      assistantMessageId,
+      assistantTime,
+    );
     final assistantMessage = Message(
       id: assistantMessageId,
       role: MessageRole.assistant,
@@ -122,7 +107,7 @@ class MediaGenerationSendService {
       status: MessageStatus.streaming,
       model: effective,
       askId: userMessageId,
-      blocks: <String>[mediaBlockId],
+      blocks: <String>[placeholderBlock.id],
     );
     await _ctx.repo.saveMessage(assistantMessage);
     await _ctx.repo.saveMessageBlock(placeholderBlock);
@@ -135,11 +120,11 @@ class MediaGenerationSendService {
       blocks: userBlocks,
       createdAt: now,
     );
-    var assistantView = ChatMessageView(
+    final assistantView = ChatMessageView(
       id: assistantMessageId,
       role: MessageRole.assistant,
       status: MessageStatus.streaming,
-      text: progressText,
+      text: mode == InputMode.image ? '正在生成图像' : '正在生成视频',
       blocks: <MessageBlock>[placeholderBlock],
       createdAt: assistantTime,
       modelName: effective?.name,
@@ -149,7 +134,128 @@ class MediaGenerationSendService {
     final views = [...snapshot.messages, userView, assistantView];
     _ctx.emitTurn(topicId, views, streaming: true);
 
-    // 3. Generate via the provider route, then finalize blocks in place.
+    await _generateAndFinalize(
+      mode,
+      trimmed,
+      topicId: topicId,
+      assistantMessageId: assistantMessageId,
+      assistantTime: assistantTime,
+      views: views,
+      assistantView: assistantView,
+      effective: effective,
+      current: current,
+    );
+  }
+
+  /// Re-runs a media-generation turn in place for [target] — the counterpart
+  /// of `ChatController.regenerate` for messages whose result is IMAGE/VIDEO
+  /// blocks. Archives the current content as a version, resets the message to
+  /// a fresh processing media placeholder, then generates again against the
+  /// media slot (not the chat LLM). Shares its finalize tail with
+  /// [sendMediaGeneration].
+  Future<void> regenerateMediaGeneration(
+    InputMode mode,
+    String prompt, {
+    required Message target,
+    required int index,
+    required List<ChatMessageView> views,
+  }) async {
+    final current = await _ctx.ref.read(
+      mode == InputMode.image
+          ? appMediaImageModelProvider.future
+          : appMediaVideoModelProvider.future,
+    );
+    final effective = current == null ? null : effectiveModelFor(current);
+    final now = DateTime.now();
+
+    final prepared = await MessageVersioning(
+      _ctx.repo,
+    ).prepareForRegenerate(target, now);
+    final oldBlocks = await _ctx.repo.getMessageBlocksByMessageId(target.id);
+    for (final block in oldBlocks) {
+      await _ctx.repo.deleteMessageBlock(block.id);
+    }
+    final placeholder = _mediaPlaceholder(mode, target.id, now);
+    await _ctx.repo.saveMessageBlock(placeholder);
+    await _ctx.repo.saveMessage(
+      prepared.copyWith(
+        status: MessageStatus.streaming,
+        updatedAt: now,
+        model: effective,
+        blocks: <String>[placeholder.id],
+        currentVersionId: null,
+      ),
+    );
+
+    final assistantView = ChatMessageView(
+      id: target.id,
+      role: MessageRole.assistant,
+      status: MessageStatus.streaming,
+      blocks: <MessageBlock>[placeholder],
+      createdAt: target.createdAt,
+      modelName: effective?.name,
+      providerName: current?.provider.name,
+      askId: target.askId,
+      siblingsGroupId: target.siblingsGroupId,
+      multiModelMessageStyle: target.multiModelMessageStyle,
+      foldSelected: target.foldSelected ?? false,
+    );
+    views[index] = assistantView;
+    _ctx.emitTurn(target.topicId, views, streaming: true);
+
+    await _generateAndFinalize(
+      mode,
+      prompt,
+      topicId: target.topicId,
+      assistantMessageId: target.id,
+      assistantTime: now,
+      views: views,
+      assistantView: assistantView,
+      effective: effective,
+      current: current,
+    );
+  }
+
+  /// The `processing` IMAGE/VIDEO placeholder rendered as the generating
+  /// skeleton while the provider call is in flight.
+  MessageBlock _mediaPlaceholder(
+    InputMode mode,
+    String assistantMessageId,
+    DateTime createdAt,
+  ) {
+    return mode == InputMode.image
+        ? MessageBlock.image(
+            id: generateId('block'),
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.processing,
+            createdAt: createdAt,
+            url: '',
+            mimeType: 'image/png',
+          )
+        : MessageBlock.video(
+            id: generateId('block'),
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.processing,
+            createdAt: createdAt,
+            url: '',
+            mimeType: 'video/mp4',
+          );
+  }
+
+  /// The shared generate-then-finalize tail of [sendMediaGeneration] and
+  /// [regenerateMediaGeneration]: provider call, then persist IMAGE/VIDEO or
+  /// error blocks in place and update the view.
+  Future<void> _generateAndFinalize(
+    InputMode mode,
+    String prompt, {
+    required String topicId,
+    required String assistantMessageId,
+    required DateTime assistantTime,
+    required List<ChatMessageView> views,
+    required ChatMessageView assistantView,
+    required Model? effective,
+    required CurrentModel? current,
+  }) async {
     final api = _ctx.ref.read(mediaGenerationApiProvider);
     try {
       final List<MessageBlock> finalBlocks;
@@ -173,10 +279,7 @@ class MediaGenerationSendService {
         );
       }
       if (mode == InputMode.image) {
-        final urls = await api.generateImages(
-          model: effective,
-          prompt: trimmed,
-        );
+        final urls = await api.generateImages(model: effective, prompt: prompt);
         finalBlocks = <MessageBlock>[
           for (final url in urls)
             MessageBlock.image(
@@ -192,7 +295,7 @@ class MediaGenerationSendService {
             ),
         ];
       } else {
-        final url = await api.generateVideo(model: effective, prompt: trimmed);
+        final url = await api.generateVideo(model: effective, prompt: prompt);
         finalBlocks = <MessageBlock>[
           MessageBlock.video(
             id: generateId('block'),

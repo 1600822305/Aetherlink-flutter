@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
+import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
 import 'package:aetherlink_flutter/app/di/model_combo_access.dart';
@@ -41,6 +42,7 @@ import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.da
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_file_reference.dart';
@@ -698,6 +700,48 @@ class ChatController extends _$ChatController {
     final target = await _repo.getMessage(messageId);
     if (target == null || target.role != MessageRole.assistant) return;
 
+    // 媒体生成结果（IMAGE/VIDEO 块）的重新生成不走 LLM，而是按媒体槽位
+    // 重跑生成链路 —— 否则一条生图结果会被「重新生成」成一段文字回复。
+    final targetBlocks = await _repo.getMessageBlocksByMessageId(messageId);
+    final mediaMode = targetBlocks.any((b) => b is ImageBlock)
+        ? InputMode.image
+        : targetBlocks.any((b) => b is VideoBlock)
+        ? InputMode.video
+        : null;
+    final withModelIsMedia =
+        withModel != null &&
+        (isGenerateImageModel(withModel.model) ||
+            isGenerateVideoModel(withModel.model));
+    // 但「换模型重新生成」选了聊天模型时尊重该选择，走下面的 LLM 链路。
+    final useMedia =
+        mediaMode != null && (withModel == null || withModelIsMedia);
+    if (useMedia || withModelIsMedia) {
+      final mode =
+          mediaMode ??
+          (isGenerateImageModel(withModel!.model)
+              ? InputMode.image
+              : InputMode.video);
+      // 换模型重新生成选了媒体模型：写入槽位后重跑。
+      if (withModelIsMedia) {
+        final ctrl = ref.read(mediaModelControllerProvider.notifier);
+        if (mode == InputMode.image) {
+          ctrl.setImageModel(withModel.provider.id, withModel.model.id);
+        } else {
+          ctrl.setVideoModel(withModel.provider.id, withModel.model.id);
+        }
+      }
+      final prompt = await _mediaPromptFor(target);
+      if (prompt == null) return;
+      await _mediaGeneration.regenerateMediaGeneration(
+        mode,
+        prompt,
+        target: target,
+        index: index,
+        views: List<ChatMessageView>.of(snapshot.messages),
+      );
+      return;
+    }
+
     // A multi-model 对比 sibling regenerates on its OWN model — that is what
     // makes 「重试失败」 re-run each sibling on the model it belongs to, instead
     // of turning every column into the current model. A plain (single-reply)
@@ -837,6 +881,22 @@ class ChatController extends _$ChatController {
       assistantView: assistantView,
       mcp: mcp,
     );
+  }
+
+  /// The text prompt of the user message a media-generation reply ([target]'s
+  /// `askId`) was generated from, or null when it can't be recovered.
+  Future<String?> _mediaPromptFor(Message target) async {
+    final askId = target.askId;
+    if (askId == null) return null;
+    final ask = await _repo.getMessage(askId);
+    if (ask == null) return null;
+    final blocks = await _repo.getMessageBlocksByMessageId(askId);
+    for (final block in blocks) {
+      if (block is MainTextBlock && block.content.trim().isNotEmpty) {
+        return block.content.trim();
+      }
+    }
+    return null;
   }
 
   /// Resends user message [messageId]: re-runs the assistant reply tied to it.
