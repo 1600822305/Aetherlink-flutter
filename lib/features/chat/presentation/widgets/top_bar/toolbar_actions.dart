@@ -74,7 +74,11 @@ void selectChatSelectorModel(
     AppToast.info(context, '已进入视频生成模式 · ${model.name}');
     return;
   }
-  inputMode.clear();
+  // 只退出媒体直达模式；webSearch 也是 InputMode，选聊天模型不应清掉它。
+  final armedMode = ref.read(inputModeControllerProvider);
+  if (armedMode == InputMode.image || armedMode == InputMode.video) {
+    inputMode.clear();
+  }
   if (provider.id == kModelComboProviderId) {
     ref.read(modelComboControllerProvider.notifier).selectCombo(model.id);
     return;
