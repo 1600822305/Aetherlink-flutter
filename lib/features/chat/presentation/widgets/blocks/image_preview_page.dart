@@ -267,8 +267,10 @@ class _ImagePreviewPageState extends State<ImagePreviewPage>
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
-    // 增减手指时 ScaleGestureRecognizer 会先 end 再 start，这不是松手。
-    if (details.pointerCount > 0) return;
+    // 增减手指时 ScaleGestureRecognizer 也会回调 end（不是松手）：下拉中加指
+    // 交给随后的 onScaleStart 切到缩放；缩放中抬指则照常回弹，因为剩下那根
+    // 手指不动的话不会再有最终的 end。
+    if (_isDismissing && details.pointerCount > 0) return;
     if (_isDismissing &&
         (_dismissOffset.dy > _kDismissDistance ||
             details.velocity.pixelsPerSecond.dy > 700)) {
