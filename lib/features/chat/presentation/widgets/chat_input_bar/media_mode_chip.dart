@@ -7,10 +7,10 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_sele
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 
-/// Chip shown above the composer while a media mode (图像生成 / 视频生成) is
-/// armed: names the configured media model and opens a capability-filtered
-/// selector to switch it. Shows a "未配置" state instead when the slot is
-/// empty, so the user learns where the generation call will go.
+/// Chip shown above the composer while a media mode (图像生成 / 视频生成 /
+/// 音频生成) is armed: names the configured media model and opens a
+/// capability-filtered selector to switch it. Shows a "未配置" state instead
+/// when the slot is empty, so the user learns where the generation call will go.
 class MediaModeChip extends ConsumerWidget {
   const MediaModeChip({super.key, required this.mode});
 
@@ -19,13 +19,17 @@ class MediaModeChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final isImage = mode == InputMode.image;
-    final slot = ref
-        .watch(
-          isImage ? appMediaImageModelProvider : appMediaVideoModelProvider,
-        )
-        .value;
-    final label = isImage ? '图像生成' : '视频生成';
+    final slotProvider = switch (mode) {
+      InputMode.image => appMediaImageModelProvider,
+      InputMode.video => appMediaVideoModelProvider,
+      _ => appMediaAudioModelProvider,
+    };
+    final slot = ref.watch(slotProvider).value;
+    final label = switch (mode) {
+      InputMode.image => '图像生成',
+      InputMode.video => '视频生成',
+      _ => '音频生成',
+    };
     final modelName = slot?.model.name ?? '未配置模型';
 
     return Padding(
@@ -45,7 +49,11 @@ class MediaModeChip extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  isImage ? LucideIcons.image : LucideIcons.video,
+                  switch (mode) {
+                    InputMode.image => LucideIcons.image,
+                    InputMode.video => LucideIcons.video,
+                    _ => LucideIcons.audioLines,
+                  },
                   size: 13,
                   color: theme.colorScheme.primary,
                 ),
@@ -76,21 +84,32 @@ class MediaModeChip extends ConsumerWidget {
   }
 
   void _select(BuildContext context, WidgetRef ref) {
-    final isImage = mode == InputMode.image;
-    final current = ref
-        .read(isImage ? appMediaImageModelProvider : appMediaVideoModelProvider)
-        .value;
+    final slotProvider = switch (mode) {
+      InputMode.image => appMediaImageModelProvider,
+      InputMode.video => appMediaVideoModelProvider,
+      _ => appMediaAudioModelProvider,
+    };
+    final filter = switch (mode) {
+      InputMode.image => isGenerateImageModel,
+      InputMode.video => isGenerateVideoModel,
+      _ => isGenerateAudioModel,
+    };
+    final current = ref.read(slotProvider).value;
     final ctrl = ref.read(mediaModelControllerProvider.notifier);
     showModelSelectorDialog(
       context,
-      filter: isImage ? isGenerateImageModel : isGenerateVideoModel,
+      filter: filter,
       selectedProviderId: current?.provider.id,
       selectedModelId: current?.model.id,
       onSelect: (provider, model) {
-        if (isImage) {
-          ctrl.setImageModel(provider.id, model.id);
-        } else {
-          ctrl.setVideoModel(provider.id, model.id);
+        switch (mode) {
+          case InputMode.image:
+            ctrl.setImageModel(provider.id, model.id);
+          case InputMode.video:
+            ctrl.setVideoModel(provider.id, model.id);
+          case InputMode.audio:
+            ctrl.setAudioModel(provider.id, model.id);
+          default:
         }
       },
     );

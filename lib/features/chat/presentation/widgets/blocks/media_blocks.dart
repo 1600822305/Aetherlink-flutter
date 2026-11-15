@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/audio_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_block_preview.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/image_preview_page.dart';
 
@@ -58,18 +59,22 @@ ImageProvider? _resolveImageProvider(ImageBlock block) {
   return null;
 }
 
-/// Renders a `processing` IMAGE/VIDEO block while a media-generation turn is
+/// Renders a `processing` media block while a media-generation turn is
 /// in flight: a media-shaped skeleton card with a shimmer sweep, the media
 /// icon, a label and a live elapsed timer — Midjourney/DALL·E-style generating
 /// placeholder, so the wait reads as progress instead of a stalled reply.
 class MediaGeneratingPlaceholder extends StatefulWidget {
   const MediaGeneratingPlaceholder({
-    required this.isVideo,
+    required this.label,
+    required this.icon,
     required this.startedAt,
+    this.hint = '请稍候…',
     super.key,
   });
 
-  final bool isVideo;
+  final String label;
+  final IconData icon;
+  final String hint;
   final DateTime startedAt;
 
   @override
@@ -105,7 +110,7 @@ class _MediaGeneratingPlaceholderState extends State<MediaGeneratingPlaceholder>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final elapsed = DateTime.now().difference(widget.startedAt).inSeconds;
-    final label = widget.isVideo ? '正在生成视频' : '正在生成图像';
+    final label = widget.label;
     final base = theme.colorScheme.surfaceContainerHighest;
     final highlight = theme.colorScheme.surface;
 
@@ -118,9 +123,11 @@ class _MediaGeneratingPlaceholderState extends State<MediaGeneratingPlaceholder>
           // from left (−1) to right (+1) as the controller runs 0→1.
           final center = -1.0 + 2.0 * _shimmer.value;
           return Container(
-            height: 150,
+            height: 200,
             width: double.infinity,
             decoration: BoxDecoration(
+              border: Border.all(color: theme.dividerColor),
+              borderRadius: BorderRadius.circular(8),
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
@@ -136,7 +143,7 @@ class _MediaGeneratingPlaceholderState extends State<MediaGeneratingPlaceholder>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  widget.isVideo ? LucideIcons.video : LucideIcons.image,
+                  widget.icon,
                   size: 28,
                   color: theme.colorScheme.primary,
                 ),
@@ -150,7 +157,7 @@ class _MediaGeneratingPlaceholderState extends State<MediaGeneratingPlaceholder>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  widget.isVideo ? '视频生成通常需要几分钟' : '请稍候…',
+                  widget.hint,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -177,7 +184,8 @@ class ImageBlockView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (block.status == MessageBlockStatus.processing) {
       return MediaGeneratingPlaceholder(
-        isVideo: false,
+        label: '正在生成图像',
+        icon: LucideIcons.image,
         startedAt: block.createdAt,
       );
     }
@@ -421,8 +429,10 @@ class _VideoBlockViewState extends State<VideoBlockView> {
   Widget build(BuildContext context) {
     if (widget.block.status == MessageBlockStatus.processing) {
       return MediaGeneratingPlaceholder(
-        isVideo: true,
+        label: '正在生成视频',
+        icon: LucideIcons.video,
         startedAt: widget.block.createdAt,
+        hint: '视频生成通常需要几分钟',
       );
     }
     if (_error) return const _VideoError();
@@ -513,6 +523,18 @@ class FileBlockView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Generated audio rides FILE blocks (audio/* mime): the generating
+    // skeleton while in flight, the inline player once ready.
+    if (block.mimeType.startsWith('audio/')) {
+      if (block.status == MessageBlockStatus.processing) {
+        return MediaGeneratingPlaceholder(
+          label: '正在生成音频',
+          icon: LucideIcons.audioLines,
+          startedAt: block.createdAt,
+        );
+      }
+      return AudioBlockView(block: block);
+    }
     final theme = Theme.of(context);
     final size = _formatBytes(block.size);
     final card = Container(

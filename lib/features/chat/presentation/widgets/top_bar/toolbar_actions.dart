@@ -75,9 +75,19 @@ void selectChatSelectorModel(
     AppToast.info(context, '已进入视频生成模式 · ${model.name}');
     return;
   }
+  if (isGenerateAudioModel(model)) {
+    ref
+        .read(mediaModelControllerProvider.notifier)
+        .setAudioModel(provider.id, model.id);
+    inputMode.set(InputMode.audio);
+    AppToast.info(context, '已进入音频生成模式 · ${model.name}');
+    return;
+  }
   // 只退出媒体直达模式；webSearch 也是 InputMode，选聊天模型不应清掉它。
   final armedMode = ref.read(inputModeControllerProvider);
-  if (armedMode == InputMode.image || armedMode == InputMode.video) {
+  if (armedMode == InputMode.image ||
+      armedMode == InputMode.video ||
+      armedMode == InputMode.audio) {
     inputMode.clear();
   }
   if (provider.id == kModelComboProviderId) {
@@ -96,7 +106,8 @@ void selectChatSelectorModel(
 bool chatSelectorModelFilter(Model model) =>
     !isNonChatModel(model) ||
     isGenerateImageModel(model) ||
-    isGenerateVideoModel(model);
+    isGenerateVideoModel(model) ||
+    isGenerateAudioModel(model);
 
 /// 聊天模型选择器的统一打开入口（顶部栏与 DIY 工具栏共用）：列出聊天 +
 /// 生图/生视频模型，高亮定位按当前状态取——媒体直达模式 armed 时高亮
@@ -111,7 +122,9 @@ void openChatModelSelector(BuildContext context, WidgetRef ref) {
   // 高亮优先级与发送链路一致：媒体直达模式 > combo > 当前聊天模型。
   // combo 的条目身份是 kModelComboProviderId + comboId（dialog 的 combo
   // 分支同款），只传底层默认模型会把选择器定位错。
-  final mediaMode = mode == InputMode.image || mode == InputMode.video;
+  final mediaMode = mode == InputMode.image ||
+      mode == InputMode.video ||
+      mode == InputMode.audio;
   final comboId =
       mediaMode ? null : ref.read(modelComboControllerProvider).selectedComboId;
   final CurrentModel? selected = mediaMode
@@ -119,7 +132,9 @@ void openChatModelSelector(BuildContext context, WidgetRef ref) {
           .read(
             mode == InputMode.image
                 ? appMediaImageModelProvider
-                : appMediaVideoModelProvider,
+                : mode == InputMode.video
+                ? appMediaVideoModelProvider
+                : appMediaAudioModelProvider,
           )
           .value
       : ref.read(appCurrentModelProvider).value;

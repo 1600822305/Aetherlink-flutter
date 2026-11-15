@@ -115,6 +115,11 @@ bool isSpeechToTextModel(Model model) {
 /// model editor it marks audio *input* capability (e.g. Voxtral), not TTS.
 bool isTextToSpeechModel(Model model) => inferTextToSpeechFromModelId(model.id);
 
+/// Audio-generation capable (TTS) — the capability used by the 音频生成
+/// direct mode and the media slot validation. Same detection as
+/// [isTextToSpeechModel].
+bool isGenerateAudioModel(Model model) => isTextToSpeechModel(model);
+
 /// Non-conversational model — should not appear in a chat-model selector.
 /// Mirrors Cherry Studio's `isNonChatModel` (`src/shared/utils/model.ts`):
 /// embedding / rerank / 图像生成 / 视频生成 / 音频生成 / 语音转写 models are

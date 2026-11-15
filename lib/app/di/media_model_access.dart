@@ -50,3 +50,13 @@ final appMediaVideoModelProvider = FutureProvider<CurrentModel?>((ref) async {
   );
   return _resolveMedia(providers, key, isGenerateVideoModel);
 });
+
+/// The configured audio-generation (TTS) model (validated), same contract.
+final appMediaAudioModelProvider = FutureProvider<CurrentModel?>((ref) async {
+  await ref.read(mediaModelControllerProvider.notifier).hydrated;
+  final providers = await ref.watch(appModelProvidersProvider.future);
+  final key = ref.watch(
+    mediaModelControllerProvider.select((s) => s.audioModelKey),
+  );
+  return _resolveMedia(providers, key, isTextToSpeechModel);
+});
