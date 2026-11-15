@@ -721,8 +721,15 @@ class ChatController extends _$ChatController {
           (isGenerateImageModel(withModel!.model)
               ? InputMode.image
               : InputMode.video);
-      // 换模型重新生成选了媒体模型：写入槽位后重跑。
-      if (withModelIsMedia) {
+      // 换模型重新生成选了媒体模型：种类一致时写入槽位后重跑。种类不一致
+      // （比如给图片回复选了视频模型）忽略该 override —— 消息内容种类
+      // 不变，写错槽位会让槽位解析直接失败。
+      final withModelKind = withModelIsMedia
+          ? (isGenerateImageModel(withModel!.model)
+              ? InputMode.image
+              : InputMode.video)
+          : null;
+      if (withModelIsMedia && withModelKind == mode) {
         final ctrl = ref.read(mediaModelControllerProvider.notifier);
         if (mode == InputMode.image) {
           ctrl.setImageModel(withModel.provider.id, withModel.model.id);
@@ -883,17 +890,35 @@ class ChatController extends _$ChatController {
     );
   }
 
-  /// The text prompt of the user message a media-generation reply ([target]'s
-  /// `askId`) was generated from, or null when it can't be recovered.
+  /// The prompt a media-generation reply ([target]) was generated from:
+  /// the `generate_image` tool's `prompt` argument for tool-produced images,
+  /// else the `main_text` of the user message linked by `askId` (direct media
+  /// sends), else the nearest preceding user message in the loaded views
+  /// (imported replies whose `askId` is null). Null when none is recoverable.
   Future<String?> _mediaPromptFor(Message target) async {
+    final targetBlocks = await _repo.getMessageBlocksByMessageId(target.id);
+    for (final block in targetBlocks) {
+      if (block is ToolBlock && block.toolName == 'generate_image') {
+        final prompt =
+            (block.arguments?['prompt'] as String?)?.trim() ?? '';
+        if (prompt.isNotEmpty) return prompt;
+      }
+    }
     final askId = target.askId;
-    if (askId == null) return null;
-    final ask = await _repo.getMessage(askId);
-    if (ask == null) return null;
-    final blocks = await _repo.getMessageBlocksByMessageId(askId);
-    for (final block in blocks) {
-      if (block is MainTextBlock && block.content.trim().isNotEmpty) {
-        return block.content.trim();
+    if (askId != null) {
+      final blocks = await _repo.getMessageBlocksByMessageId(askId);
+      for (final block in blocks) {
+        if (block is MainTextBlock && block.content.trim().isNotEmpty) {
+          return block.content.trim();
+        }
+      }
+    }
+    final views = state.value?.messages ?? const <ChatMessageView>[];
+    final index = views.indexWhere((v) => v.id == target.id);
+    for (var i = index - 1; i >= 0; i--) {
+      final view = views[i];
+      if (view.role == MessageRole.user && view.text.trim().isNotEmpty) {
+        return view.text.trim();
       }
     }
     return null;
