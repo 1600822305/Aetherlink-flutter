@@ -420,9 +420,14 @@ class _ToastDetailSheet extends StatelessWidget {
               child: const Text('复制全部'),
             ),
           ),
-          SelectableText(
-            message,
-            style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+          // 长文本占满 sheet 也要可滚动读完，不能溢出。
+          Flexible(
+            child: SingleChildScrollView(
+              child: SelectableText(
+                message,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+              ),
+            ),
           ),
         ],
       ),
