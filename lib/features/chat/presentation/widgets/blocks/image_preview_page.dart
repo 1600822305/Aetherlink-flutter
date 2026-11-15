@@ -51,7 +51,8 @@ class ImagePreviewPage extends StatefulWidget {
   State<ImagePreviewPage> createState() => _ImagePreviewPageState();
 }
 
-class _ImagePreviewPageState extends State<ImagePreviewPage> {
+class _ImagePreviewPageState extends State<ImagePreviewPage>
+    with SingleTickerProviderStateMixin {
   static const _dismissDistance = 120.0;
   static const _zoomedScale = 2.5;
 
@@ -59,6 +60,19 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
   var _dragOffset = 0.0;
   var _busy = false;
   Size? _imageSize;
+
+  /// 松手回弹动画（微信同款：拖不到位时弹性滑回原位，而不是瞬间跳回）。
+  late final AnimationController _springBack = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
+  late final Animation<double> _springAnim =
+      CurvedAnimation(parent: _springBack, curve: Curves.easeOutCubic);
+  var _springFrom = 0.0;
+
+  /// 跟手缩放：拖到阈值处约缩到 0.85，超出继续缓慢缩小（微信的手感）。
+  double _dragScaleFor(double offset) =>
+      (1.0 - offset.abs() / (_dismissDistance * 5)).clamp(0.8, 1.0);
 
   /// True when a gesture began on the image itself (vs. the black margin).
   /// 微信同款语义：拖拽关闭/双击缩放只在图片上生效，黑色区域只响应点按关闭。
@@ -143,7 +157,9 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
       Navigator.of(context).pop();
       return;
     }
-    setState(() => _dragOffset = 0.0);
+    // 弹性回弹而不是瞬间归零。
+    _springFrom = _dragOffset;
+    _springBack.forward(from: 0);
   }
 
   Future<Uint8List> _imageBytes() async {
@@ -203,13 +219,17 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
 
   @override
   void dispose() {
+    _springBack.dispose();
     _viewerController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final opacity = (1 - _dragOffset.abs() / (_dismissDistance * 2))
+    final effectiveOffset = _springBack.isAnimating
+        ? _springFrom * (1 - _springAnim.value)
+        : _dragOffset;
+    final opacity = (1 - effectiveOffset.abs() / (_dismissDistance * 2))
         .clamp(0.0, 1.0);
     return Scaffold(
       backgroundColor: Colors.black.withValues(alpha: opacity),
@@ -223,8 +243,15 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
             onVerticalDragStart: _onVerticalDragStart,
             onVerticalDragUpdate: _onVerticalDrag,
             onVerticalDragEnd: _onVerticalDragEnd,
-            child: Transform.translate(
-              offset: Offset(0, _dragOffset),
+            child: AnimatedBuilder(
+              animation: _springBack,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(0, effectiveOffset),
+                child: Transform.scale(
+                  scale: _dragScaleFor(effectiveOffset),
+                  child: child,
+                ),
+              ),
               child: Center(
                 child: Hero(
                   tag: widget.heroTag,
