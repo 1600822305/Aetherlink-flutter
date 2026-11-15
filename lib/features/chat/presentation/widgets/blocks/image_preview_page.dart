@@ -64,16 +64,26 @@ class _ImagePreviewPageState extends State<ImagePreviewPage> {
       _viewerController.value = Matrix4.identity();
       return;
     }
-    final position = details.localPosition;
+    // Anchor the zoom at the tapped point: map the viewport position into the
+    // child's (image) coordinate space via toScene — a letterboxed image is
+    // centered and smaller than the screen, so screen coords would anchor
+    // against the wrong origin and can push the image off-screen.
+    const s = _zoomedScale;
+    final focal = details.localPosition;
+    final scene = _viewerController.toScene(focal);
     _viewerController.value = Matrix4.identity()
-      ..translate(-position.dx * (_zoomedScale - 1),
-          -position.dy * (_zoomedScale - 1))
-      ..scale(_zoomedScale);
+      ..translate(focal.dx - s * scene.dx, focal.dy - s * scene.dy)
+      ..scale(s);
   }
 
   void _onVerticalDrag(DragUpdateDetails details) {
-    // Zoomed in: let InteractiveViewer pan instead of dismissing.
-    if (_zoomed) return;
+    if (_zoomed) {
+      // The outer detector already claimed this drag; InteractiveViewer can't
+      // take it back, so pan the zoomed image by translating its matrix.
+      _viewerController.value = _viewerController.value.clone()
+        ..translate(0.0, details.delta.dy);
+      return;
+    }
     setState(() => _dragOffset += details.delta.dy);
   }
 
