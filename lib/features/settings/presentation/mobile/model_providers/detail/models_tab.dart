@@ -20,6 +20,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/provider_config_utils.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_registry.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -458,6 +459,12 @@ class _ModelsTabState extends ConsumerState<ModelsTab> {
 
   Future<void> _testModel(ModelProvider provider, Model model) async {
     if (_testingModelId != null) return;
+    // 非对话模型（生图/生视频/嵌入/重排）没有聊天端点，连通性测试必然失败 —
+    // 直接说明而不是误报（真实生成测试会产生费用，不做）。
+    if (isNonChatModel(model)) {
+      AppToast.warning(context, '该模型为生成/嵌入类模型，不支持对话连通性测试');
+      return;
+    }
     setState(() => _testingModelId = model.id);
     try {
       final testModel = model.copyWith(

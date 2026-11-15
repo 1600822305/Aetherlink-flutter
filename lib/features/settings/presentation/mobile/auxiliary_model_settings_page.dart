@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
+import 'package:aetherlink_flutter/features/settings/application/media_model_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
@@ -95,12 +96,35 @@ const _models = <_TabDescriptor>[
   ),
 ];
 
+/// Media-generation model slots (绘画/视频). Unlike the auxiliary chat models
+/// above these are not LLMs: they persist through [MediaModelController] and
+/// filter the selector by generation capability, not by !isNonChatModel.
+const _mediaModels = <_TabDescriptor>[
+  _TabDescriptor(
+    label: '绘画',
+    icon: LucideIcons.image,
+    iconColor: Color(0xFFA855F7),
+    description: '输入框「图像生成」模式使用的生图模型',
+    clearable: true,
+    footnote: '未设置时「图像生成」不可用',
+  ),
+  _TabDescriptor(
+    label: '视频',
+    icon: LucideIcons.video,
+    iconColor: Color(0xFFEC4899),
+    description: '输入框「视频生成」模式使用的生视频模型',
+    clearable: true,
+    footnote: '未设置时「视频生成」不可用',
+  ),
+];
+
 /// Descriptor for one tab, which groups one or more model sections.
 class _TabGroup {
   const _TabGroup({
     required this.label,
     required this.icon,
-    required this.modelIndices,
+    this.modelIndices = const [],
+    this.mediaIndices = const [],
   });
 
   final String label;
@@ -108,16 +132,21 @@ class _TabGroup {
 
   /// Indices into [_models] rendered (in order) inside this tab.
   final List<int> modelIndices;
+
+  /// Indices into [_mediaModels] rendered (in order) inside this tab.
+  final List<int> mediaIndices;
 }
 
 /// Tab layout: the three general-purpose chat models (聊天/快速/标题) share one
-/// "通用" tab; the remaining feature models keep a dedicated tab each.
+/// "通用" tab; the remaining feature models keep a dedicated tab each; media
+/// generation slots share the "媒体" tab.
 const _groups = <_TabGroup>[
   _TabGroup(label: '通用', icon: LucideIcons.sparkles, modelIndices: [0, 1, 2]),
   _TabGroup(label: '建议', icon: LucideIcons.lightbulb, modelIndices: [3]),
   _TabGroup(label: '翻译', icon: LucideIcons.languages, modelIndices: [4]),
   _TabGroup(label: 'OCR', icon: LucideIcons.eye, modelIndices: [5]),
   _TabGroup(label: '压缩', icon: LucideIcons.foldVertical, modelIndices: [6]),
+  _TabGroup(label: '媒体', icon: LucideIcons.image, mediaIndices: [0, 1]),
 ];
 
 /// 辅助模型设置 page — general chat models share one tab, feature models
@@ -281,15 +310,24 @@ class _GroupTabState extends State<_GroupTab>
   Widget build(BuildContext context) {
     super.build(context);
     final indices = widget.group.modelIndices;
+    final mediaIndices = widget.group.mediaIndices;
+    final count = indices.length + mediaIndices.length;
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
         for (var i = 0; i < indices.length; i++) ...[
-          if (i > 0) SizedBox(height: indices.length > 1 ? 8 : 12),
+          if (i > 0) SizedBox(height: count > 1 ? 8 : 12),
           _ModelSection(
             index: indices[i],
             descriptor: _models[indices[i]],
-            compact: indices.length > 1,
+            compact: count > 1,
+          ),
+        ],
+        for (var i = 0; i < mediaIndices.length; i++) ...[
+          if (indices.isNotEmpty || i > 0) SizedBox(height: count > 1 ? 8 : 12),
+          _MediaModelSection(
+            index: mediaIndices[i],
+            descriptor: _mediaModels[mediaIndices[i]],
           ),
         ],
       ],
@@ -730,6 +768,95 @@ class _ModelSectionState extends ConsumerState<_ModelSection> {
 
         // ── Footnote ──
         if (!compact && desc.footnote != null) ...[
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              desc.footnote!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Media-generation model section (绘画/视频) inside the 媒体 tab. Same row
+/// layout as the compact chat-model rows but reads/writes
+/// [MediaModelController] and filters the selector by generation capability.
+class _MediaModelSection extends ConsumerWidget {
+  const _MediaModelSection({required this.index, required this.descriptor});
+
+  /// Index into [_mediaModels]: 0 = 绘画, 1 = 视频.
+  final int index;
+  final _TabDescriptor descriptor;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final providers =
+        ref.watch(appModelProvidersProvider).asData?.value ?? const [];
+    final state = ref.watch(mediaModelControllerProvider);
+    final ctrl = ref.read(mediaModelControllerProvider.notifier);
+    final desc = descriptor;
+    final isImage = index == 0;
+
+    final modelKey = isImage ? state.imageModelKey : state.videoModelKey;
+
+    String? selectedProviderId;
+    String? selectedModelId;
+    String displayName = '未选择';
+    if (modelKey != null && modelKey.isNotEmpty) {
+      final parts = modelKey.split(' ');
+      if (parts.length == 2) {
+        selectedProviderId = parts[0];
+        selectedModelId = parts[1];
+        for (final p in providers) {
+          if (p.id == selectedProviderId) {
+            for (final m in p.models) {
+              if (m.id == selectedModelId) {
+                displayName = '${p.name} / ${m.name}';
+                break;
+              }
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    void openSelector() => showModelSelectorDialog(
+      context,
+      onSelect: (p, m) => isImage
+          ? ctrl.setImageModel(p.id, m.id)
+          : ctrl.setVideoModel(p.id, m.id),
+      selectedProviderId: selectedProviderId,
+      selectedModelId: selectedModelId,
+      filter: isImage ? isGenerateImageModel : isGenerateVideoModel,
+    );
+    final canClear = desc.clearable && modelKey != null && modelKey.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SectionCard(
+          child: _CompactModelRow(
+            icon: desc.icon,
+            iconColor: desc.iconColor,
+            label: desc.label,
+            displayName: displayName,
+            onTap: openSelector,
+            onClear: canClear
+                ? () =>
+                      isImage ? ctrl.clearImageModel() : ctrl.clearVideoModel()
+                : null,
+          ),
+        ),
+        if (desc.footnote != null) ...[
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
