@@ -23,14 +23,14 @@ void showImagePreview(
   Navigator.of(context).push(
     PageRouteBuilder<void>(
       opaque: false,
-      barrierColor: Colors.black,
-      transitionDuration: const Duration(milliseconds: 200),
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 250),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (_, _, _) => ImagePreviewPage(
         provider: provider,
         heroTag: heroTag,
       ),
-      transitionsBuilder: (_, animation, _, child) =>
-          FadeTransition(opacity: animation, child: child),
+      transitionsBuilder: (_, _, _, child) => child,
     ),
   );
 }
@@ -53,113 +53,237 @@ class ImagePreviewPage extends StatefulWidget {
 
 class _ImagePreviewPageState extends State<ImagePreviewPage>
     with SingleTickerProviderStateMixin {
-  static const _dismissDistance = 120.0;
-  static const _zoomedScale = 2.5;
+  static const _kDismissDistance = 100.0;
+  static const _kZoomedScale = 2.5;
 
-  final _viewerController = TransformationController();
-  var _dragOffset = 0.0;
+  var _scale = 1.0;
+  var _offset = Offset.zero;
+  var _dismissOffset = Offset.zero;
+  var _dismissScale = 1.0;
+  var _dismissAnchor = Offset.zero;
+  var _isDismissing = false;
+  var _isDismissFromZoom = false;
+  var _isGestureOnImage = false;
   var _busy = false;
+  var _pointerCount = 0;
+  var _lastFocal = Offset.zero;
+  var _scaleReference = 1.0;
+  var _gestureScale = 1.0;
+  var _doubleTapPosition = Offset.zero;
+  Size _viewport = Size.zero;
   Size? _imageSize;
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageListener;
 
-  /// 松手回弹动画（微信同款：拖不到位时弹性滑回原位，而不是瞬间跳回）。
-  late final AnimationController _springBack = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 220),
-  );
-  late final Animation<double> _springAnim =
-      CurvedAnimation(parent: _springBack, curve: Curves.easeOutCubic);
-  var _springFrom = 0.0;
+  late final AnimationController _motion = AnimationController(vsync: this);
+  VoidCallback? _motionTick;
 
-  /// 跟手缩放：拖到阈值处约缩到 0.85，超出继续缓慢缩小（微信的手感）。
-  double _dragScaleFor(double offset) =>
-      (1.0 - offset.abs() / (_dismissDistance * 5)).clamp(0.8, 1.0);
+  bool get _isZoomed => _scale > 1.01;
+  Offset get _center => _viewport.center(Offset.zero);
+  double get _effectiveScale => _scale * _dismissScale;
+  Offset get _effectiveOffset =>
+      _offset * _dismissScale +
+      (_dismissAnchor - _center) * (1 - _dismissScale) +
+      _dismissOffset;
 
-  /// True when a gesture began on the image itself (vs. the black margin).
-  /// 微信同款语义：拖拽关闭/双击缩放只在图片上生效，黑色区域只响应点按关闭。
-  var _gestureOnImage = false;
-
-  bool get _zoomed => _viewerController.value.getMaxScaleOnAxis() > 1.01;
+  Size get _fittedSize {
+    final size = _imageSize;
+    if (size == null || size.isEmpty || _viewport.isEmpty) return _viewport;
+    final scale = math.min(
+      _viewport.width / size.width,
+      _viewport.height / size.height,
+    );
+    return Size(size.width * scale, size.height * scale);
+  }
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     _loadImageSize();
   }
 
-  /// The viewer child is sized exactly to the fitted image rect (no letterbox
-  /// inside the child), so `toScene` bounds checks can tell image from margin.
+  void _removeImageListener() {
+    final listener = _imageListener;
+    if (listener != null) _imageStream?.removeListener(listener);
+    _imageStream = null;
+    _imageListener = null;
+  }
+
   void _loadImageSize() {
-    final stream = widget.provider.resolve(const ImageConfiguration());
-    late final ImageStreamListener listener;
-    listener = ImageStreamListener(
-      (info, _) {
-        stream.removeListener(listener);
-        if (mounted) {
-          setState(() {
-            _imageSize = Size(
-              info.image.width.toDouble(),
-              info.image.height.toDouble(),
-            );
-          });
-        }
-      },
-      onError: (_, _) => stream.removeListener(listener),
+    _removeImageListener();
+    final stream = widget.provider.resolve(
+      createLocalImageConfiguration(context),
     );
-    stream.addListener(listener);
+    _imageStream = stream;
+    _imageListener = ImageStreamListener(
+      (info, _) {
+        _removeImageListener();
+        if (!mounted) return;
+        setState(() {
+          _imageSize = Size(
+            info.image.width.toDouble(),
+            info.image.height.toDouble(),
+          );
+        });
+      },
+      onError: (_, _) => _removeImageListener(),
+    );
+    stream.addListener(_imageListener!);
   }
 
-  /// Maps a viewport position into child coords and checks the image bounds.
-  bool _insideImage(Offset viewportPosition) {
-    final size = _imageSize;
-    if (size == null) return true;
-    final scene = _viewerController.toScene(viewportPosition);
-    return scene.dx >= 0 &&
-        scene.dy >= 0 &&
-        scene.dx <= size.width &&
-        scene.dy <= size.height;
+  bool _insideImage(Offset position) {
+    final local = (position - _center - _effectiveOffset) / _effectiveScale;
+    return Rect.fromCenter(
+      center: Offset.zero,
+      width: _fittedSize.width,
+      height: _fittedSize.height,
+    ).contains(local);
   }
 
-  void _toggleZoom(TapDownDetails details) {
-    if (_zoomed) {
-      _viewerController.value = Matrix4.identity();
+  Offset _clampOffset(Offset offset, double scale) {
+    final size = _fittedSize;
+    final x = math.max(0.0, (size.width * scale - _viewport.width) / 2);
+    final y = math.max(0.0, (size.height * scale - _viewport.height) / 2);
+    return Offset(
+      offset.dx.clamp(-x, x).toDouble(),
+      offset.dy.clamp(-y, y).toDouble(),
+    );
+  }
+
+  void _stopMotion() {
+    _motion.stop();
+    final tick = _motionTick;
+    if (tick != null) _motion.removeListener(tick);
+    _motionTick = null;
+  }
+
+  void _animateTo(double scale, Offset offset, Duration duration) {
+    _stopMotion();
+    final fromScale = _scale;
+    final fromOffset = _offset;
+    final fromDismissOffset = _dismissOffset;
+    final fromDismissScale = _dismissScale;
+    _motion.duration = duration;
+    _motionTick = () {
+      if (!mounted) return;
+      final t = Curves.easeOutCubic.transform(_motion.value);
+      setState(() {
+        _scale = fromScale + (scale - fromScale) * t;
+        _offset = Offset.lerp(fromOffset, offset, t)!;
+        _dismissOffset = Offset.lerp(fromDismissOffset, Offset.zero, t)!;
+        _dismissScale = fromDismissScale + (1 - fromDismissScale) * t;
+      });
+    };
+    _motion.addListener(_motionTick!);
+    _motion.forward(from: 0);
+  }
+
+  void _toggleZoom() {
+    if (_isDismissing) return;
+    if (_isZoomed) {
+      _animateTo(1, Offset.zero, const Duration(milliseconds: 250));
       return;
     }
-    if (!_insideImage(details.localPosition)) return;
-    // Anchor the zoom at the tapped point: map the viewport position into the
-    // child's (image) coordinate space via toScene.
-    const s = _zoomedScale;
-    final focal = details.localPosition;
-    final scene = _viewerController.toScene(focal);
-    _viewerController.value = Matrix4.identity()
-      ..translate(focal.dx - s * scene.dx, focal.dy - s * scene.dy)
-      ..scale(s);
+    if (!_insideImage(_doubleTapPosition)) return;
+    final scene =
+        (_doubleTapPosition - _center - _effectiveOffset) / _effectiveScale;
+    final offset = _doubleTapPosition - _center - scene * _kZoomedScale;
+    _animateTo(
+      _kZoomedScale,
+      _clampOffset(offset, _kZoomedScale),
+      const Duration(milliseconds: 250),
+    );
   }
 
-  void _onVerticalDragStart(DragStartDetails details) {
-    _gestureOnImage = _insideImage(details.localPosition);
-    _dragOffset = 0.0;
+  void _onScaleStart(ScaleStartDetails details) {
+    _stopMotion();
+    // 回弹中再次触摸时，先合并成同一个变换，避免跳动。
+    _offset = _effectiveOffset;
+    _scale = _effectiveScale;
+    _dismissOffset = Offset.zero;
+    _dismissScale = 1;
+    _lastFocal = details.localFocalPoint;
+    _dismissAnchor = _lastFocal;
+    _isGestureOnImage = _insideImage(_lastFocal);
+    _pointerCount = details.pointerCount;
+    _gestureScale = _scale;
+    _scaleReference = 1;
+    _isDismissFromZoom = false;
+    setState(() {
+      _isDismissing =
+          !_isZoomed && _pointerCount == 1 && _isGestureOnImage;
+    });
   }
 
-  void _onVerticalDrag(DragUpdateDetails details) {
-    if (!_gestureOnImage) return;
-    if (_zoomed) {
-      // The outer detector already claimed this drag; InteractiveViewer can't
-      // take it back, so pan the zoomed image by translating its matrix.
-      _viewerController.value = _viewerController.value.clone()
-        ..translate(0.0, details.delta.dy);
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    final focal = details.localFocalPoint;
+    final delta = focal - _lastFocal;
+    if (_isDismissing && !_isDismissFromZoom && details.pointerCount > 1) {
+      _offset = _effectiveOffset;
+      _scale = _effectiveScale;
+      _dismissOffset = Offset.zero;
+      _dismissScale = 1;
+      setState(() => _isDismissing = false);
+    }
+    if (!_isDismissing && details.pointerCount != _pointerCount) {
+      _pointerCount = details.pointerCount;
+      _gestureScale = _scale;
+      _scaleReference = details.scale;
+      _lastFocal = focal;
       return;
     }
-    setState(() => _dragOffset += details.delta.dy);
+    if (!_isDismissing &&
+        _isZoomed &&
+        details.pointerCount == 1 &&
+        delta.dy > delta.dx.abs()) {
+      final height = _fittedSize.height * _scale;
+      final top = _center.dy + _offset.dy - height / 2;
+      // 只有图片比屏幕高、且顶边已贴顶时才接力下拉关闭；矮图放大后纵向本就不能平移。
+      if (height > _viewport.height + 0.5 && top >= -0.5) {
+        _dismissAnchor = _lastFocal;
+        _isDismissing = true;
+        _isDismissFromZoom = true;
+      }
+    }
+    setState(() {
+      if (_isDismissing) {
+        _dismissOffset += delta;
+        final down = math.max(0.0, _dismissOffset.dy);
+        _dismissScale =
+            (1 - down / _viewport.height).clamp(0.4, 1.0).toDouble();
+      } else if (_isZoomed || details.pointerCount > 1) {
+        final nextScale = (_gestureScale * details.scale / _scaleReference)
+            .clamp(0.9, 8.0)
+            .toDouble();
+        final scene = (_lastFocal - _center - _offset) / _scale;
+        _offset = _clampOffset(
+          focal - _center - scene * nextScale,
+          nextScale,
+        );
+        _scale = nextScale;
+      }
+    });
+    _lastFocal = focal;
   }
 
-  void _onVerticalDragEnd(DragEndDetails _) {
-    if (_gestureOnImage && _dragOffset.abs() > _dismissDistance) {
+  void _onScaleEnd(ScaleEndDetails details) {
+    // 增减手指时 ScaleGestureRecognizer 也会回调 end（不是松手）：下拉中加指
+    // 交给随后的 onScaleStart 切到缩放；缩放中抬指则照常回弹，因为剩下那根
+    // 手指不动的话不会再有最终的 end。
+    if (_isDismissing && details.pointerCount > 0) return;
+    if (_isDismissing &&
+        (_dismissOffset.dy > _kDismissDistance ||
+            details.velocity.pixelsPerSecond.dy > 700)) {
       Navigator.of(context).pop();
       return;
     }
-    // 弹性回弹而不是瞬间归零。
-    _springFrom = _dragOffset;
-    _springBack.forward(from: 0);
+    setState(() => _isDismissing = false);
+    final scale = _scale < 1 ? 1.0 : _scale;
+    _animateTo(
+      scale,
+      _clampOffset(_offset, scale),
+      const Duration(milliseconds: 220),
+    );
   }
 
   Future<Uint8List> _imageBytes() async {
@@ -219,113 +343,138 @@ class _ImagePreviewPageState extends State<ImagePreviewPage>
 
   @override
   void dispose() {
-    _springBack.dispose();
-    _viewerController.dispose();
+    _removeImageListener();
+    _stopMotion();
+    _motion.dispose();
     super.dispose();
+  }
+
+  Widget _buildImage() {
+    final size = _fittedSize;
+    return Center(
+      child: Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..translate(_effectiveOffset.dx, _effectiveOffset.dy)
+          ..scale(_effectiveScale),
+        child: Hero(
+          tag: widget.heroTag,
+          flightShuttleBuilder: (_, animation, _, _, _) {
+            return AnimatedBuilder(
+              animation: animation,
+              builder: (context, _) => ClipRRect(
+                borderRadius: BorderRadius.circular(
+                  8 * (1 - animation.value),
+                ),
+                child: Image(
+                  image: widget.provider,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                ),
+              ),
+            );
+          },
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: ClipRRect(
+              child: Image(
+                image: widget.provider,
+                fit: _imageSize == null ? BoxFit.contain : BoxFit.cover,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chrome(Widget child) {
+    return IgnorePointer(
+      ignoring: _isDismissing,
+      child: AnimatedOpacity(
+        opacity: _isDismissing ? 0 : 1,
+        duration: const Duration(milliseconds: 120),
+        child: child,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final effectiveOffset = _springBack.isAnimating
-        ? _springFrom * (1 - _springAnim.value)
-        : _dragOffset;
-    final opacity = (1 - effectiveOffset.abs() / (_dismissDistance * 2))
-        .clamp(0.0, 1.0);
+    final routeAnimation = ModalRoute.of(context)!.animation!;
     return Scaffold(
-      backgroundColor: Colors.black.withValues(alpha: opacity),
-      body: Stack(
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).pop(),
-            onDoubleTapDown: _toggleZoom,
-            onDoubleTap: () {},
-            onVerticalDragStart: _onVerticalDragStart,
-            onVerticalDragUpdate: _onVerticalDrag,
-            onVerticalDragEnd: _onVerticalDragEnd,
-            child: AnimatedBuilder(
-              animation: _springBack,
-              builder: (context, child) => Transform.translate(
-                offset: Offset(0, effectiveOffset),
-                child: Transform.scale(
-                  scale: _dragScaleFor(effectiveOffset),
-                  child: child,
-                ),
-              ),
-              child: Center(
-                child: Hero(
-                  tag: widget.heroTag,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final size = _imageSize;
-                      if (size == null ||
-                          size.width <= 0 ||
-                          size.height <= 0) {
-                        return const SizedBox(
-                          width: 36,
-                          height: 36,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white70,
-                          ),
-                        );
-                      }
-                      // BoxFit.contain math: the child IS the image, so the
-                      // black margin is outside the InteractiveViewer child.
-                      final scale = math.min(
-                        constraints.maxWidth / size.width,
-                        constraints.maxHeight / size.height,
-                      );
-                      return InteractiveViewer(
-                        transformationController: _viewerController,
-                        maxScale: 8,
-                        child: SizedBox(
-                          width: size.width * scale,
-                          height: size.height * scale,
-                          child: Image(
-                            image: widget.provider,
-                            fit: BoxFit.fill,
-                          ),
-                        ),
-                      );
-                    },
+      backgroundColor: Colors.transparent,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          _viewport = constraints.biggest;
+          return AnimatedBuilder(
+            animation: routeAnimation,
+            builder: (context, _) {
+              final down = math.max(0.0, _dismissOffset.dy);
+              final dragOpacity =
+                  (1 - down / _viewport.height).clamp(0.0, 1.0);
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(
+                    color: Colors.black.withValues(
+                      alpha: routeAnimation.value * dragOpacity,
+                    ),
                   ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            right: 8,
-            child: IconButton(
-              icon: const Icon(LucideIcons.x, color: Colors.white),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: MediaQuery.of(context).padding.bottom + 12,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _ActionButton(
-                  icon: LucideIcons.download,
-                  label: '保存',
-                  busy: _busy,
-                  onTap: _save,
-                ),
-                const SizedBox(width: 24),
-                _ActionButton(
-                  icon: LucideIcons.share2,
-                  label: '分享',
-                  busy: _busy,
-                  onTap: _share,
-                ),
-              ],
-            ),
-          ),
-        ],
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.of(context).pop(),
+                    onDoubleTapDown: (details) {
+                      _doubleTapPosition = details.localPosition;
+                    },
+                    onDoubleTap: _toggleZoom,
+                    onScaleStart: _onScaleStart,
+                    onScaleUpdate: _onScaleUpdate,
+                    onScaleEnd: _onScaleEnd,
+                    child: _buildImage(),
+                  ),
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 8,
+                    right: 8,
+                    child: _chrome(
+                      IconButton(
+                        icon: const Icon(LucideIcons.x, color: Colors.white),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: MediaQuery.of(context).padding.bottom + 12,
+                    child: _chrome(
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _ActionButton(
+                            icon: LucideIcons.download,
+                            label: '保存',
+                            busy: _busy,
+                            onTap: _save,
+                          ),
+                          const SizedBox(width: 24),
+                          _ActionButton(
+                            icon: LucideIcons.share2,
+                            label: '分享',
+                            busy: _busy,
+                            onTap: _share,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }
