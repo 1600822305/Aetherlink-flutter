@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -51,7 +52,7 @@ ImageProvider? _resolveImageProvider(ImageBlock block) {
     }
   }
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return NetworkImage(url);
+    return CachedNetworkImageProvider(url);
   }
   return null;
 }
@@ -116,7 +117,7 @@ class _MediaGeneratingPlaceholderState extends State<MediaGeneratingPlaceholder>
           // from left (−1) to right (+1) as the controller runs 0→1.
           final center = -1.0 + 2.0 * _shimmer.value;
           return Container(
-            height: 200,
+            height: 150,
             width: double.infinity,
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -193,11 +194,7 @@ class ImageBlockView extends StatelessWidget {
             constraints: BoxConstraints(maxHeight: isSingle ? 300 : 180),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image(
-                image: provider,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const _ImageError(),
-              ),
+              child: _buildImage(block, provider),
             ),
           ),
           Positioned(
@@ -220,6 +217,40 @@ class ImageBlockView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The image body of an [ImageBlockView]: network URLs go through
+/// [CachedNetworkImage] (disk cache + download-progress placeholder +
+/// fade-in, so re-opening the conversation doesn't blank and re-fetch),
+/// inline base64/data URIs render through the resolved [ImageProvider].
+Widget _buildImage(ImageBlock block, ImageProvider provider) {
+  final url = block.url;
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      fadeInDuration: const Duration(milliseconds: 200),
+      progressIndicatorBuilder: (context, _, progress) => Container(
+        height: 120,
+        alignment: Alignment.center,
+        color: Colors.black.withValues(alpha: 0.05),
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            value: progress.progress,
+          ),
+        ),
+      ),
+      errorWidget: (_, _, _) => const _ImageError(),
+    );
+  }
+  return Image(
+    image: provider,
+    fit: BoxFit.cover,
+    errorBuilder: (_, _, _) => const _ImageError(),
+  );
 }
 
 class _ImageError extends StatelessWidget {

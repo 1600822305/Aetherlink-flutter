@@ -128,6 +128,8 @@ dependencies:
   scrollview_observer: ^1.27.0
   # 消息图表块（CHART）渲染：Chart.js 数据结构 → fl_chart（bar/line/pie/scatter）。
   fl_chart: ^1.2.0
+  # 消息图片块（IMAGE）网络图磁盘缓存 + 下载进度占位，避免重进会话重新拉取。
+  cached_network_image: ^3.4.1
   # 消息视频块（VIDEO）播放：官方 video_player + chewie 控制条/全屏。
   video_player: ^2.11.1
   chewie: ^1.14.1
