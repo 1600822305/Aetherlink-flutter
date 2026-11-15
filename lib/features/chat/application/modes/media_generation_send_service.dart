@@ -225,25 +225,29 @@ class MediaGenerationSendService {
       final messageText = error is StateError
           ? error.message
           : chatError.message;
+      final errorBlocks = <MessageBlock>[
+        MessageBlock.error(
+          id: generateId('block'),
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.error,
+          createdAt: assistantTime,
+          updatedAt: DateTime.now(),
+          content: '',
+          message: messageText,
+          error: chatError.toJson(),
+        ),
+      ];
       await _ctx.persistMessageBlocks(
         messageId: assistantMessageId,
         status: MessageStatus.error,
-        blocks: <MessageBlock>[
-          MessageBlock.error(
-            id: generateId('block'),
-            messageId: assistantMessageId,
-            status: MessageBlockStatus.error,
-            createdAt: assistantTime,
-            updatedAt: DateTime.now(),
-            content: '',
-            message: messageText,
-            error: chatError.toJson(),
-          ),
-        ],
+        blocks: errorBlocks,
       );
+      // The view must drop the processing placeholder too — otherwise the
+      // generating skeleton keeps animating next to the error state.
       assistantView = assistantView.copyWith(
         status: MessageStatus.error,
         errorText: messageText,
+        blocks: errorBlocks,
       );
       _ctx.replace(views, assistantView);
     }
