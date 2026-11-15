@@ -55,6 +55,33 @@ class MediaGenerationApi implements MediaGenerationGateway {
 
   // ---------------------------------------------------------------- images
 
+  /// Merges the model/provider custom headers into a request header map. Order
+  /// matches the chat adapters: provider-level extras win over model-level.
+  static Map<String, dynamic> _mergedHeaders(
+    Model model,
+    Map<String, dynamic> base,
+  ) {
+    return <String, dynamic>{
+      ...base,
+      ...?model.extraHeaders,
+      ...?model.providerExtraHeaders,
+    };
+  }
+
+  /// Merges the model/provider custom body fields into a request body. Only
+  /// applied to submit/generation requests — poll/status endpoints keep their
+  /// protocol-defined shape.
+  static Map<String, dynamic> _mergedBody(
+    Model model,
+    Map<String, dynamic> base,
+  ) {
+    return <String, dynamic>{
+      ...base,
+      ...?model.extraBody,
+      ...?model.providerExtraBody,
+    };
+  }
+
   /// Generates images for [prompt] and returns their URLs (http(s) or
   /// `data:` URLs). Throws on failure with a user-showable message.
   @override
@@ -81,12 +108,12 @@ class MediaGenerationApi implements MediaGenerationGateway {
     final response = await _dio.post<Map<String, dynamic>>(
       '$base/models/${model.id}:generateContent',
       options: Options(
-        headers: <String, dynamic>{
+        headers: _mergedHeaders(model, <String, dynamic>{
           'x-goog-api-key': model.apiKey ?? '',
           'Content-Type': 'application/json',
-        },
+        }),
       ),
-      data: <String, dynamic>{
+      data: _mergedBody(model, <String, dynamic>{
         'contents': <Map<String, dynamic>>[
           <String, dynamic>{
             'parts': <Map<String, dynamic>>[
@@ -97,7 +124,7 @@ class MediaGenerationApi implements MediaGenerationGateway {
         'generationConfig': <String, dynamic>{
           'responseModalities': <String>['TEXT', 'IMAGE'],
         },
-      },
+      }),
     );
 
     final urls = <String>[];
@@ -132,12 +159,12 @@ class MediaGenerationApi implements MediaGenerationGateway {
     final response = await _dio.post<Map<String, dynamic>>(
       '$base/api/v1/services/aigc/multimodal-generation/generation',
       options: Options(
-        headers: <String, dynamic>{
+        headers: _mergedHeaders(model, <String, dynamic>{
           'Authorization': 'Bearer ${model.apiKey ?? ''}',
           'Content-Type': 'application/json',
-        },
+        }),
       ),
-      data: <String, dynamic>{
+      data: _mergedBody(model, <String, dynamic>{
         'model': model.id,
         'input': <String, dynamic>{
           'messages': <Map<String, dynamic>>[
@@ -150,7 +177,7 @@ class MediaGenerationApi implements MediaGenerationGateway {
           ],
         },
         'parameters': <String, dynamic>{'n': 1},
-      },
+      }),
     );
 
     final urls = <String>[];
@@ -198,12 +225,12 @@ class MediaGenerationApi implements MediaGenerationGateway {
     final response = await _dio.post<Map<String, dynamic>>(
       '${formatApiHost(model.baseUrl)}/images/generations',
       options: Options(
-        headers: <String, dynamic>{
+        headers: _mergedHeaders(model, <String, dynamic>{
           'Authorization': 'Bearer ${model.apiKey ?? ''}',
           'Content-Type': 'application/json',
-        },
+        }),
       ),
-      data: body,
+      data: _mergedBody(model, body),
     );
 
     final urls = <String>[];
@@ -256,12 +283,12 @@ class MediaGenerationApi implements MediaGenerationGateway {
     final submit = await _dio.post<Map<String, dynamic>>(
       '$base/models/$modelId:predictLongRunning',
       options: Options(
-        headers: <String, dynamic>{
+        headers: _mergedHeaders(model, <String, dynamic>{
           'x-goog-api-key': apiKey,
           'Content-Type': 'application/json',
-        },
+        }),
       ),
-      data: <String, dynamic>{
+      data: _mergedBody(model, <String, dynamic>{
         'instances': <Map<String, dynamic>>[
           <String, dynamic>{'prompt': prompt},
         ],
@@ -269,7 +296,7 @@ class MediaGenerationApi implements MediaGenerationGateway {
           'aspectRatio': '16:9',
           'personGeneration': 'dont_allow',
         },
-      },
+      }),
     );
     final operationName = submit.data?['name'];
     if (operationName is! String || operationName.isEmpty) {
@@ -280,7 +307,11 @@ class MediaGenerationApi implements MediaGenerationGateway {
       await Future<void>.delayed(_pollInterval);
       final poll = await _dio.get<Map<String, dynamic>>(
         '$base/$operationName',
-        options: Options(headers: <String, dynamic>{'x-goog-api-key': apiKey}),
+        options: Options(
+          headers: _mergedHeaders(model, <String, dynamic>{
+            'x-goog-api-key': apiKey,
+          }),
+        ),
       );
       final operation = poll.data ?? const <String, dynamic>{};
       if (operation['done'] != true) continue;
@@ -318,14 +349,17 @@ class MediaGenerationApi implements MediaGenerationGateway {
     required String prompt,
   }) async {
     final base = formatApiHost(model.baseUrl);
-    final headers = <String, dynamic>{
+    final headers = _mergedHeaders(model, <String, dynamic>{
       'Authorization': 'Bearer ${model.apiKey ?? ''}',
       'Content-Type': 'application/json',
-    };
+    });
     final submit = await _dio.post<Map<String, dynamic>>(
       '$base/video/submit',
       options: Options(headers: headers),
-      data: <String, dynamic>{'model': model.id, 'prompt': prompt},
+      data: _mergedBody(model, <String, dynamic>{
+        'model': model.id,
+        'prompt': prompt,
+      }),
     );
     final requestId = submit.data?['requestId'];
     if (requestId is! String || requestId.isEmpty) {

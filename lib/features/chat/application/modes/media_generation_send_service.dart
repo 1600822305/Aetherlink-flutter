@@ -4,7 +4,7 @@
 // handleMessageSend → handleImageGeneration / handleVideoPrompt 的移植）。
 // 依赖经 [ChatModeContext] 显式注入，不再靠 mixin 的 this 共享私有成员。
 
-import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_s
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 
 /// 图像/视频生成模式的发送链路（[ChatController] 的协作对象）。
 class MediaGenerationSendService {
@@ -40,9 +41,15 @@ class MediaGenerationSendService {
   }) async {
     _ctx.ref.read(inputModeControllerProvider.notifier).clear();
 
-    final current = await _ctx.ref.read(appCurrentModelProvider.future);
-    if (current == null) return;
-    final effective = effectiveModelFor(current);
+    // Media models live in their own slots (设置 → 辅助模型 → 媒体), never
+    // the app-level chat model — Cherry Studio does the same (painting model
+    // in ModelSettings, separate from the default chat model).
+    final current = await _ctx.ref.read(
+      mode == InputMode.image
+          ? appMediaImageModelProvider.future
+          : appMediaVideoModelProvider.future,
+    );
+    final effective = current == null ? null : effectiveModelFor(current);
 
     final topicId = await _ctx.ensureTopic();
     final now = DateTime.now();
@@ -123,8 +130,8 @@ class MediaGenerationSendService {
       status: MessageStatus.streaming,
       text: progressText,
       createdAt: assistantTime,
-      modelName: effective.name,
-      providerName: current.provider.name,
+      modelName: effective?.name,
+      providerName: current?.provider.name,
       askId: userMessageId,
     );
     final views = [...snapshot.messages, userView, assistantView];
@@ -134,6 +141,19 @@ class MediaGenerationSendService {
     final api = _ctx.ref.read(mediaGenerationApiProvider);
     try {
       final List<MessageBlock> finalBlocks;
+      if (effective == null) {
+        throw StateError(
+          mode == InputMode.image
+              ? '未配置图像生成模型。请到 设置 → 辅助模型 → 媒体 选择支持图像生成的模型。'
+              : '未配置视频生成模型。请到 设置 → 辅助模型 → 媒体 选择支持视频生成的模型。',
+        );
+      }
+      if (mode == InputMode.image && !isGenerateImageModel(effective)) {
+        throw StateError(
+          '模型 ${effective.name} 不支持图像生成。'
+          '请在 设置 → 辅助模型 → 媒体 中选择支持图像生成的模型。',
+        );
+      }
       if (mode == InputMode.video && !api.isVideoGenerationModel(effective)) {
         throw StateError(
           '模型 ${effective.name} 不支持视频生成。'
@@ -187,7 +207,7 @@ class MediaGenerationSendService {
             error,
             stackTrace,
             phase: ChatErrorPhase.media,
-            provider: current.provider,
+            provider: current?.provider,
             model: effective,
           );
       final messageText = error is StateError

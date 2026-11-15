@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
 import 'package:aetherlink_flutter/app/di/input_box_access.dart';
+import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/composer/composer_attachments_controller.dart';
@@ -20,8 +21,10 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_composer.dart';
 
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar/input_bar_chips.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar/media_mode_chip.dart';
 
 const String _noModelHint = '请先配置模型';
+const String _noMediaModelHint = '请先在 设置 → 辅助模型 → 媒体 配置生成模型';
 
 /// The bottom composer for the chat page: a 1:1 port of the original
 /// `IntegratedChatInput`. The visuals live in the shared [InputBoxComposer] so
@@ -206,7 +209,13 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   void _showNoModelHint() {
-    AppToast.warning(context, _noModelHint);
+    final mode = ref.read(inputModeControllerProvider);
+    AppToast.warning(
+      context,
+      mode == InputMode.image || mode == InputMode.video
+          ? _noMediaModelHint
+          : _noModelHint,
+    );
   }
 
   /// Sends a tapped 建议 (follow-up suggestion) as a new user message. A no-op
@@ -268,7 +277,18 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     final hasApiKey =
         (current?.model.apiKey?.isNotEmpty ?? false) ||
         (current?.provider.apiKey?.isNotEmpty ?? false);
-    final modelReady = current != null && hasApiKey;
+    // 媒体模式走独立槽位：聊天模型存在与否与能否发无关，反之亦然。
+    final inputMode = ref.watch(inputModeControllerProvider);
+    final CurrentModel? mediaModel = switch (inputMode) {
+      InputMode.image => ref.watch(appMediaImageModelProvider).value,
+      InputMode.video => ref.watch(appMediaVideoModelProvider).value,
+      _ => null,
+    };
+    final mediaReady = mediaModel != null;
+    final modelReady =
+        inputMode == InputMode.image || inputMode == InputMode.video
+        ? mediaReady
+        : current != null && hasApiKey;
     final isStreaming = ref.watch(
       chatControllerProvider.select((a) => a.value?.isStreaming ?? false),
     );
@@ -315,8 +335,13 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     // Staged 多模型发送 mentions show as chips above the composer; the next send
     // fans out to them. Editable (✕ per chip) and cleared after sending.
     final mentions = ref.watch(multiModelMentionsProvider);
+    final mediaChip = (inputMode != null && inputMode != InputMode.webSearch)
+        ? MediaModeChip(mode: inputMode)
+        : null;
 
-    if (suggestions.isEmpty && mentions.isEmpty) return composer;
+    if (suggestions.isEmpty && mentions.isEmpty && mediaChip == null) {
+      return composer;
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -335,6 +360,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
             onClear: () =>
                 ref.read(multiModelMentionsProvider.notifier).clear(),
           ),
+        ?mediaChip,
         composer,
       ],
     );
