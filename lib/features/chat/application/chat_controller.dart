@@ -910,7 +910,9 @@ class ChatController extends _$ChatController {
     // status == success 的那次产出了当前显示的图片，优先用它的 prompt。
     String? fallbackPrompt;
     for (final block in targetBlocks) {
-      if (block is ToolBlock && block.toolName == 'generate_image') {
+      if (block is ToolBlock &&
+          (block.toolName == 'generate_image' ||
+              block.toolName == 'generate_video')) {
         final prompt =
             (block.arguments?['prompt'] as String?)?.trim() ?? '';
         if (prompt.isEmpty) continue;
