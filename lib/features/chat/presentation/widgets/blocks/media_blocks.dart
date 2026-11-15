@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_block_preview.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/image_preview_page.dart';
 
 /// Resolves an [ImageBlock] to an [ImageProvider]. Prefers inline base64
 /// (`base64Data` or a `data:` URL) and falls back to a network URL. The
@@ -184,36 +185,20 @@ class ImageBlockView extends StatelessWidget {
     if (provider == null) return const _ImageError();
 
     return GestureDetector(
-      onTap: () => showDialog<void>(
-        context: context,
-        builder: (_) => _ImagePreviewDialog(provider: provider),
+      onTap: () => showImagePreview(
+        context,
+        provider: provider,
+        heroTag: 'chat-image-${block.id}',
       ),
-      child: Stack(
-        children: [
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: isSingle ? 300 : 180),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: _buildImage(block, provider),
-            ),
+      child: Hero(
+        tag: 'chat-image-${block.id}',
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: isSingle ? 300 : 180),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _buildImage(block, provider),
           ),
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                LucideIcons.maximize2,
-                size: 14,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -286,26 +271,6 @@ class _ImageError extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ImagePreviewDialog extends StatelessWidget {
-  const _ImagePreviewDialog({required this.provider});
-
-  final ImageProvider provider;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(16),
-      child: GestureDetector(
-        onTap: () => Navigator.of(context).pop(),
-        child: InteractiveViewer(
-          child: Image(image: provider, fit: BoxFit.contain),
-        ),
       ),
     );
   }
