@@ -235,10 +235,11 @@ class _ImagePreviewPageState extends State<ImagePreviewPage>
     if (!_isDismissing &&
         _isZoomed &&
         details.pointerCount == 1 &&
-        delta.dy > 0) {
-      final top =
-          _center.dy + _offset.dy - _fittedSize.height * _scale / 2;
-      if (top >= -0.5) {
+        delta.dy > delta.dx.abs()) {
+      final height = _fittedSize.height * _scale;
+      final top = _center.dy + _offset.dy - height / 2;
+      // 只有图片比屏幕高、且顶边已贴顶时才接力下拉关闭；矮图放大后纵向本就不能平移。
+      if (height > _viewport.height + 0.5 && top >= -0.5) {
         _dismissAnchor = _lastFocal;
         _isDismissing = true;
         _isDismissFromZoom = true;
@@ -266,6 +267,8 @@ class _ImagePreviewPageState extends State<ImagePreviewPage>
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
+    // 增减手指时 ScaleGestureRecognizer 会先 end 再 start，这不是松手。
+    if (details.pointerCount > 0) return;
     if (_isDismissing &&
         (_dismissOffset.dy > _kDismissDistance ||
             details.velocity.pixelsPerSecond.dy > 700)) {
