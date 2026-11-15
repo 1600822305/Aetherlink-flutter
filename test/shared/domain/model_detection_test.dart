@@ -168,6 +168,48 @@ void main() {
     });
   });
 
+  group('inference: audio models', () {
+    test('speech-to-text', () {
+      for (final id in [
+        'whisper-1',
+        'whisper-large-v3',
+        'sensevoice-small',
+        'gpt-4o-mini-transcribe',
+        'paraformer-v2',
+      ]) {
+        expect(inferSpeechToTextFromModelId(id), isTrue, reason: id);
+      }
+      expect(inferSpeechToTextFromModelId('gpt-4o'), isFalse);
+    });
+    test('text-to-speech', () {
+      for (final id in [
+        'tts-1',
+        'tts-1-hd',
+        'gpt-4o-mini-tts',
+        'cosyvoice-v1',
+        'melotts',
+      ]) {
+        expect(inferTextToSpeechFromModelId(id), isTrue, reason: id);
+      }
+      expect(inferTextToSpeechFromModelId('gpt-4o'), isFalse);
+      expect(inferTextToSpeechFromModelId('settings-x'), isFalse);
+    });
+    test('audio models land as non-chat', () {
+      final whisper = _m('whisper-1').copyWith(
+        capabilities: inferCapabilitiesFromModelId('whisper-1'),
+      );
+      expect(isSpeechToTextModel(whisper), isTrue);
+      expect(isNonChatModel(whisper), isTrue);
+      final tts = _m('tts-1');
+      expect(isTextToSpeechModel(tts), isTrue);
+      expect(isNonChatModel(tts), isTrue);
+      final chat = _m('gpt-4o').copyWith(
+        capabilities: inferCapabilitiesFromModelId('gpt-4o'),
+      );
+      expect(isNonChatModel(chat), isFalse);
+    });
+  });
+
   group('inference: function calling', () {
     test('positive', () {
       for (final id in [

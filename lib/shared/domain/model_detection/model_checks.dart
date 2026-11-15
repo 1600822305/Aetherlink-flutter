@@ -13,6 +13,7 @@ library;
 
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_capabilities.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/capability_inference.dart';
 import 'package:aetherlink_flutter/shared/domain/model_type.dart';
 
 bool _hasType(Model model, ModelType type) => model.modelTypes?.contains(type) ?? false;
@@ -38,7 +39,9 @@ Set<ModelType> capabilitiesToModelTypes(ModelCapabilities? c) {
   final isData = c.embedding == true || c.rerank == true;
   final isPureImage = c.imageGeneration == true &&
       !(c.reasoning == true || c.functionCalling == true || c.vision == true);
-  if (!isData && !isPureImage) s.add(ModelType.chat);
+  if (!isData && !isPureImage && c.transcription != true) {
+    s.add(ModelType.chat);
+  }
   return s;
 }
 
@@ -97,12 +100,32 @@ bool isGenerateVideoModel(Model model) {
   return model.videoGeneration == true;
 }
 
+/// Speech-to-text (ASR) model — whisper/SenseVoice class. Mirrors upstream's
+/// AUDIO_TRANSCRIPT capability + `isSpeechToTextModel`.
+bool isSpeechToTextModel(Model model) {
+  if (_hasType(model, ModelType.transcription)) return true;
+  return model.capabilities?.transcription == true;
+}
+
+/// Text-to-speech / audio-generation model — OpenAI tts-*, CosyVoice, Bark.
+/// Mirrors upstream's AUDIO_GENERATION capability + `isTextToSpeechModel`.
+/// [ModelCapabilities] has no audio-generation flag yet, so beyond the
+/// structured layers this falls back to id inference — the one runtime regex
+/// use in this file, documented at `inferTextToSpeechFromModelId`.
+bool isTextToSpeechModel(Model model) {
+  if (_hasType(model, ModelType.audio)) return true;
+  return inferTextToSpeechFromModelId(model.id);
+}
+
 /// Non-conversational model — should not appear in a chat-model selector.
 /// Mirrors Cherry Studio's `isNonChatModel` (`src/shared/utils/model.ts`):
-/// embedding / rerank / 图像生成 / 视频生成 models are picked elsewhere
-/// (memory embedding selector, painting page), not as the chat model.
+/// embedding / rerank / 图像生成 / 视频生成 / 音频生成 / 语音转写 models are
+/// picked elsewhere (memory embedding selector, painting page), not as the
+/// chat model.
 bool isNonChatModel(Model model) =>
     isEmbeddingModel(model) ||
     isRerankModel(model) ||
     isGenerateImageModel(model) ||
-    isGenerateVideoModel(model);
+    isGenerateVideoModel(model) ||
+    isSpeechToTextModel(model) ||
+    isTextToSpeechModel(model);
