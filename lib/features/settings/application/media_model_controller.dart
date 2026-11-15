@@ -63,7 +63,7 @@ class MediaModelController extends _$MediaModelController {
   }
 
   void setImageModel(String providerId, String modelId) {
-    final key = '$providerId$modelId';
+    final key = '$providerId\u0000$modelId';
     state = state.copyWith(imageModelKey: () => key);
     _repo.saveSetting(kMediaImageModelKey, key);
   }
@@ -74,7 +74,7 @@ class MediaModelController extends _$MediaModelController {
   }
 
   void setVideoModel(String providerId, String modelId) {
-    final key = '$providerId$modelId';
+    final key = '$providerId\u0000$modelId';
     state = state.copyWith(videoModelKey: () => key);
     _repo.saveSetting(kMediaVideoModelKey, key);
   }
