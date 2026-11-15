@@ -44,6 +44,7 @@ Future<McpSetup> buildMcpSetup(
   Ref ref, {
   required Future<List<Skill>> Function() loadBoundSkills,
   required Future<bool> Function() loadGenerateImageEnabled,
+  required Future<bool> Function() loadGenerateVideoEnabled,
 }) async {
   // Ensure persisted toggles have been loaded from DB before reading — fixes
   // a cold-start race where the default (enabled=false) was used for the
@@ -54,6 +55,7 @@ Future<McpSetup> buildMcpSetup(
   final boundSkills = await loadBoundSkills();
   final injectReadSkill = toolsState.skillsEnabled && boundSkills.isNotEmpty;
   final generateImageEnabled = await loadGenerateImageEnabled();
+  final generateVideoEnabled = await loadGenerateVideoEnabled();
 
   final tools = <McpToolDefinition>[];
   final routes = <String, ToolRoute>{};
@@ -64,8 +66,8 @@ Future<McpSetup> buildMcpSetup(
     routes[kReadSkillToolName] = const SkillReadToolRoute();
   }
 
-  // 工具 总开关 off: only read_skill / web search / generate_image may ride
-  // along.
+  // 工具 总开关 off: only read_skill / web search / generate_image /
+  // generate_video may ride along.
   if (!toolsState.enabled) {
     addReadSkill();
     _maybeInjectWebSearch(ref, tools, routes);
@@ -75,6 +77,12 @@ Future<McpSetup> buildMcpSetup(
       tools,
       routes,
       enabled: generateImageEnabled,
+    );
+    await _maybeInjectGenerateVideo(
+      ref,
+      tools,
+      routes,
+      enabled: generateVideoEnabled,
     );
     if (tools.isEmpty) return const McpSetup.disabled();
     return McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
@@ -92,6 +100,12 @@ Future<McpSetup> buildMcpSetup(
       tools,
       routes,
       enabled: generateImageEnabled,
+    );
+    await _maybeInjectGenerateVideo(
+      ref,
+      tools,
+      routes,
+      enabled: generateVideoEnabled,
     );
     return McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
   }
@@ -181,6 +195,12 @@ Future<McpSetup> buildMcpSetup(
     routes,
     enabled: generateImageEnabled,
   );
+  await _maybeInjectGenerateVideo(
+    ref,
+    tools,
+    routes,
+    enabled: generateVideoEnabled,
+  );
 
   // 文件工具在列时把当前工作区上下文直接送进系统提示，模型开局即知可用
   // 工作区（编号/ID/名称），无需专门的列表工具。
@@ -244,6 +264,22 @@ Future<void> _maybeInjectGenerateImage(
   if (media == null) return;
   tools.add(kGenerateImageToolDefinition);
   routes[kGenerateImageToolName] = const GenerateImageToolRoute();
+}
+
+/// Injects the `generate_video` tool when the 视频生成工具 flag is on AND the
+/// 视频生成 slot resolves — same contract as [_maybeInjectGenerateImage].
+Future<void> _maybeInjectGenerateVideo(
+  Ref ref,
+  List<McpToolDefinition> tools,
+  Map<String, ToolRoute> routes, {
+  required bool enabled,
+}) async {
+  if (!enabled) return;
+  if (routes.containsKey(kGenerateVideoToolName)) return;
+  final media = await ref.read(appMediaVideoModelProvider.future);
+  if (media == null) return;
+  tools.add(kGenerateVideoToolDefinition);
+  routes[kGenerateVideoToolName] = const GenerateVideoToolRoute();
 }
 
 /// Injects the `search_memory` tool when 记忆 is on and its 注入方式 is `tool`

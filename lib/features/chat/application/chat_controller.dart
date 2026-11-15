@@ -1636,6 +1636,10 @@ class ChatController extends _$ChatController {
       final assistant = await _repo.getAssistant(_assistantId);
       return assistant?.enableGenerateImage == true;
     },
+    loadGenerateVideoEnabled: () async {
+      await ref.read(mcpToolsControllerProvider.notifier).hydrated;
+      return ref.read(mcpToolsControllerProvider).generateVideoEnabled;
+    },
   );
 
   /// The system prompt for a turn (tool catalogue injection + capability

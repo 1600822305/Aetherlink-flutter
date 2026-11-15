@@ -20,6 +20,10 @@ const String kMcpBridgeModeKey = 'mcp-bridge-mode';
 /// Independent of the MCP 总开关: gates injecting the `read_skill` tool.
 const String kSkillsEnabledKey = 'skills-enabled';
 
+/// Storage key for the 视频生成工具开关：开启后注入 `generate_video` 工具，
+/// 由聊天模型自行决定何时调用（对齐「图片生成工具」开关的行为）。
+const String kGenerateVideoToolEnabledKey = 'generate-video-tool-enabled';
+
 /// 工具调用机制 (port of `useMCPTools`'s `mcpMode`): [function] passes tools via
 /// the model's native function-calling API; [prompt] injects them into the
 /// system prompt and parses the model's XML `<tool_use>` locally.
@@ -45,6 +49,7 @@ class McpToolsState {
     this.mode = McpMode.function,
     this.bridgeMode = false,
     this.skillsEnabled = false,
+    this.generateVideoEnabled = false,
   });
 
   /// 启用 MCP 工具 总开关 (`toolsEnabled`).
@@ -59,16 +64,21 @@ class McpToolsState {
   /// 技能 独立开关 (`skills-enabled`): 是否注入 read_skill 工具.
   final bool skillsEnabled;
 
+  /// 视频生成工具开关：是否注入 generate_video 工具。
+  final bool generateVideoEnabled;
+
   McpToolsState copyWith({
     bool? enabled,
     McpMode? mode,
     bool? bridgeMode,
     bool? skillsEnabled,
+    bool? generateVideoEnabled,
   }) => McpToolsState(
     enabled: enabled ?? this.enabled,
     mode: mode ?? this.mode,
     bridgeMode: bridgeMode ?? this.bridgeMode,
     skillsEnabled: skillsEnabled ?? this.skillsEnabled,
+    generateVideoEnabled: generateVideoEnabled ?? this.generateVideoEnabled,
   );
 }
 
@@ -103,11 +113,13 @@ class McpToolsController extends _$McpToolsController {
       final mode = await repo.getSetting(kMcpModeKey);
       final bridgeMode = await repo.getSetting(kMcpBridgeModeKey);
       final skillsEnabled = await repo.getSetting(kSkillsEnabledKey);
+      final generateVideo = await repo.getSetting(kGenerateVideoToolEnabledKey);
       state = McpToolsState(
         enabled: enabled == 'true',
         mode: McpMode.fromStorage(mode),
         bridgeMode: bridgeMode == 'true',
         skillsEnabled: skillsEnabled == 'true',
+        generateVideoEnabled: generateVideo == 'true',
       );
     } finally {
       if (!_hydrationDone.isCompleted) _hydrationDone.complete();
@@ -144,5 +156,13 @@ class McpToolsController extends _$McpToolsController {
     ref
         .read(chatRepositoryProvider)
         .saveSetting(kSkillsEnabledKey, enabled.toString());
+  }
+
+  /// Toggles 视频生成工具开关 —— injects `generate_video`.
+  void setGenerateVideoEnabled({required bool enabled}) {
+    state = state.copyWith(generateVideoEnabled: enabled);
+    ref
+        .read(chatRepositoryProvider)
+        .saveSetting(kGenerateVideoToolEnabledKey, enabled.toString());
   }
 }

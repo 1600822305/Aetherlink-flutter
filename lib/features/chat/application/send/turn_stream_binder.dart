@@ -799,6 +799,7 @@ class TurnStreamBinder {
           // 块 —— 插在工具块中间会切断 toolHistoryMessages 的相邻分组，导致
           // 下一轮重放把一个工具回合拆成多条消息。
           final generatedImageUrls = <String>[];
+          final generatedVideoUrls = <String>[];
           for (final call in runnable) {
             final route = mcp.routes[call.name]!;
             final args = decodeToolArguments(call.arguments);
@@ -948,12 +949,30 @@ class TurnStreamBinder {
                 result.imageUrls ?? const <String>[],
               );
             }
+            if (route is GenerateVideoToolRoute && !result.isError) {
+              generatedVideoUrls.addAll(
+                result.videoUrls ?? const <String>[],
+              );
+            }
             update();
             checkpoint(force: true);
           }
 
           // generate_image 的产物落 IMAGE 块，展示在本轮全部工具块之后（与
           // 直接图像生成模式的块形状一致）；URL 不回填进模型上下文。
+          for (final url in generatedVideoUrls) {
+            completed.add(
+              MessageBlock.video(
+                id: generateId('block'),
+                messageId: assistantMessageId,
+                status: MessageBlockStatus.success,
+                createdAt: assistantTime,
+                updatedAt: DateTime.now(),
+                url: url,
+                mimeType: 'video/mp4',
+              ),
+            );
+          }
           for (final url in generatedImageUrls) {
             completed.add(
               MessageBlock.image(
@@ -969,7 +988,8 @@ class TurnStreamBinder {
               ),
             );
           }
-          if (generatedImageUrls.isNotEmpty) {
+          if (generatedImageUrls.isNotEmpty ||
+              generatedVideoUrls.isNotEmpty) {
             update();
             checkpoint(force: true);
           }
