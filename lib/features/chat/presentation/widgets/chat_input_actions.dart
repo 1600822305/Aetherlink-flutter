@@ -189,7 +189,9 @@ class ChatInputActions implements InputBoxActions {
           .updateGenerateImageEnabled(assistant.id, false);
       return;
     }
-    if (_ref.read(appMediaImageModelProvider).value == null) {
+    // provider 异步解析：冷启动时 .value 尚为 null，必须 await future
+    // 否则首次点按误报未配置。
+    if (await _ref.read(appMediaImageModelProvider.future) == null) {
       if (context.mounted) {
         _snack(context, '请先在 设置 → 辅助模型 → 媒体 配置绘画模型');
       }
