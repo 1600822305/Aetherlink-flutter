@@ -130,6 +130,8 @@ dependencies:
   fl_chart: ^1.2.0
   # 消息图片块（IMAGE）网络图磁盘缓存 + 下载进度占位，避免重进会话重新拉取。
   cached_network_image: ^3.4.1
+  # 全屏图片查看器的「保存到相册」：gal 自管相册权限请求。
+  gal: ^2.3.2
   # 消息视频块（VIDEO）播放：官方 video_player + chewie 控制条/全屏。
   video_player: ^2.11.1
   chewie: ^1.14.1
