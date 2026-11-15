@@ -57,9 +57,10 @@ final RegExp _rerankingRegex = RegExp(
 
 // ASR / speech-to-text models (whisper family, SenseVoice, Paraformer, …).
 // Mirrors upstream's AUDIO_TRANSCRIPT capability; mapped onto
-// [ModelCapabilities.transcription].
+// [ModelCapabilities.transcription]. `voxtral` is deliberately absent: the
+// Voxtral family is a conversational audio-input chat model, not ASR.
 final RegExp _speechToTextRegex = RegExp(
-  r'(?:whisper|sensevoice|paraformer|funasr|voxtral|\basr\b|\bstt\b|transcribe|gpt-4o-mini-transcribe)',
+  r'(?:whisper|sensevoice|paraformer|funasr|\basr\b|\bstt\b|transcribe)',
   caseSensitive: false,
 );
 

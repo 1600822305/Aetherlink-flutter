@@ -109,13 +109,11 @@ bool isSpeechToTextModel(Model model) {
 
 /// Text-to-speech / audio-generation model — OpenAI tts-*, CosyVoice, Bark.
 /// Mirrors upstream's AUDIO_GENERATION capability + `isTextToSpeechModel`.
-/// [ModelCapabilities] has no audio-generation flag yet, so beyond the
-/// structured layers this falls back to id inference — the one runtime regex
-/// use in this file, documented at `inferTextToSpeechFromModelId`.
-bool isTextToSpeechModel(Model model) {
-  if (_hasType(model, ModelType.audio)) return true;
-  return inferTextToSpeechFromModelId(model.id);
-}
+/// [ModelCapabilities] has no audio-generation flag yet, so this falls back
+/// to id inference — the one runtime regex use in this file, documented at
+/// `inferTextToSpeechFromModelId`. `ModelType.audio` is NOT checked: in the
+/// model editor it marks audio *input* capability (e.g. Voxtral), not TTS.
+bool isTextToSpeechModel(Model model) => inferTextToSpeechFromModelId(model.id);
 
 /// Non-conversational model — should not appear in a chat-model selector.
 /// Mirrors Cherry Studio's `isNonChatModel` (`src/shared/utils/model.ts`):

@@ -180,6 +180,8 @@ void main() {
         expect(inferSpeechToTextFromModelId(id), isTrue, reason: id);
       }
       expect(inferSpeechToTextFromModelId('gpt-4o'), isFalse);
+      // Voxtral is a conversational audio-input chat model, not ASR.
+      expect(inferSpeechToTextFromModelId('voxtral-small-latest'), isFalse);
     });
     test('text-to-speech', () {
       for (final id in [
