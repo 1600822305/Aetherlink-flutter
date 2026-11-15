@@ -897,13 +897,19 @@ class ChatController extends _$ChatController {
   /// (imported replies whose `askId` is null). Null when none is recoverable.
   Future<String?> _mediaPromptFor(Message target) async {
     final targetBlocks = await _repo.getMessageBlocksByMessageId(target.id);
+    // 一条回复里可能有多次 generate_image 调用（失败后纠正重试）：只有
+    // status == success 的那次产出了当前显示的图片，优先用它的 prompt。
+    String? fallbackPrompt;
     for (final block in targetBlocks) {
       if (block is ToolBlock && block.toolName == 'generate_image') {
         final prompt =
             (block.arguments?['prompt'] as String?)?.trim() ?? '';
-        if (prompt.isNotEmpty) return prompt;
+        if (prompt.isEmpty) continue;
+        if (block.status == MessageBlockStatus.success) return prompt;
+        fallbackPrompt ??= prompt;
       }
     }
+    if (fallbackPrompt != null) return fallbackPrompt;
     final askId = target.askId;
     if (askId != null) {
       final blocks = await _repo.getMessageBlocksByMessageId(askId);
@@ -915,11 +921,13 @@ class ChatController extends _$ChatController {
     }
     final views = state.value?.messages ?? const <ChatMessageView>[];
     final index = views.indexWhere((v) => v.id == target.id);
+    // 只认紧邻的上一条用户消息：纯附件轮次的 text 为空，此时再往前翻会
+    // 拿到无关的旧 prompt 去重跑，返回 null（重新生成不动）更安全。
     for (var i = index - 1; i >= 0; i--) {
       final view = views[i];
-      if (view.role == MessageRole.user && view.text.trim().isNotEmpty) {
-        return view.text.trim();
-      }
+      if (view.role != MessageRole.user) continue;
+      final text = view.text.trim();
+      return text.isEmpty ? null : text;
     }
     return null;
   }
