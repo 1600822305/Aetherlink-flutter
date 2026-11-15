@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -178,15 +179,41 @@ class _AppToastWidgetState extends State<_AppToastWidget>
     reverseCurve: Curves.easeInCubic,
   );
 
+  static const _dismissDistance = 48.0;
+
   Timer? _dismissTimer;
   bool _dismissing = false;
+  double _dragOffset = 0;
 
   @override
   void initState() {
     super.initState();
     widget.onRegister(this);
     _controller.forward();
-    _dismissTimer = Timer(widget.duration, _dismiss);
+    _armTimer();
+  }
+
+  void _armTimer() =>
+      _dismissTimer = Timer(widget.duration, _dismiss);
+
+  // 长按暂停倒计时，松手重新开始计时。
+  void _pauseTimer() => _dismissTimer?.cancel();
+  void _resumeTimer() {
+    _dismissTimer?.cancel();
+    _armTimer();
+  }
+
+  void _onVerticalDrag(DragUpdateDetails details) {
+    setState(() => _dragOffset += details.delta.dy);
+  }
+
+  void _onVerticalDragEnd(DragEndDetails details) {
+    final velocity = details.velocity.pixelsPerSecond.dy;
+    if (_dragOffset.abs() > _dismissDistance || velocity.abs() > 300) {
+      _dismiss();
+      return;
+    }
+    setState(() => _dragOffset = 0);
   }
 
   @override
@@ -243,92 +270,110 @@ class _AppToastWidgetState extends State<_AppToastWidget>
       top: media.padding.top + 12,
       left: 0,
       right: 0,
-      child: IgnorePointer(
-        ignoring: false,
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: AnimatedBuilder(
-            animation: _curve,
-            builder: (context, child) {
-              return Opacity(
-                opacity: _curve.value,
-                child: Transform.translate(
-                  offset: Offset(0, (1 - _curve.value) * -16),
-                  child: child,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: AnimatedBuilder(
+          animation: _curve,
+          builder: (context, child) {
+            final dragFade = (1 - _dragOffset.abs() / 200).clamp(0.0, 1.0);
+            return Opacity(
+              opacity: _curve.value * dragFade,
+              child: Transform.translate(
+                offset: Offset(
+                  0,
+                  (1 - _curve.value) * -16 + _dragOffset,
                 ),
-              );
-            },
-            child: Material(
-              color: Colors.transparent,
-              child: GestureDetector(
-                onTap: _dismiss,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: media.size.width - 48,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF2A2A2E)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: scheme.outlineVariant.withValues(alpha: 0.5),
+                child: child,
+              ),
+            );
+          },
+          child: Material(
+            color: Colors.transparent,
+            child: GestureDetector(
+              onVerticalDragUpdate: _onVerticalDrag,
+              onVerticalDragEnd: _onVerticalDragEnd,
+              onLongPressStart: (_) => _pauseTimer(),
+              onLongPressEnd: (_) => _resumeTimer(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: media.size.width - 48,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  // 只 blur 这一个 pill 的小区域，不做全屏 filter，开销可控。
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                            alpha: isDark ? 0.4 : 0.12,
-                          ),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.12)
+                            : Colors.white.withValues(alpha: 0.72),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: scheme.outlineVariant.withValues(alpha: 0.5),
                         ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(style.icon, size: 18, color: style.accent),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            widget.message,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurface,
-                              fontWeight: FontWeight.w500,
-                              height: 1.25,
-                            ),
-                          ),
-                        ),
-                        if (widget.action != null) ...[
-                          const SizedBox(width: 4),
-                          GestureDetector(
-                            onTap: () {
-                              widget.action!.onPressed();
-                              _dismiss();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(style.icon, size: 18, color: style.accent),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: GestureDetector(
+                              // 点正文不再关闭，而是弹详情 sheet 看全文。
+                              onTap: () => _showDetail(context),
                               child: Text(
-                                widget.action!.label,
+                                widget.message,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: style.accent,
-                                  fontWeight: FontWeight.w600,
+                                  color: scheme.onSurface,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.25,
                                 ),
                               ),
                             ),
                           ),
+                          if (widget.action != null) ...[
+                            const SizedBox(width: 4),
+                            GestureDetector(
+                              onTap: () {
+                                widget.action!.onPressed();
+                                _dismiss();
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                child: Text(
+                                  widget.action!.label,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: style.accent,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 2),
+                          GestureDetector(
+                            onTap: _dismiss,
+                            child: Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Icon(
+                                LucideIcons.x,
+                                size: 14,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -336,6 +381,55 @@ class _AppToastWidgetState extends State<_AppToastWidget>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 长文本在 pill 里放不下：点正文弹详情 sheet，含一键复制。
+  void _showDetail(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _ToastDetailSheet(message: widget.message),
+    );
+  }
+}
+
+class _ToastDetailSheet extends StatelessWidget {
+  const _ToastDetailSheet({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => AppToast.copy(context, message),
+              child: const Text('复制全部'),
+            ),
+          ),
+          // 长文本占满 sheet 也要可滚动读完，不能溢出。
+          Flexible(
+            child: SingleChildScrollView(
+              child: SelectableText(
+                message,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
