@@ -26,6 +26,7 @@ class McpToolResult {
     this.imagePath,
     this.imageMimeType,
     this.imageUrls,
+    this.videoUrls,
   });
 
   final String text;
@@ -41,4 +42,8 @@ class McpToolResult {
   /// 生成的图片 URL 列表（`generate_image` 工具用）：http(s) 或 data URL，
   /// 由聊天层落成 IMAGE 消息块直接展示，不回填给模型。
   final List<String>? imageUrls;
+
+  /// 生成的视频 URL 列表（`generate_video` 工具用）：由聊天层落成 VIDEO
+  /// 消息块直接展示，不回填给模型。
+  final List<String>? videoUrls;
 }

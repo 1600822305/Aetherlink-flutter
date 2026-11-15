@@ -123,6 +123,8 @@ class ChatToolExecutor {
         return _runMemorySearch(args);
       case GenerateImageToolRoute():
         return _runGenerateImage(args);
+      case GenerateVideoToolRoute():
+        return _runGenerateVideo(args);
       case KnowledgeToolRoute():
         return await runKnowledgeTool(_ref, route.toolName, args);
       case TerminalToolRoute():
@@ -561,6 +563,33 @@ class ChatToolExecutor {
       return McpToolResult('已生成 ${urls.length} 张图片并展示在对话中。', imageUrls: urls);
     } on Object catch (error) {
       return McpToolResult('生成图片失败: ${_errorMessage(error)}', isError: true);
+    }
+  }
+
+  /// Executes one `generate_video` call through the configured 视频生成 slot —
+  /// same contract as [_runGenerateImage]: missing/invalid slot is an explicit
+  /// error result, never a silent fallback to the chat model.
+  Future<McpToolResult> _runGenerateVideo(Map<String, Object?> args) async {
+    final prompt = (args['prompt'] as String?)?.trim() ?? '';
+    if (prompt.isEmpty) {
+      return const McpToolResult('generate_video 需要 prompt 参数', isError: true);
+    }
+    final current = await _ref.read(appMediaVideoModelProvider.future);
+    final effective = current == null ? null : effectiveModelFor(current);
+    if (effective == null) {
+      return const McpToolResult(
+        '未配置视频生成模型或已失效。请引导用户到 设置 → 辅助模型 → 媒体 '
+        '选择支持视频生成的模型。',
+        isError: true,
+      );
+    }
+    try {
+      final url = await _ref
+          .read(appMediaGenerationGatewayProvider)
+          .generateVideo(model: effective, prompt: prompt);
+      return McpToolResult('已生成视频并展示在对话中。', videoUrls: [url]);
+    } on Object catch (error) {
+      return McpToolResult('生成视频失败: ${_errorMessage(error)}', isError: true);
     }
   }
 

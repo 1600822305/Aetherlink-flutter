@@ -62,7 +62,10 @@ class ChatInputActions implements InputBoxActions {
     InputBoxAction.generateImage =>
       _mode == InputMode.image ||
           (_ref.read(currentAssistantProvider)?.enableGenerateImage ?? false),
-    InputBoxAction.generateVideo => _mode == InputMode.video,
+    // 点亮条件：直达模式（选了生视频模型）或「视频生成工具」开关开着。
+    InputBoxAction.generateVideo =>
+      _mode == InputMode.video ||
+          _ref.read(mcpToolsControllerProvider).generateVideoEnabled,
     InputBoxAction.clearTopic => _ref.read(inputClearConfirmProvider),
     InputBoxAction.mcpTools => _ref.read(mcpToolsControllerProvider).enabled,
     InputBoxAction.reasoningEffort => isReasoningEffortActive(_ref),
@@ -109,7 +112,7 @@ class ChatInputActions implements InputBoxActions {
       case InputBoxAction.generateImage:
         _toggleGenerateImage(context);
       case InputBoxAction.generateVideo:
-        _toggle(InputMode.video);
+        _toggleGenerateVideo(context);
       case InputBoxAction.newTopic:
         _newTopic();
       case InputBoxAction.clearTopic:
@@ -171,6 +174,34 @@ class ChatInputActions implements InputBoxActions {
 
   void _toggle(InputMode mode) =>
       _ref.read(inputModeControllerProvider.notifier).toggle(mode);
+
+  /// 生成视频按钮 = 「视频生成工具」开关（对齐生成图片按钮的行为）：点亮后
+  /// 注入 `generate_video` 工具，由聊天模型自行决定何时调用，执行后端是
+  /// 设置→辅助模型→媒体 里的视频生成模型。若正处于视频直达模式（选择器
+  /// 里选了生视频模型），点按退出直达模式并同时关掉工具开关。
+  Future<void> _toggleGenerateVideo(BuildContext context) async {
+    if (_mode == InputMode.video) {
+      _toggle(InputMode.video);
+      final mcp = _ref.read(mcpToolsControllerProvider.notifier);
+      if (_ref.read(mcpToolsControllerProvider).generateVideoEnabled) {
+        mcp.setGenerateVideoEnabled(enabled: false);
+      }
+      return;
+    }
+    final mcp = _ref.read(mcpToolsControllerProvider.notifier);
+    if (_ref.read(mcpToolsControllerProvider).generateVideoEnabled) {
+      mcp.setGenerateVideoEnabled(enabled: false);
+      return;
+    }
+    // provider 异步解析：冷启动时 .value 尚为 null，必须 await future。
+    if (await _ref.read(appMediaVideoModelProvider.future) == null) {
+      if (context.mounted) {
+        _snack(context, '请先在 设置 → 辅助模型 → 媒体 配置视频生成模型');
+      }
+      return;
+    }
+    mcp.setGenerateVideoEnabled(enabled: true);
+  }
 
   /// 生成图片按钮是聊天模型的「图片生成工具」开关（CS `enableGenerateImage`
   /// 输入框开关）：点亮后本轮对话把 `generate_image` 注入工具列表，由模型

@@ -124,6 +124,12 @@ class GenerateImageToolRoute extends ToolRoute {
   const GenerateImageToolRoute() : super(kGenerateImageToolName);
 }
 
+/// A generate_video tool call — executed in-process through the configured
+/// 视频生成 media slot.
+class GenerateVideoToolRoute extends ToolRoute {
+  const GenerateVideoToolRoute() : super(kGenerateVideoToolName);
+}
+
 /// A tool executed over a live connection to [server] via
 /// [RemoteMcpConnectionManager].
 class RemoteToolRoute extends ToolRoute {
@@ -258,6 +264,27 @@ const McpToolDefinition kGenerateImageToolDefinition = McpToolDefinition(
     'type': 'object',
     'properties': {
       'prompt': {'type': 'string', 'description': '图片内容描述（英文提示词通常效果更好）'},
+    },
+    'required': ['prompt'],
+  },
+);
+
+// ── generate_video tool definition ──────────────────────────────────────────
+
+const String kGenerateVideoToolName = 'generate_video';
+
+/// generate_image 的视频版：只有必填 `prompt`；模型由 媒体模型槽位 决定。
+const McpToolDefinition kGenerateVideoToolDefinition = McpToolDefinition(
+  name: kGenerateVideoToolName,
+  description:
+      '生成视频。当用户要求生成、制作一段视频时使用此工具。\n\n'
+      '使用场景：\n'
+      '- 用户明确要求生成视频（“生成一段…的视频”）\n'
+      '注意：生成需要一定时间，不要在同一轮重复调用。',
+  inputSchema: {
+    'type': 'object',
+    'properties': {
+      'prompt': {'type': 'string', 'description': '视频内容描述（英文提示词通常效果更好）'},
     },
     'required': ['prompt'],
   },

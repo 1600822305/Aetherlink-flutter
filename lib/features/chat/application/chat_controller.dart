@@ -746,7 +746,7 @@ class ChatController extends _$ChatController {
           default:
         }
       }
-      final prompt = await _mediaPromptFor(target);
+      final prompt = await _mediaPromptFor(target, mode);
       if (prompt == null) return;
       await _mediaGeneration.regenerateMediaGeneration(
         mode,
@@ -904,13 +904,20 @@ class ChatController extends _$ChatController {
   /// else the `main_text` of the user message linked by `askId` (direct media
   /// sends), else the nearest preceding user message in the loaded views
   /// (imported replies whose `askId` is null). Null when none is recoverable.
-  Future<String?> _mediaPromptFor(Message target) async {
+  Future<String?> _mediaPromptFor(Message target, InputMode mode) async {
     final targetBlocks = await _repo.getMessageBlocksByMessageId(target.id);
     // 一条回复里可能有多次 generate_image 调用（失败后纠正重试）：只有
     // status == success 的那次产出了当前显示的图片，优先用它的 prompt。
+    // 工具名按重跑种类过滤——同一条回复里图像和视频调用并存时，不能
+    // 拿另一种媒体的 prompt 去重跑。
+    final toolName = switch (mode) {
+      InputMode.image => 'generate_image',
+      InputMode.video => 'generate_video',
+      _ => null,
+    };
     String? fallbackPrompt;
     for (final block in targetBlocks) {
-      if (block is ToolBlock && block.toolName == 'generate_image') {
+      if (block is ToolBlock && block.toolName == toolName) {
         final prompt =
             (block.arguments?['prompt'] as String?)?.trim() ?? '';
         if (prompt.isEmpty) continue;
@@ -1635,6 +1642,10 @@ class ChatController extends _$ChatController {
     loadGenerateImageEnabled: () async {
       final assistant = await _repo.getAssistant(_assistantId);
       return assistant?.enableGenerateImage == true;
+    },
+    loadGenerateVideoEnabled: () async {
+      await ref.read(mcpToolsControllerProvider.notifier).hydrated;
+      return ref.read(mcpToolsControllerProvider).generateVideoEnabled;
     },
   );
 
