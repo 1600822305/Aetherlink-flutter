@@ -225,7 +225,12 @@ class ImageBlockView extends StatelessWidget {
 /// inline base64/data URIs render through the resolved [ImageProvider].
 Widget _buildImage(ImageBlock block, ImageProvider provider) {
   final url = block.url;
-  if (url.startsWith('http://') || url.startsWith('https://')) {
+  // Inline data takes priority over the URL (same precedence as
+  // _resolveImageProvider) — otherwise the thumbnail and the preview could
+  // show different images, and the thumbnail would fail offline.
+  final hasInline =
+      (block.base64Data?.isNotEmpty ?? false) || url.startsWith('data:');
+  if (!hasInline && (url.startsWith('http://') || url.startsWith('https://'))) {
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
