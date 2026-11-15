@@ -20,6 +20,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/bra
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/mini_map_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
@@ -97,6 +98,44 @@ bool chatSelectorModelFilter(Model model) =>
     isGenerateImageModel(model) ||
     isGenerateVideoModel(model);
 
+/// 聊天模型选择器的统一打开入口（顶部栏与 DIY 工具栏共用）：列出聊天 +
+/// 生图/生视频模型，高亮定位按当前状态取——媒体直达模式 armed 时高亮
+/// 媒体槽位的模型，否则高亮当前聊天模型。无可用模型时跳默认模型设置页。
+void openChatModelSelector(BuildContext context, WidgetRef ref) {
+  final providers = ref.read(appModelProvidersProvider).value ?? const [];
+  if (!providers.any((p) => p.models.isNotEmpty)) {
+    context.push(AppRouter.defaultModelPath);
+    return;
+  }
+  final mode = ref.read(inputModeControllerProvider);
+  // 高亮优先级与发送链路一致：媒体直达模式 > combo > 当前聊天模型。
+  // combo 的条目身份是 kModelComboProviderId + comboId（dialog 的 combo
+  // 分支同款），只传底层默认模型会把选择器定位错。
+  final mediaMode = mode == InputMode.image || mode == InputMode.video;
+  final comboId =
+      mediaMode ? null : ref.read(modelComboControllerProvider).selectedComboId;
+  final CurrentModel? selected = mediaMode
+      ? ref
+          .read(
+            mode == InputMode.image
+                ? appMediaImageModelProvider
+                : appMediaVideoModelProvider,
+          )
+          .value
+      : ref.read(appCurrentModelProvider).value;
+  final selectedProviderId =
+      comboId != null ? kModelComboProviderId : selected?.provider.id;
+  final selectedModelId = comboId ?? selected?.model.id;
+  showModelSelectorDialog(
+    context,
+    filter: chatSelectorModelFilter,
+    selectedProviderId: selectedProviderId,
+    selectedModelId: selectedModelId,
+    onSelect: (provider, model) =>
+        selectChatSelectorModel(context, ref, provider, model),
+  );
+}
+
 Future<void> openCondenseDialog(BuildContext context) async {
   final result = await showContextCondenseDialog(context);
   if (result != null && result.success && context.mounted) {
@@ -133,16 +172,7 @@ VoidCallback? componentAction(
     case TopToolbarComponent.searchButton:
       return () => showChatSearchDialog(context);
     case TopToolbarComponent.modelSelector:
-      final providers = ref.read(appModelProvidersProvider).value ?? const [];
-      final hasModels = providers.any((p) => p.models.isNotEmpty);
-      return () => hasModels
-          ? showModelSelectorDialog(
-              context,
-              filter: chatSelectorModelFilter,
-              onSelect: (provider, model) =>
-                  selectChatSelectorModel(context, ref, provider, model),
-            )
-          : context.push(AppRouter.defaultModelPath);
+      return () => openChatModelSelector(context, ref);
     case TopToolbarComponent.settingsButton:
       return () => context.push(AppRouter.settingsPath);
     case TopToolbarComponent.condenseButton:
