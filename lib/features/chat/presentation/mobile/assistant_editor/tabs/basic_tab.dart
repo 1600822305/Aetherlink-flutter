@@ -20,6 +20,8 @@ class BasicTab extends StatelessWidget {
     required this.chatBackground,
     required this.onChatBackgroundChanged,
     required this.onPickWallpaper,
+    required this.generateImageEnabled,
+    required this.onGenerateImageChanged,
     this.avatarImage,
   });
 
@@ -32,6 +34,11 @@ class BasicTab extends StatelessWidget {
   final AssistantChatBackground chatBackground;
   final ValueChanged<AssistantChatBackground> onChatBackgroundChanged;
   final Future<void> Function() onPickWallpaper;
+
+  /// 图片生成工具开关（`assistant.enableGenerateImage`）：开启后聊天模型
+  /// 可通过 `generate_image` 内置工具调用绘画模型槽位生成图片。
+  final bool generateImageEnabled;
+  final ValueChanged<bool> onGenerateImageChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -182,6 +189,33 @@ class BasicTab extends StatelessWidget {
             ],
           ),
         ],
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label(theme, '图片生成工具'),
+                  const SizedBox(height: 4),
+                  Text(
+                    '开启后助手可在普通对话中调用 generate_image 生成图片'
+                    '（需先在 设置 → 辅助模型 → 媒体 配置绘画模型）',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            CustomSwitch(
+              value: generateImageEnabled,
+              onChanged: onGenerateImageChanged,
+            ),
+          ],
+        ),
       ],
     );
   }

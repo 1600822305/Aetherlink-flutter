@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
+import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
@@ -37,10 +38,12 @@ import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart
 ///
 /// [loadBoundSkills] resolves the current assistant's bound, enabled skills;
 /// it is a callback so this builder stays independent of the controller's
-/// repository access.
+/// repository access. [loadGenerateImageEnabled] likewise reports the
+/// assistant's 图片生成工具 flag (`assistant.enableGenerateImage`).
 Future<McpSetup> buildMcpSetup(
   Ref ref, {
   required Future<List<Skill>> Function() loadBoundSkills,
+  required Future<bool> Function() loadGenerateImageEnabled,
 }) async {
   // Ensure persisted toggles have been loaded from DB before reading — fixes
   // a cold-start race where the default (enabled=false) was used for the
@@ -50,6 +53,7 @@ Future<McpSetup> buildMcpSetup(
 
   final boundSkills = await loadBoundSkills();
   final injectReadSkill = toolsState.skillsEnabled && boundSkills.isNotEmpty;
+  final generateImageEnabled = await loadGenerateImageEnabled();
 
   final tools = <McpToolDefinition>[];
   final routes = <String, ToolRoute>{};
@@ -60,11 +64,18 @@ Future<McpSetup> buildMcpSetup(
     routes[kReadSkillToolName] = const SkillReadToolRoute();
   }
 
-  // 工具 总开关 off: only read_skill and web search may ride along.
+  // 工具 总开关 off: only read_skill / web search / generate_image may ride
+  // along.
   if (!toolsState.enabled) {
     addReadSkill();
     _maybeInjectWebSearch(ref, tools, routes);
     _maybeInjectMemorySearch(ref, tools, routes);
+    await _maybeInjectGenerateImage(
+      ref,
+      tools,
+      routes,
+      enabled: generateImageEnabled,
+    );
     if (tools.isEmpty) return const McpSetup.disabled();
     return McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
   }
@@ -76,6 +87,12 @@ Future<McpSetup> buildMcpSetup(
     addReadSkill();
     _maybeInjectWebSearch(ref, tools, routes);
     _maybeInjectMemorySearch(ref, tools, routes);
+    await _maybeInjectGenerateImage(
+      ref,
+      tools,
+      routes,
+      enabled: generateImageEnabled,
+    );
     return McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
   }
 
@@ -158,6 +175,12 @@ Future<McpSetup> buildMcpSetup(
   addReadSkill();
   _maybeInjectWebSearch(ref, tools, routes);
   _maybeInjectMemorySearch(ref, tools, routes);
+  await _maybeInjectGenerateImage(
+    ref,
+    tools,
+    routes,
+    enabled: generateImageEnabled,
+  );
 
   // 文件工具在列时把当前工作区上下文直接送进系统提示，模型开局即知可用
   // 工作区（编号/ID/名称），无需专门的列表工具。
@@ -202,6 +225,25 @@ void _maybeInjectWebSearch(
   if (routes.containsKey(kBuiltinWebSearchToolName)) return;
   tools.add(kBuiltinWebSearchToolDefinition);
   routes[kBuiltinWebSearchToolName] = const WebSearchToolRoute();
+}
+
+/// Injects the `generate_image` tool when the assistant's 图片生成工具 flag is
+/// on AND the 绘画模型 slot resolves — mirroring Cherry Studio's
+/// `PaintingTool.applies` (enabled flag + configured painting model). An
+/// unconfigured/expired slot simply skips the tool, never substitutes the
+/// chat model; the settings toggle already tells the user where to configure.
+Future<void> _maybeInjectGenerateImage(
+  Ref ref,
+  List<McpToolDefinition> tools,
+  Map<String, ToolRoute> routes, {
+  required bool enabled,
+}) async {
+  if (!enabled) return;
+  if (routes.containsKey(kGenerateImageToolName)) return;
+  final media = await ref.read(appMediaImageModelProvider.future);
+  if (media == null) return;
+  tools.add(kGenerateImageToolDefinition);
+  routes[kGenerateImageToolName] = const GenerateImageToolRoute();
 }
 
 /// Injects the `search_memory` tool when 记忆 is on and its 注入方式 is `tool`

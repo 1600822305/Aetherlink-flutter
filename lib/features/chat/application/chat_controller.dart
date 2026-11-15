@@ -1530,6 +1530,10 @@ class ChatController extends _$ChatController {
       final assistant = await _repo.getAssistant(_assistantId);
       return _systemPromptBuilder.enabledSkillsFor(assistant?.skillIds);
     },
+    loadGenerateImageEnabled: () async {
+      final assistant = await _repo.getAssistant(_assistantId);
+      return assistant?.enableGenerateImage == true;
+    },
   );
 
   /// The system prompt for a turn (tool catalogue injection + capability

@@ -25,6 +25,7 @@ class McpToolResult {
     this.isError = false,
     this.imagePath,
     this.imageMimeType,
+    this.imageUrls,
   });
 
   final String text;
@@ -36,4 +37,8 @@ class McpToolResult {
 
   /// [imagePath] 图片的 MIME 类型（如 `image/jpeg`）。
   final String? imageMimeType;
+
+  /// 生成的图片 URL 列表（`generate_image` 工具用）：http(s) 或 data URL，
+  /// 由聊天层落成 IMAGE 消息块直接展示，不回填给模型。
+  final List<String>? imageUrls;
 }

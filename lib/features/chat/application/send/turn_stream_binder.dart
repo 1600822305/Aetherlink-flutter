@@ -939,6 +939,25 @@ class TurnStreamBinder {
                 },
               ),
             );
+            // generate_image 的产物直接落 IMAGE 块展示在工具块后面（与直接
+            // 图像生成模式的块形状一致）；URL 不回填进模型上下文。
+            if (route is GenerateImageToolRoute && !result.isError) {
+              for (final url in result.imageUrls ?? const <String>[]) {
+                completed.add(
+                  MessageBlock.image(
+                    id: generateId('block'),
+                    messageId: assistantMessageId,
+                    status: MessageBlockStatus.success,
+                    createdAt: assistantTime,
+                    updatedAt: DateTime.now(),
+                    url: url,
+                    mimeType: url.startsWith('data:image/jpeg')
+                        ? 'image/jpeg'
+                        : 'image/png',
+                  ),
+                );
+              }
+            }
             update();
             checkpoint(force: true);
           }

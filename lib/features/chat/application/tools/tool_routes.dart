@@ -117,6 +117,13 @@ class MemorySearchToolRoute extends ToolRoute {
   const MemorySearchToolRoute() : super(kSearchMemoryToolName);
 }
 
+/// The `generate_image` tool injected when the assistant's 图片生成工具 flag is
+/// on AND a 绘画模型 is configured (设置 → 辅助模型 → 媒体) — the port of Cherry
+/// Studio's builtin `generate_image` tool (`PaintingTool`).
+class GenerateImageToolRoute extends ToolRoute {
+  const GenerateImageToolRoute() : super(kGenerateImageToolName);
+}
+
 /// A tool executed over a live connection to [server] via
 /// [RemoteMcpConnectionManager].
 class RemoteToolRoute extends ToolRoute {
@@ -194,6 +201,7 @@ bool toolRouteIsReadOnly(ToolRoute route) => switch (route) {
     'pptx_styles',
     'pptx_schema',
   }.contains(route.toolName),
+  GenerateImageToolRoute() => false,
   TerminalToolRoute() => false,
   RemoteToolRoute() => false,
   StdioToolRoute() => false,
@@ -229,5 +237,28 @@ const McpToolDefinition kBuiltinWebSearchToolDefinition = McpToolDefinition(
       },
     },
     'required': ['query'],
+  },
+);
+
+// ── generate_image tool definition ──────────────────────────────────────────
+
+const String kGenerateImageToolName = 'generate_image';
+
+/// 对齐 Cherry Studio `PaintingTool` 的 generate_image 定义：只有一个必填的
+/// `prompt`；模型由 媒体模型槽位 决定，不开放给 LLM 自选。
+const McpToolDefinition kGenerateImageToolDefinition = McpToolDefinition(
+  name: kGenerateImageToolName,
+  description:
+      '生成图片。当用户要求生成、绘制、画一张图片/图像时使用此工具。\n\n'
+      '使用场景：\n'
+      '- 用户明确要求生成图片（“画一张…”“生成…的图片”）\n'
+      '- 回复内容需要配图（插图、示意图）\n'
+      '注意：生成需要一定时间，不要在同一轮重复调用。',
+  inputSchema: {
+    'type': 'object',
+    'properties': {
+      'prompt': {'type': 'string', 'description': '图片内容描述（英文提示词通常效果更好）'},
+    },
+    'required': ['prompt'],
   },
 );
