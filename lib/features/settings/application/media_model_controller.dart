@@ -8,24 +8,31 @@ import 'package:aetherlink_flutter/features/settings/application/auxiliary_model
 
 part 'media_model_controller.g.dart';
 
-/// Persisted key/value keys for the two media-generation model selections.
+/// Persisted key/value keys for the three media-generation model selections.
 /// Deliberately separate from the auxiliary chat-model keys (`auxiliary_*`):
-/// image/video generation models are not LLMs and must never flow into
+/// image/video/audio generation models are not LLMs and must never flow into
 /// title/translate/chat consumers.
 const String kMediaImageModelKey = 'media_image_model';
 const String kMediaVideoModelKey = 'media_video_model';
+const String kMediaAudioModelKey = 'media_audio_model';
 
-/// The complete persisted state for the image/video generation model slots.
-/// Hydrated from the key/value store on first access.
+/// The complete persisted state for the image/video/audio generation model
+/// slots. Hydrated from the key/value store on first access.
 class MediaModelState {
-  const MediaModelState({this.imageModelKey, this.videoModelKey});
+  const MediaModelState({
+    this.imageModelKey,
+    this.videoModelKey,
+    this.audioModelKey,
+  });
 
   final String? imageModelKey;
   final String? videoModelKey;
+  final String? audioModelKey;
 
   MediaModelState copyWith({
     String? Function()? imageModelKey,
     String? Function()? videoModelKey,
+    String? Function()? audioModelKey,
   }) {
     return MediaModelState(
       imageModelKey: imageModelKey != null
@@ -34,6 +41,9 @@ class MediaModelState {
       videoModelKey: videoModelKey != null
           ? videoModelKey()
           : this.videoModelKey,
+      audioModelKey: audioModelKey != null
+          ? audioModelKey()
+          : this.audioModelKey,
     );
   }
 }
@@ -65,10 +75,12 @@ class MediaModelController extends _$MediaModelController {
       final results = await Future.wait([
         _repo.getSetting(kMediaImageModelKey),
         _repo.getSetting(kMediaVideoModelKey),
+        _repo.getSetting(kMediaAudioModelKey),
       ]);
       state = MediaModelState(
         imageModelKey: results[0],
         videoModelKey: results[1],
+        audioModelKey: results[2],
       );
     } finally {
       if (!_hydrationDone.isCompleted) _hydrationDone.complete();
@@ -95,5 +107,16 @@ class MediaModelController extends _$MediaModelController {
   void clearVideoModel() {
     state = state.copyWith(videoModelKey: () => null);
     _repo.saveSetting(kMediaVideoModelKey, '');
+  }
+
+  void setAudioModel(String providerId, String modelId) {
+    final key = '$providerId\u0000$modelId';
+    state = state.copyWith(audioModelKey: () => key);
+    _repo.saveSetting(kMediaAudioModelKey, key);
+  }
+
+  void clearAudioModel() {
+    state = state.copyWith(audioModelKey: () => null);
+    _repo.saveSetting(kMediaAudioModelKey, '');
   }
 }

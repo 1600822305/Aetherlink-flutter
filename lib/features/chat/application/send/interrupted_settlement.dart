@@ -110,6 +110,13 @@ Future<void> settleInterruptedMessages(
               _interruptedMediaBlock(block, message),
             VideoBlock(status: MessageBlockStatus.processing, url: '') =>
               _interruptedMediaBlock(block, message),
+            // 音频生成占位走 FILE 块（audio/* mime）。
+            FileBlock(
+              status: MessageBlockStatus.processing,
+              url: '',
+              mimeType: String m,
+            ) when m.startsWith('audio/') =>
+              _interruptedMediaBlock(block, message),
             ToolBlock(status: MessageBlockStatus.processing) => block.copyWith(
               status: MessageBlockStatus.error,
               updatedAt: DateTime.now(),

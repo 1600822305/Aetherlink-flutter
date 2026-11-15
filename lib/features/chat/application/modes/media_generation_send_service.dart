@@ -1,10 +1,15 @@
-// 图像/视频生成模式的发送链路，从 ChatController 的 part/mixin 服务化：
-// 输入框的「图像生成 / 视频生成」互斥模式（InputMode.image / .video）激活时，
+// 图像/视频/音频生成模式的发送链路，从 ChatController 的 part/mixin 服务化：
+// 输入框的互斥模式（InputMode.image / .video / .audio）激活时，
 // send() 不再走 LLM 对话，而是走 MediaGenerationGateway 的供应商路由（web 版
 // handleMessageSend → handleImageGeneration / handleVideoPrompt 的移植）。
 // 依赖经 [ChatModeContext] 显式注入，不再靠 mixin 的 this 共享私有成员。
 
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:aetherlink_flutter/app/di/media_model_access.dart';
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
@@ -17,10 +22,13 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attach
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_file_reference.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/features/voice/data/tts/engines/openai_tts_engine.dart';
+import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 
 /// 图像/视频生成模式的发送链路（[ChatController] 的协作对象）。
@@ -46,11 +54,7 @@ class MediaGenerationSendService {
     // Media models live in their own slots (设置 → 辅助模型 → 媒体), never
     // the app-level chat model — Cherry Studio does the same (painting model
     // in ModelSettings, separate from the default chat model).
-    final current = await _ctx.ref.read(
-      mode == InputMode.image
-          ? appMediaImageModelProvider.future
-          : appMediaVideoModelProvider.future,
-    );
+    final current = await _ctx.ref.read(_mediaSlotProvider(mode));
     final effective = current == null ? null : effectiveModelFor(current);
 
     final topicId = await _ctx.ensureTopic();
@@ -125,7 +129,11 @@ class MediaGenerationSendService {
       id: assistantMessageId,
       role: MessageRole.assistant,
       status: MessageStatus.streaming,
-      text: mode == InputMode.image ? '正在生成图像' : '正在生成视频',
+      text: switch (mode) {
+        InputMode.image => '正在生成图像',
+        InputMode.video => '正在生成视频',
+        _ => '正在生成音频',
+      },
       blocks: <MessageBlock>[placeholderBlock],
       createdAt: assistantTime,
       modelName: effective?.name,
@@ -161,11 +169,7 @@ class MediaGenerationSendService {
     required int index,
     required List<ChatMessageView> views,
   }) async {
-    final current = await _ctx.ref.read(
-      mode == InputMode.image
-          ? appMediaImageModelProvider.future
-          : appMediaVideoModelProvider.future,
-    );
+    final current = await _ctx.ref.read(_mediaSlotProvider(mode));
     final effective = current == null ? null : effectiveModelFor(current);
     final now = DateTime.now();
 
@@ -217,30 +221,60 @@ class MediaGenerationSendService {
     );
   }
 
-  /// The `processing` IMAGE/VIDEO placeholder rendered as the generating
-  /// skeleton while the provider call is in flight.
+  static String _audioExt(String mimeType) => switch (mimeType) {
+    'audio/ogg' => '.ogg',
+    'audio/aac' => '.aac',
+    'audio/flac' => '.flac',
+    'audio/wav' => '.wav',
+    _ => '.mp3',
+  };
+
+  /// The persisted media slot backing [mode].
+  FutureProvider<CurrentModel?> _mediaSlotProvider(InputMode mode) =>
+      switch (mode) {
+        InputMode.image => appMediaImageModelProvider,
+        InputMode.video => appMediaVideoModelProvider,
+        InputMode.audio => appMediaAudioModelProvider,
+        _ => appMediaImageModelProvider,
+      };
+
+  /// The `processing` IMAGE/VIDEO/AUDIO placeholder rendered as the
+  /// generating skeleton while the provider call is in flight. Audio has no
+  /// dedicated block type (MessageBlock is a generated union), so it rides a
+  /// `FILE` block with an `audio/*` mime — the renderer keys the inline
+  /// player off that mime.
   MessageBlock _mediaPlaceholder(
     InputMode mode,
     String assistantMessageId,
     DateTime createdAt,
   ) {
-    return mode == InputMode.image
-        ? MessageBlock.image(
-            id: generateId('block'),
-            messageId: assistantMessageId,
-            status: MessageBlockStatus.processing,
-            createdAt: createdAt,
-            url: '',
-            mimeType: 'image/png',
-          )
-        : MessageBlock.video(
-            id: generateId('block'),
-            messageId: assistantMessageId,
-            status: MessageBlockStatus.processing,
-            createdAt: createdAt,
-            url: '',
-            mimeType: 'video/mp4',
-          );
+    return switch (mode) {
+      InputMode.image => MessageBlock.image(
+        id: generateId('block'),
+        messageId: assistantMessageId,
+        status: MessageBlockStatus.processing,
+        createdAt: createdAt,
+        url: '',
+        mimeType: 'image/png',
+      ),
+      InputMode.video => MessageBlock.video(
+        id: generateId('block'),
+        messageId: assistantMessageId,
+        status: MessageBlockStatus.processing,
+        createdAt: createdAt,
+        url: '',
+        mimeType: 'video/mp4',
+      ),
+      _ => MessageBlock.file(
+        id: generateId('block'),
+        messageId: assistantMessageId,
+        status: MessageBlockStatus.processing,
+        createdAt: createdAt,
+        name: 'generated-audio',
+        url: '',
+        mimeType: 'audio/mpeg',
+      ),
+    };
   }
 
   /// The shared generate-then-finalize tail of [sendMediaGeneration] and
@@ -279,6 +313,12 @@ class MediaGenerationSendService {
           '请选择支持视频生成的模型，如 HunyuanVideo 或 Wan-AI 系列模型。',
         );
       }
+      if (mode == InputMode.audio && !isTextToSpeechModel(effective)) {
+        throw StateError(
+          '模型 ${effective.name} 不支持音频生成。'
+          '请选择 TTS 类模型（如 tts-1、gpt-4o-mini-tts）。',
+        );
+      }
       if (mode == InputMode.image) {
         final urls = await api.generateImages(model: effective, prompt: prompt);
         finalBlocks = <MessageBlock>[
@@ -294,6 +334,43 @@ class MediaGenerationSendService {
                   ? 'image/jpeg'
                   : 'image/png',
             ),
+        ];
+      } else if (mode == InputMode.audio) {
+        // 音频走 OpenAI 兼容的 /audio/speech：大多数中转站与官方端点都用
+        // 这个形态；effectiveModelFor 已把 provider 级 key/URL 填进来。
+        final result = await const OpenAiTtsEngine().synthesize(
+          prompt,
+          TtsProviderSetting(
+            id: 'media-audio',
+            kind: TtsProviderKind.openai,
+            apiKey: effective.apiKey ?? '',
+            baseUrl: effective.baseUrl ?? '',
+            model: effective.id,
+            voice: 'alloy',
+          ),
+          dio: buildAppDio(),
+        );
+        final encoded = base64Encode(result.bytes);
+        finalBlocks = <MessageBlock>[
+          MessageBlock.file(
+            id: generateId('block'),
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.success,
+            createdAt: assistantTime,
+            updatedAt: DateTime.now(),
+            name: 'generated-audio${_audioExt(result.mimeType)}',
+            url: '',
+            mimeType: result.mimeType,
+            size: result.bytes.length,
+            file: MessageFileReference(
+              id: generateId('file'),
+              name: 'generated-audio${_audioExt(result.mimeType)}',
+              originName: 'generated-audio${_audioExt(result.mimeType)}',
+              size: result.bytes.length,
+              mimeType: result.mimeType,
+              base64Data: 'data:${result.mimeType};base64,$encoded',
+            ),
+          ),
         ];
       } else {
         final url = await api.generateVideo(model: effective, prompt: prompt);

@@ -414,11 +414,13 @@ class ChatController extends _$ChatController {
     // clear the truncation mark (it would hide 继续生成 without sending anything).
     _truncatedMessageId = null;
 
-    // 图像/视频生成模式（输入框互斥模式）优先：这一轮不走 LLM 对话，而是
+    // 图像/视频/音频生成模式（输入框互斥模式）优先：这一轮不走 LLM 对话，而是
     // 直接调相应供应商的生成 API（web handleMessageSend 的模式分发）。
     final inputMode = ref.read(inputModeControllerProvider);
     if (trimmed.isNotEmpty &&
-        (inputMode == InputMode.image || inputMode == InputMode.video)) {
+        (inputMode == InputMode.image ||
+            inputMode == InputMode.video ||
+            inputMode == InputMode.audio)) {
       await _mediaGeneration.sendMediaGeneration(
         inputMode!,
         trimmed,
@@ -707,34 +709,41 @@ class ChatController extends _$ChatController {
         ? InputMode.image
         : targetBlocks.any((b) => b is VideoBlock)
         ? InputMode.video
+        : targetBlocks.any(
+            (b) => b is FileBlock && b.mimeType.startsWith('audio/'),
+          )
+        ? InputMode.audio
         : null;
     final withModelIsMedia =
         withModel != null &&
         (isGenerateImageModel(withModel.model) ||
-            isGenerateVideoModel(withModel.model));
+            isGenerateVideoModel(withModel.model) ||
+            isGenerateAudioModel(withModel.model));
     // 但「换模型重新生成」选了聊天模型时尊重该选择，走下面的 LLM 链路。
     final useMedia =
         mediaMode != null && (withModel == null || withModelIsMedia);
     if (useMedia || withModelIsMedia) {
-      final mode =
-          mediaMode ??
-          (isGenerateImageModel(withModel!.model)
-              ? InputMode.image
-              : InputMode.video);
+      InputMode? modeFor(Model model) => isGenerateImageModel(model)
+          ? InputMode.image
+          : isGenerateVideoModel(model)
+          ? InputMode.video
+          : InputMode.audio;
+      final mode = mediaMode ?? modeFor(withModel!.model);
       // 换模型重新生成选了媒体模型：种类一致时写入槽位后重跑。种类不一致
       // （比如给图片回复选了视频模型）忽略该 override —— 消息内容种类
       // 不变，写错槽位会让槽位解析直接失败。
-      final withModelKind = withModelIsMedia
-          ? (isGenerateImageModel(withModel!.model)
-              ? InputMode.image
-              : InputMode.video)
-          : null;
+      final withModelKind =
+          withModelIsMedia ? modeFor(withModel!.model) : null;
       if (withModelIsMedia && withModelKind == mode) {
         final ctrl = ref.read(mediaModelControllerProvider.notifier);
-        if (mode == InputMode.image) {
-          ctrl.setImageModel(withModel.provider.id, withModel.model.id);
-        } else {
-          ctrl.setVideoModel(withModel.provider.id, withModel.model.id);
+        switch (mode) {
+          case InputMode.image:
+            ctrl.setImageModel(withModel.provider.id, withModel.model.id);
+          case InputMode.video:
+            ctrl.setVideoModel(withModel.provider.id, withModel.model.id);
+          case InputMode.audio:
+            ctrl.setAudioModel(withModel.provider.id, withModel.model.id);
+          default:
         }
       }
       final prompt = await _mediaPromptFor(target);

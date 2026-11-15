@@ -282,11 +282,14 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     final CurrentModel? mediaModel = switch (inputMode) {
       InputMode.image => ref.watch(appMediaImageModelProvider).value,
       InputMode.video => ref.watch(appMediaVideoModelProvider).value,
+      InputMode.audio => ref.watch(appMediaAudioModelProvider).value,
       _ => null,
     };
     final mediaReady = mediaModel != null;
     final modelReady =
-        inputMode == InputMode.image || inputMode == InputMode.video
+        inputMode == InputMode.image ||
+            inputMode == InputMode.video ||
+            inputMode == InputMode.audio
         ? mediaReady
         : current != null && hasApiKey;
     final isStreaming = ref.watch(
