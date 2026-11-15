@@ -841,5 +841,3 @@ class _RecommendedChip extends StatelessWidget {
     );
   }
 }
-
-/// A backup file row in the history section.
