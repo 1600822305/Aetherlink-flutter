@@ -84,10 +84,9 @@ void selectChatSelectorModel(
     return;
   }
   // 只退出媒体直达模式；webSearch 也是 InputMode，选聊天模型不应清掉它。
+  // 尚未恢复时也要清空，避免异步读取把刚选的聊天模型覆盖成媒体模式。
   final armedMode = ref.read(inputModeControllerProvider);
-  if (armedMode == InputMode.image ||
-      armedMode == InputMode.video ||
-      armedMode == InputMode.audio) {
+  if (armedMode != InputMode.webSearch) {
     inputMode.clear();
   }
   if (provider.id == kModelComboProviderId) {

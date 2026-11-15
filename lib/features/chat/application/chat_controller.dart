@@ -408,6 +408,9 @@ class ChatController extends _$ChatController {
       if (await interceptor(trimmed)) return;
     }
 
+    await ref.read(inputModeControllerProvider.notifier).hydrated;
+    if (!ref.mounted) return;
+
     final snapshot = state.value ?? ChatState.initial();
     if (snapshot.isStreaming) return;
     // Only past the streaming guard: an Enter press during streaming must not
