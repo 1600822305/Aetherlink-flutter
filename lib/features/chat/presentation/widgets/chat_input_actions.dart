@@ -175,10 +175,18 @@ class ChatInputActions implements InputBoxActions {
   /// 生成图片按钮是聊天模型的「图片生成工具」开关（CS `enableGenerateImage`
   /// 输入框开关）：点亮后本轮对话把 `generate_image` 注入工具列表，由模型
   /// 自行判断何时调用，执行后端是 设置→辅助模型→媒体 里的绘画模型。
-  /// 若正处于图像生成直达模式（选择器里选了生图模型），点按先退出直达模式。
+  /// 若正处于图像生成直达模式（选择器里选了生图模型），点按退出直达模式；
+  /// 同时把「图片生成工具」开关一并关掉 —— 两层都是图像生成，按钮一次
+  /// 按掉两层才不会留下还亮着的开关造成「两个功能同时开着」的错觉。
   Future<void> _toggleGenerateImage(BuildContext context) async {
     if (_mode == InputMode.image) {
       _toggle(InputMode.image);
+      final active = _ref.read(currentAssistantProvider);
+      if (active?.enableGenerateImage == true) {
+        await _ref
+            .read(assistantsProvider.notifier)
+            .updateGenerateImageEnabled(active!.id, false);
+      }
       return;
     }
     final assistant = _ref.read(currentAssistantProvider);
