@@ -86,22 +86,33 @@ class MediaGenerationSendService {
       await _ctx.repo.saveMessageBlock(block);
     }
 
-    // 2. Assistant placeholder: a processing main_text block carrying the
-    //    生成中 progress copy（web 版视频链路同款文案）——崩溃恢复会把它落定，
-    //    正常完成时整组块被最终结果替换。
+    // 2. Assistant placeholder: a processing IMAGE/VIDEO block — rendered as
+    //    a media-shaped skeleton card (shimmer + elapsed timer) instead of a
+    //    static line of text, so the wait reads as generation progress.
+    //    崩溃恢复会把它落定，正常完成时整组块被最终结果替换。
     final assistantTime = now.add(const Duration(microseconds: 1));
     final assistantMessageId = generateId('msg');
     final mediaBlockId = generateId('block');
     final progressText = mode == InputMode.image
-        ? '正在生成图像，请稍候…'
-        : '正在生成视频，请稍候…\n\n视频生成通常需要几分钟时间，请耐心等待。';
-    final placeholderBlock = MessageBlock.mainText(
-      id: mediaBlockId,
-      messageId: assistantMessageId,
-      status: MessageBlockStatus.processing,
-      createdAt: assistantTime,
-      content: progressText,
-    );
+        ? '正在生成图像'
+        : '正在生成视频（通常需要几分钟）';
+    final placeholderBlock = mode == InputMode.image
+        ? MessageBlock.image(
+            id: mediaBlockId,
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.processing,
+            createdAt: assistantTime,
+            url: '',
+            mimeType: 'image/png',
+          )
+        : MessageBlock.video(
+            id: mediaBlockId,
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.processing,
+            createdAt: assistantTime,
+            url: '',
+            mimeType: 'video/mp4',
+          );
     final assistantMessage = Message(
       id: assistantMessageId,
       role: MessageRole.assistant,
@@ -129,6 +140,7 @@ class MediaGenerationSendService {
       role: MessageRole.assistant,
       status: MessageStatus.streaming,
       text: progressText,
+      blocks: <MessageBlock>[placeholderBlock],
       createdAt: assistantTime,
       modelName: effective?.name,
       providerName: current?.provider.name,
@@ -213,25 +225,29 @@ class MediaGenerationSendService {
       final messageText = error is StateError
           ? error.message
           : chatError.message;
+      final errorBlocks = <MessageBlock>[
+        MessageBlock.error(
+          id: generateId('block'),
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.error,
+          createdAt: assistantTime,
+          updatedAt: DateTime.now(),
+          content: '',
+          message: messageText,
+          error: chatError.toJson(),
+        ),
+      ];
       await _ctx.persistMessageBlocks(
         messageId: assistantMessageId,
         status: MessageStatus.error,
-        blocks: <MessageBlock>[
-          MessageBlock.error(
-            id: generateId('block'),
-            messageId: assistantMessageId,
-            status: MessageBlockStatus.error,
-            createdAt: assistantTime,
-            updatedAt: DateTime.now(),
-            content: '',
-            message: messageText,
-            error: chatError.toJson(),
-          ),
-        ],
+        blocks: errorBlocks,
       );
+      // The view must drop the processing placeholder too — otherwise the
+      // generating skeleton keeps animating next to the error state.
       assistantView = assistantView.copyWith(
         status: MessageStatus.error,
         errorText: messageText,
+        blocks: errorBlocks,
       );
       _ctx.replace(views, assistantView);
     }
