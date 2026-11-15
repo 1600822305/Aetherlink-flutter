@@ -208,6 +208,7 @@ bool toolRouteIsReadOnly(ToolRoute route) => switch (route) {
     'pptx_schema',
   }.contains(route.toolName),
   GenerateImageToolRoute() => false,
+  GenerateVideoToolRoute() => false,
   TerminalToolRoute() => false,
   RemoteToolRoute() => false,
   StdioToolRoute() => false,
