@@ -108,8 +108,13 @@ void openChatModelSelector(BuildContext context, WidgetRef ref) {
     return;
   }
   final mode = ref.read(inputModeControllerProvider);
-  final CurrentModel? selected =
-      mode == InputMode.image || mode == InputMode.video
+  // 高亮优先级与发送链路一致：媒体直达模式 > combo > 当前聊天模型。
+  // combo 的条目身份是 kModelComboProviderId + comboId（dialog 的 combo
+  // 分支同款），只传底层默认模型会把选择器定位错。
+  final mediaMode = mode == InputMode.image || mode == InputMode.video;
+  final comboId =
+      mediaMode ? null : ref.read(modelComboControllerProvider).selectedComboId;
+  final CurrentModel? selected = mediaMode
       ? ref
           .read(
             mode == InputMode.image
@@ -118,11 +123,14 @@ void openChatModelSelector(BuildContext context, WidgetRef ref) {
           )
           .value
       : ref.read(appCurrentModelProvider).value;
+  final selectedProviderId =
+      comboId != null ? kModelComboProviderId : selected?.provider.id;
+  final selectedModelId = comboId ?? selected?.model.id;
   showModelSelectorDialog(
     context,
     filter: chatSelectorModelFilter,
-    selectedProviderId: selected?.provider.id,
-    selectedModelId: selected?.model.id,
+    selectedProviderId: selectedProviderId,
+    selectedModelId: selectedModelId,
     onSelect: (provider, model) =>
         selectChatSelectorModel(context, ref, provider, model),
   );
