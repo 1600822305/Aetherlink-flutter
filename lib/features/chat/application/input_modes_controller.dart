@@ -25,6 +25,11 @@ class InputModeController extends _$InputModeController {
   /// already active, back to none — the port of `toggleMode`.
   void toggle(InputMode mode) => state = state == mode ? null : mode;
 
+  /// Arms [mode] unconditionally (or clears with `null`); unlike [toggle]
+  /// it never flips an already-active mode off. Used by the model selector
+  /// when picking a media-generation model.
+  void set(InputMode? mode) => state = mode;
+
   void clear() => state = null;
 }
 

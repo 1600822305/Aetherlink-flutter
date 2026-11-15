@@ -15,7 +15,6 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/bra
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
-import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/top_toolbar_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/top_toolbar_component_catalog.dart';
 
@@ -284,7 +283,11 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           onPressed: () => hasModels
               ? showModelSelectorDialog(
                   context,
-                  filter: (m) => !isNonChatModel(m),
+                  // 聊天模型 + 生图/生视频模型一起列出；选中媒体模型时
+                  // 不占用聊天槽位，而是写媒体槽位并进直达模式。
+                  filter: chatSelectorModelFilter,
+                  onSelect: (provider, model) =>
+                      selectChatSelectorModel(context, ref, provider, model),
                 )
               : context.push(AppRouter.defaultModelPath),
         );
