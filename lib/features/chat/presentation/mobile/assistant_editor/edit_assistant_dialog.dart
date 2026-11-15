@@ -91,6 +91,8 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
     text: widget.assistant?.systemPrompt ?? '',
   );
   late bool _memoryEnabled = widget.assistant?.memoryEnabled ?? false;
+  late bool _generateImageEnabled =
+      widget.assistant?.enableGenerateImage ?? false;
   late String? _emoji = widget.assistant?.emoji;
   late String? _avatar = widget.assistant?.avatar;
   late AssistantChatBackground _chatBackground =
@@ -328,6 +330,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
               emoji: _emoji,
               avatar: _avatar,
               memoryEnabled: _memoryEnabled,
+              enableGenerateImage: _generateImageEnabled,
               skillIds: _skillIds,
               paramSettings: _paramSettings,
               chatBackground: _chatBackground.imageUrl.isEmpty
@@ -343,6 +346,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
               name: name.isEmpty ? widget.assistant!.name : name,
               systemPrompt: _promptController.text.trim(),
               memoryEnabled: _memoryEnabled,
+              enableGenerateImage: _generateImageEnabled,
               skillIds: _skillIds,
               emoji: _emoji,
               avatar: _avatar,
@@ -407,6 +411,9 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
                   chatBackground: _chatBackground,
                   onChatBackgroundChanged: (bg) =>
                       setState(() => _chatBackground = bg),
+                  generateImageEnabled: _generateImageEnabled,
+                  onGenerateImageChanged: (v) =>
+                      setState(() => _generateImageEnabled = v),
                   onPickWallpaper: _pickWallpaper,
                 ),
                 PromptTab(

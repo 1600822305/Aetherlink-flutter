@@ -140,8 +140,7 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
   int get _removeCount => _removed.length;
   bool get _hasChanges => _newSelectionCount > 0 || _removeCount > 0;
 
-  int get _existingCount =>
-      _models.where((m) => _isExisting(m.id)).length;
+  int get _existingCount => _models.where((m) => _isExisting(m.id)).length;
   int get _newAvailableCount => _models.length - _existingCount;
 
   void _toggleModel(String id) {
@@ -315,9 +314,7 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
           if (_newAvailableCount > 0)
             TextButton(
               onPressed: allNewSelected ? null : _selectAllNew,
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-              ),
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
               child: const Text('全选'),
             ),
           if (_hasChanges)
@@ -576,7 +573,10 @@ class _GroupSection extends StatelessWidget {
 // ─── Group Action Button ───────────────────────────────────────────────────
 
 class _GroupActionButton extends StatelessWidget {
-  const _GroupActionButton({required this.isFullySelected, required this.onTap});
+  const _GroupActionButton({
+    required this.isFullySelected,
+    required this.onTap,
+  });
 
   final bool isFullySelected;
   final VoidCallback onTap;
@@ -661,10 +661,7 @@ class _ModelItem extends StatelessWidget {
                       ),
                       if (isExisting) ...[
                         const SizedBox(width: 6),
-                        _Pill(
-                          label: '已添加',
-                          color: colorScheme.primary,
-                        ),
+                        _Pill(label: '已添加', color: colorScheme.primary),
                       ],
                     ],
                   ),
@@ -784,6 +781,10 @@ class _CapabilityStrip extends StatelessWidget {
         (LucideIcons.lightbulb, const Color(0xFF6372BD), '推理'),
       if (caps.functionCalling == true || caps.toolUse == true)
         (LucideIcons.wrench, const Color(0xFFF18737), '函数调用'),
+      if (caps.imageGeneration == true)
+        (LucideIcons.image, const Color(0xFFA855F7), '图像生成'),
+      if (caps.videoGeneration == true)
+        (LucideIcons.video, const Color(0xFFEC4899), '视频生成'),
       if (caps.embedding == true)
         (LucideIcons.code2, const Color(0xFFFFA500), '嵌入'),
       if (caps.rerank == true)

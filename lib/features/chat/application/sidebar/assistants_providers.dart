@@ -111,6 +111,7 @@ class Assistants extends _$Assistants {
     String? emoji,
     String? avatar,
     bool memoryEnabled = false,
+    bool enableGenerateImage = false,
     List<String> skillIds = const <String>[],
     ParameterSettings? paramSettings,
     AssistantChatBackground? chatBackground,
@@ -128,6 +129,7 @@ class Assistants extends _$Assistants {
       isSystem: false,
       isDefault: false,
       memoryEnabled: memoryEnabled,
+      enableGenerateImage: enableGenerateImage,
       skillIds: skillIds,
       chatBackground: chatBackground,
       regexRules: regexRules,
@@ -209,6 +211,26 @@ class Assistants extends _$Assistants {
     await _reload();
   }
 
+  /// Persists [assistantId]'s 「图片生成工具」开关 (`enableGenerateImage`) —
+  /// same save+reload contract as [updateSystemPrompt]; the input-bar 生成图片
+  /// button is a shortcut for the assistant editor's switch.
+  Future<void> updateGenerateImageEnabled(
+    String assistantId,
+    bool enabled,
+  ) async {
+    final assistant = await _repo.getAssistant(assistantId);
+    if (assistant == null) {
+      throw StateError('没有找到助手信息');
+    }
+    await _repo.saveAssistant(
+      assistant.copyWith(
+        enableGenerateImage: enabled,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await _reload();
+  }
+
   /// Persists the fields edited in 编辑助手 (`EditAssistantDialog`):
   /// 名称 / 系统提示词 / 记忆开关 / 技能绑定 / 头像 / 模型参数 — the port of the
   /// web `handleSave` (`dexieStorage.saveAssistant` + the `assistantUpdated`
@@ -218,6 +240,7 @@ class Assistants extends _$Assistants {
     required String name,
     required String systemPrompt,
     required bool memoryEnabled,
+    required bool enableGenerateImage,
     required List<String> skillIds,
     String? emoji,
     String? avatar,
@@ -233,6 +256,7 @@ class Assistants extends _$Assistants {
       name: name,
       systemPrompt: systemPrompt,
       memoryEnabled: memoryEnabled,
+      enableGenerateImage: enableGenerateImage,
       skillIds: skillIds,
       emoji: emoji,
       avatar: avatar,

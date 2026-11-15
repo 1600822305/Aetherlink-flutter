@@ -58,6 +58,7 @@ abstract class Assistant with _$Assistant {
     List<QuickPhrase>? regularPhrases,
     String? webSearchProviderId,
     bool? enableWebSearch,
+    bool? enableGenerateImage,
     List<CustomParameter>? customParameters,
     List<AssistantRegex>? regexRules,
     AssistantChatBackground? chatBackground,

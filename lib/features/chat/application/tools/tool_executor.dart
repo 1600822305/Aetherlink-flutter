@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
+import 'package:aetherlink_flutter/app/di/media_generation_access.dart';
+import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
@@ -10,6 +12,7 @@ import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
@@ -118,6 +121,8 @@ class ChatToolExecutor {
         return _runWebSearch(args);
       case MemorySearchToolRoute():
         return _runMemorySearch(args);
+      case GenerateImageToolRoute():
+        return _runGenerateImage(args);
       case KnowledgeToolRoute():
         return await runKnowledgeTool(_ref, route.toolName, args);
       case TerminalToolRoute():
@@ -202,11 +207,11 @@ class ChatToolExecutor {
     try {
       switch (action) {
         case 'list_servers':
-          return _bridgeListServers();
+          return await _bridgeListServers();
         case 'list_tools':
-          return _bridgeListTools(server);
+          return await _bridgeListTools(server);
         case 'call':
-          return _bridgeCallTool(server, tool, toolArgs);
+          return await _bridgeCallTool(server, tool, toolArgs);
         default:
           return McpToolResult(
             '未知操作: $action。支持的操作: list_servers, list_tools, call',
@@ -525,6 +530,38 @@ class ChatToolExecutor {
       limit: limit,
     );
     return McpToolResult(text);
+  }
+
+  /// Executes one `generate_image` call through the configured 绘画模型 slot
+  /// (设置 → 辅助模型 → 媒体) — the port of Cherry Studio's `PaintingTool`
+  /// backend. The slot is validated the same way as the direct 图像生成 send
+  /// path: a missing / disabled / capability-mismatched slot is an explicit
+  /// error result, never a silent fallback to the chat model.
+  Future<McpToolResult> _runGenerateImage(Map<String, Object?> args) async {
+    final prompt = (args['prompt'] as String?)?.trim() ?? '';
+    if (prompt.isEmpty) {
+      return const McpToolResult('generate_image 需要 prompt 参数', isError: true);
+    }
+    final current = await _ref.read(appMediaImageModelProvider.future);
+    final effective = current == null ? null : effectiveModelFor(current);
+    if (effective == null) {
+      return const McpToolResult(
+        '未配置绘画模型或已失效。请引导用户到 设置 → 辅助模型 → 媒体 '
+        '选择支持图像生成的模型。',
+        isError: true,
+      );
+    }
+    try {
+      final urls = await _ref
+          .read(appMediaGenerationGatewayProvider)
+          .generateImages(model: effective, prompt: prompt);
+      if (urls.isEmpty) {
+        return const McpToolResult('生成完成但没有返回图片', isError: true);
+      }
+      return McpToolResult('已生成 ${urls.length} 张图片并展示在对话中。', imageUrls: urls);
+    } on Object catch (error) {
+      return McpToolResult('生成图片失败: ${_errorMessage(error)}', isError: true);
+    }
   }
 
   String _errorMessage(Object error) {

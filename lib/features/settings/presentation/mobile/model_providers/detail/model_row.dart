@@ -83,14 +83,58 @@ class ModelCapabilityIcons extends StatelessWidget {
 
   final Model model;
 
-  static final List<({bool Function(Model) test, IconData icon, Color color, String label})>
+  static final List<
+    ({bool Function(Model) test, IconData icon, Color color, String label})
+  >
   _badges = [
-    (test: isVisionModel, icon: LucideIcons.eye, color: const Color(0xFF00B96B), label: '视觉'),
-    (test: isWebSearchModel, icon: LucideIcons.globe, color: const Color(0xFF1677FF), label: '网络搜索'),
-    (test: isReasoningModel, icon: LucideIcons.lightbulb, color: const Color(0xFF6372BD), label: '推理'),
-    (test: isFunctionCallingModel, icon: LucideIcons.wrench, color: const Color(0xFFF18737), label: '函数调用'),
-    (test: isEmbeddingModel, icon: LucideIcons.code2, color: const Color(0xFFFFA500), label: '嵌入'),
-    (test: isRerankModel, icon: LucideIcons.rotateCw, color: const Color(0xFF6495ED), label: '重排序'),
+    (
+      test: isVisionModel,
+      icon: LucideIcons.eye,
+      color: const Color(0xFF00B96B),
+      label: '视觉',
+    ),
+    (
+      test: isWebSearchModel,
+      icon: LucideIcons.globe,
+      color: const Color(0xFF1677FF),
+      label: '网络搜索',
+    ),
+    (
+      test: isReasoningModel,
+      icon: LucideIcons.lightbulb,
+      color: const Color(0xFF6372BD),
+      label: '推理',
+    ),
+    (
+      test: isFunctionCallingModel,
+      icon: LucideIcons.wrench,
+      color: const Color(0xFFF18737),
+      label: '函数调用',
+    ),
+    (
+      test: isGenerateImageModel,
+      icon: LucideIcons.image,
+      color: const Color(0xFFA855F7),
+      label: '图像生成',
+    ),
+    (
+      test: isGenerateVideoModel,
+      icon: LucideIcons.video,
+      color: const Color(0xFFEC4899),
+      label: '视频生成',
+    ),
+    (
+      test: isEmbeddingModel,
+      icon: LucideIcons.code2,
+      color: const Color(0xFFFFA500),
+      label: '嵌入',
+    ),
+    (
+      test: isRerankModel,
+      icon: LucideIcons.rotateCw,
+      color: const Color(0xFF6495ED),
+      label: '重排序',
+    ),
   ];
 
   @override
@@ -100,7 +144,10 @@ class ModelCapabilityIcons extends StatelessWidget {
     // authoritative, otherwise inferred) so icons show regardless — same source
     // the editor uses.
     final m = enrichModelSync(model);
-    final active = [for (final b in _badges) if (b.test(m)) b];
+    final active = [
+      for (final b in _badges)
+        if (b.test(m)) b,
+    ];
     if (active.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
