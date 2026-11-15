@@ -123,7 +123,7 @@ class _MediaGeneratingPlaceholderState extends State<MediaGeneratingPlaceholder>
           // from left (−1) to right (+1) as the controller runs 0→1.
           final center = -1.0 + 2.0 * _shimmer.value;
           return Container(
-            height: 150,
+            height: 200,
             width: double.infinity,
             decoration: BoxDecoration(
               border: Border.all(color: theme.dividerColor),
