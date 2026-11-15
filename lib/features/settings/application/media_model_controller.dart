@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/chat_gateway_access.dart';
@@ -43,7 +45,14 @@ class MediaModelState {
 /// seam (`app/di/media_model_access.dart`), not here.
 @Riverpod(keepAlive: true)
 class MediaModelController extends _$MediaModelController {
+  final Completer<void> _hydrationDone = Completer<void>();
+
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
+
+  /// Resolves once persisted selections have been read into state. Callers
+  /// resolving the slots for a turn (`appMedia*ModelProvider`) await this so a
+  /// cold-start turn never sees the pre-hydration empty state.
+  Future<void> get hydrated => _hydrationDone.future;
 
   @override
   MediaModelState build() {
@@ -52,14 +61,18 @@ class MediaModelController extends _$MediaModelController {
   }
 
   Future<void> _hydrate() async {
-    final results = await Future.wait([
-      _repo.getSetting(kMediaImageModelKey),
-      _repo.getSetting(kMediaVideoModelKey),
-    ]);
-    state = MediaModelState(
-      imageModelKey: results[0],
-      videoModelKey: results[1],
-    );
+    try {
+      final results = await Future.wait([
+        _repo.getSetting(kMediaImageModelKey),
+        _repo.getSetting(kMediaVideoModelKey),
+      ]);
+      state = MediaModelState(
+        imageModelKey: results[0],
+        videoModelKey: results[1],
+      );
+    } finally {
+      if (!_hydrationDone.isCompleted) _hydrationDone.complete();
+    }
   }
 
   void setImageModel(String providerId, String modelId) {

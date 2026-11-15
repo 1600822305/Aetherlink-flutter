@@ -33,6 +33,7 @@ CurrentModel? _resolveMedia(
 /// The configured image-generation model (validated). `null` = unconfigured
 /// or stale — callers must surface an error, not substitute the chat model.
 final appMediaImageModelProvider = FutureProvider<CurrentModel?>((ref) async {
+  await ref.read(mediaModelControllerProvider.notifier).hydrated;
   final providers = await ref.watch(appModelProvidersProvider.future);
   final key = ref.watch(
     mediaModelControllerProvider.select((s) => s.imageModelKey),
@@ -42,6 +43,7 @@ final appMediaImageModelProvider = FutureProvider<CurrentModel?>((ref) async {
 
 /// The configured video-generation model (validated), same contract.
 final appMediaVideoModelProvider = FutureProvider<CurrentModel?>((ref) async {
+  await ref.read(mediaModelControllerProvider.notifier).hydrated;
   final providers = await ref.watch(appModelProvidersProvider.future);
   final key = ref.watch(
     mediaModelControllerProvider.select((s) => s.videoModelKey),
