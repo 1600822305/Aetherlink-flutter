@@ -103,6 +103,13 @@ Future<void> settleInterruptedMessages(
       final settled = <MessageBlock>[
         for (final block in blocks)
           switch (block) {
+            // Media-generation placeholders left mid-flight would otherwise
+            // settle to success and render as 加载失败 cards; mark them as the
+            // interrupted generation they actually were.
+            ImageBlock(status: MessageBlockStatus.processing, url: '') =>
+              _interruptedMediaBlock(block, message),
+            VideoBlock(status: MessageBlockStatus.processing, url: '') =>
+              _interruptedMediaBlock(block, message),
             ToolBlock(status: MessageBlockStatus.processing) => block.copyWith(
               status: MessageBlockStatus.error,
               updatedAt: DateTime.now(),
@@ -154,4 +161,25 @@ Future<void> settleInterruptedMessages(
   } on Object catch (_) {
     // Recovery is best-effort; never block loading the conversation.
   }
+}
+
+/// Replaces a still-`processing` media placeholder ([ImageBlock]/[VideoBlock]
+/// with an empty `url`) with an error block describing the interruption.
+MessageBlock _interruptedMediaBlock(MessageBlock block, Message message) {
+  return MessageBlock.error(
+    id: block.id,
+    messageId: block.messageId,
+    status: MessageBlockStatus.error,
+    createdAt: block.createdAt,
+    updatedAt: DateTime.now(),
+    content: '',
+    message: '媒体生成在应用退出时被中断',
+    error: ChatError(
+      phase: ChatErrorPhase.interrupted,
+      type: 'interrupted',
+      message: '媒体生成在应用退出时被中断',
+      occurredAt: DateTime.now(),
+      modelId: message.modelId,
+    ).toJson(),
+  );
 }

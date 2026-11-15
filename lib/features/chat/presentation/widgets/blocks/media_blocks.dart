@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_block_preview.dart';
 
 /// Resolves an [ImageBlock] to an [ImageProvider]. Prefers inline base64
@@ -54,6 +56,112 @@ ImageProvider? _resolveImageProvider(ImageBlock block) {
   return null;
 }
 
+/// Renders a `processing` IMAGE/VIDEO block while a media-generation turn is
+/// in flight: a media-shaped skeleton card with a shimmer sweep, the media
+/// icon, a label and a live elapsed timer — Midjourney/DALL·E-style generating
+/// placeholder, so the wait reads as progress instead of a stalled reply.
+class MediaGeneratingPlaceholder extends StatefulWidget {
+  const MediaGeneratingPlaceholder({
+    required this.isVideo,
+    required this.startedAt,
+    super.key,
+  });
+
+  final bool isVideo;
+  final DateTime startedAt;
+
+  @override
+  State<MediaGeneratingPlaceholder> createState() =>
+      _MediaGeneratingPlaceholderState();
+}
+
+class _MediaGeneratingPlaceholderState extends State<MediaGeneratingPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+  late final Timer _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker.cancel();
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final elapsed = DateTime.now().difference(widget.startedAt).inSeconds;
+    final label = widget.isVideo ? '正在生成视频' : '正在生成图像';
+    final base = theme.colorScheme.surfaceContainerHighest;
+    final highlight = theme.colorScheme.surface;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedBuilder(
+        animation: _shimmer,
+        builder: (context, _) {
+          // Sweep a highlight band across the box: gradient center travels
+          // from left (−1) to right (+1) as the controller runs 0→1.
+          final center = -1.0 + 2.0 * _shimmer.value;
+          return Container(
+            height: 200,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [base, highlight, base],
+                stops: [
+                  (center - 0.3).clamp(0.0, 1.0),
+                  center.clamp(0.0, 1.0),
+                  (center + 0.3).clamp(0.0, 1.0),
+                ],
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  widget.isVideo ? LucideIcons.video : LucideIcons.image,
+                  size: 28,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '$label · ${elapsed}s',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.isVideo ? '视频生成通常需要几分钟' : '请稍候…',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// Renders an `IMAGE` block, mirroring `ImageBlock.tsx`: a rounded thumbnail
 /// (max 300px single / 180px grouped) with a zoom button, tap to open a
 /// full-screen preview.
@@ -65,6 +173,12 @@ class ImageBlockView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (block.status == MessageBlockStatus.processing) {
+      return MediaGeneratingPlaceholder(
+        isVideo: false,
+        startedAt: block.createdAt,
+      );
+    }
     final provider = _imageProvider(block);
     if (provider == null) return const _ImageError();
 
@@ -287,6 +401,12 @@ class _VideoBlockViewState extends State<VideoBlockView> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.block.status == MessageBlockStatus.processing) {
+      return MediaGeneratingPlaceholder(
+        isVideo: true,
+        startedAt: widget.block.createdAt,
+      );
+    }
     if (_error) return const _VideoError();
     final chewie = _chewieController;
     if (chewie == null) {
