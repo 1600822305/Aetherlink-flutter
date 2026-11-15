@@ -27,8 +27,10 @@ class MediaGenerationSendService {
 
   final ChatModeContext _ctx;
 
-  /// Runs an image / video generation turn for [mode] (a one-shot: the mode is
-  /// cleared before the request, like the web's `clearMode()` after dispatch).
+  /// Runs an image / video generation turn for [mode]. The armed input mode
+  /// is intentionally kept after the turn — it behaves like the chat-model
+  /// selection and stays active until the user toggles it off, picks a chat
+  /// model in the selector, or restarts the app.
   ///
   /// 用户消息照常持久化；助手消息以一个 processing 的 IMAGE/VIDEO 块占位，生成
   /// 成功后就地填入 URL，失败则替换为 error 块 —— 与 web 版行为一致（web 的
@@ -39,8 +41,6 @@ class MediaGenerationSendService {
     required List<ComposerAttachment> attachments,
     required ChatState snapshot,
   }) async {
-    _ctx.ref.read(inputModeControllerProvider.notifier).clear();
-
     // Media models live in their own slots (设置 → 辅助模型 → 媒体), never
     // the app-level chat model — Cherry Studio does the same (painting model
     // in ModelSettings, separate from the default chat model).
