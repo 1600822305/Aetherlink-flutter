@@ -97,6 +97,27 @@ bool chatSelectorModelFilter(Model model) =>
     isGenerateImageModel(model) ||
     isGenerateVideoModel(model);
 
+/// 选择器打开时应高亮/定位的模型：媒体直达模式 armed 时是媒体槽位的模型，
+/// 否则是当前聊天模型（顶部栏与 DIY 工具栏入口共用）。
+({String? providerId, String? modelId}) chatSelectorSelection(WidgetRef ref) {
+  final mode = ref.read(inputModeControllerProvider);
+  if (mode == InputMode.image || mode == InputMode.video) {
+    final slot = ref
+        .read(
+          mode == InputMode.image
+              ? appMediaImageModelProvider
+              : appMediaVideoModelProvider,
+        )
+        .value;
+    return (providerId: slot?.provider.id, modelId: slot?.model.id);
+  }
+  final current = ref.read(appCurrentModelProvider).value;
+  return (
+    providerId: current?.provider.id,
+    modelId: current?.model.id,
+  );
+}
+
 Future<void> openCondenseDialog(BuildContext context) async {
   final result = await showContextCondenseDialog(context);
   if (result != null && result.success && context.mounted) {
@@ -135,14 +156,18 @@ VoidCallback? componentAction(
     case TopToolbarComponent.modelSelector:
       final providers = ref.read(appModelProvidersProvider).value ?? const [];
       final hasModels = providers.any((p) => p.models.isNotEmpty);
-      return () => hasModels
-          ? showModelSelectorDialog(
-              context,
-              filter: chatSelectorModelFilter,
-              onSelect: (provider, model) =>
-                  selectChatSelectorModel(context, ref, provider, model),
-            )
-          : context.push(AppRouter.defaultModelPath);
+      if (!hasModels) return () => context.push(AppRouter.defaultModelPath);
+      return () {
+        final selected = chatSelectorSelection(ref);
+        return showModelSelectorDialog(
+          context,
+          filter: chatSelectorModelFilter,
+          selectedProviderId: selected.providerId,
+          selectedModelId: selected.modelId,
+          onSelect: (provider, model) =>
+              selectChatSelectorModel(context, ref, provider, model),
+        );
+      };
     case TopToolbarComponent.settingsButton:
       return () => context.push(AppRouter.settingsPath);
     case TopToolbarComponent.condenseButton:
