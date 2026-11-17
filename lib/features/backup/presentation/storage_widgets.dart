@@ -1,9 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/backup/application/storage_controller.dart';
+import 'package:aetherlink_flutter/features/backup/application/storage_media_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_report.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+
+void listenStorageRefreshErrors(BuildContext context, WidgetRef ref) {
+  void notify(String? previous, String? error) {
+    if (error != null && context.mounted && ModalRoute.of(context)?.isCurrent == true) {
+      AppToast.error(context, '刷新失败：$error');
+    }
+  }
+
+  ref.listen(storageControllerProvider.select(
+    (state) => state.report == null ? null : state.error,
+  ), notify);
+  ref.listen(storageMediaControllerProvider.select(
+    (state) => state.hasLoaded ? state.error : null,
+  ), notify);
+}
 
 extension StorageCategoryPresentation on StorageCategory {
   String get label => switch (this) {

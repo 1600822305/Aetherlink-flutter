@@ -19,6 +19,7 @@ class StorageCategoryPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    listenStorageRefreshErrors(context, ref);
     final state = ref.watch(storageControllerProvider);
     final controller = ref.read(storageControllerProvider.notifier);
     final theme = Theme.of(context);
@@ -94,7 +95,7 @@ class StorageCategoryPage extends ConsumerWidget {
                                 context,
                                 const LocalBackupPage(filesOnly: true),
                               );
-                              await controller.refresh();
+                              await controller.refresh(force: true);
                             },
                     ),
                   ],
@@ -107,7 +108,7 @@ class StorageCategoryPage extends ConsumerWidget {
                           ? null
                           : () async {
                               await context.push<void>(AppRouter.terminalPath);
-                              await controller.refresh();
+                              await controller.refresh(force: true);
                             },
                     ),
                   ],
@@ -140,7 +141,7 @@ class StorageCategoryPage extends ConsumerWidget {
             ),
             if (state.isBusy || state.isLoading)
               const LinearProgressIndicator(),
-            if (state.error != null) StorageNotice(state.error!),
+            if (state.error != null && state.report == null) StorageNotice(state.error!),
           ],
         ),
       ),

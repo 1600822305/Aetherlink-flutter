@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/storage_access.dart';
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
+import 'package:aetherlink_flutter/features/backup/application/storage_media_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_report.dart';
 import 'package:aetherlink_flutter/features/backup/domain/topic_storage_usage.dart';
 
@@ -25,26 +26,32 @@ final storageControllerProvider =
     NotifierProvider<StorageController, StorageState>(StorageController.new);
 
 class StorageController extends Notifier<StorageState> {
-  bool _isRefreshing = false;
+  Future<void>? _refreshFuture;
 
   @override
   StorageState build() => const StorageState();
 
-  Future<void> refresh() async {
-    if (state.isBusy || _isRefreshing) return;
-    _isRefreshing = true;
-    try {
-      await _load();
-    } finally {
-      _isRefreshing = false;
-    }
+  Future<void> refresh({bool force = false}) {
+    if (state.isBusy) return _refreshFuture ?? Future<void>.value();
+    if (force) return _refreshAfterCurrent();
+    return _startRefresh();
   }
 
-  Future<void> _load({String? actionError}) async {
+  Future<void> _refreshAfterCurrent() async {
+    await _refreshFuture;
+    if (ref.mounted && !state.isBusy) await _startRefresh();
+  }
+
+  Future<void> _startRefresh() => _refreshFuture ??=
+      Future<void>.microtask(_load).whenComplete(() => _refreshFuture = null);
+
+  Future<void> _load() async {
+    if (!ref.mounted) return;
     state = StorageState(
       report: state.report,
       topics: state.topics,
       isBusy: state.isBusy,
+      isLoading: state.report == null,
     );
     try {
       final repository = ref.read(storageRepositoryProvider);
@@ -56,7 +63,6 @@ class StorageController extends Notifier<StorageState> {
         topics: topics,
         isBusy: state.isBusy,
         isLoading: false,
-        error: actionError,
       );
     } catch (error) {
       if (!ref.mounted) return;
@@ -65,7 +71,7 @@ class StorageController extends Notifier<StorageState> {
         topics: state.topics,
         isBusy: state.isBusy,
         isLoading: false,
-        error: actionError ?? '$error',
+        error: '$error',
       );
     }
   }
@@ -88,6 +94,9 @@ class StorageController extends Notifier<StorageState> {
 
   Future<void> _run(Future<void> Function() action) async {
     if (state.isBusy || state.isLoading) throw StateError('请等待当前统计或维护结束');
+    if (ref.read(storageMediaControllerProvider).isBusy) {
+      throw StateError('请等待媒体文件操作结束');
+    }
     if (ref.read(backupControllerProvider).status == BackupStatus.working) {
       throw StateError('备份或恢复正在进行，请稍后操作');
     }
@@ -99,12 +108,20 @@ class StorageController extends Notifier<StorageState> {
     );
     Object? failure;
     try {
+      await _refreshFuture;
+      if (!ref.mounted) return;
       await action();
     } catch (error) {
       failure = error;
     } finally {
       if (ref.mounted) {
-        await _load(actionError: failure?.toString());
+        await _startRefresh();
+        if (ref.mounted) {
+          final media = ref.read(storageMediaControllerProvider.notifier);
+          if (ref.read(storageMediaControllerProvider).hasLoaded || media.isRefreshing) {
+            await media.refresh(force: true);
+          }
+        }
         if (ref.mounted) {
           state = StorageState(
             report: state.report,
