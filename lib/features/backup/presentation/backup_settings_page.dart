@@ -5,16 +5,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
-import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/backup_reminder_page.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/cloud_backup_page.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/import_data_page.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/local_backup_page.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/storage_space_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
-
-import 'backup_preview_page.dart';
-import 'cloud_backup_page.dart';
-import 'import_data_page.dart';
-import 'backup_reminder_page.dart';
-import 'diagnostic_page.dart';
 
 /// Entry page for data management / backup settings.
 /// Redesigned to match the web version's flat layout with all primary actions
@@ -48,7 +46,7 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
     final isWorking = state.status == BackupStatus.working;
 
     return Scaffold(
-      appBar: const ModelSettingsAppBar(title: '数据管理'),
+      appBar: const ModelSettingsAppBar(title: '备份与恢复'),
       body: Stack(
         children: [
           ListView(
@@ -66,10 +64,6 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
               _buildDataMigrationCard(theme, isWorking),
               const SizedBox(height: 16),
               _buildMaintenanceCard(theme, state, isWorking),
-              if (state.localBackups.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                _buildBackupHistoryCard(theme, state, controller),
-              ],
             ],
           ),
           if (isWorking)
@@ -138,6 +132,16 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
             description: '从本地 ZIP 备份文件恢复数据',
             onTap: isWorking ? null : () => _pickAndRestore(controller),
           ),
+          Divider(height: 1, color: theme.dividerColor),
+          _NavigationRow(
+            icon: LucideIcons.archive,
+            accent: const Color(0xFF475569),
+            label: '备份文件',
+            description: '查看本机备份的大小、时间并管理文件',
+            onTap: isWorking
+                ? null
+                : () => _push(const LocalBackupPage(filesOnly: true)),
+          ),
         ],
       ),
     );
@@ -202,7 +206,15 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: '维护', description: '数据库诊断与备份提醒设置'),
+          _SectionHeader(title: '存储与维护', description: '查看本机空间分布与设置备份提醒'),
+          Divider(height: 1, color: theme.dividerColor),
+          _NavigationRow(
+            icon: LucideIcons.database,
+            accent: const Color(0xFF0D9488),
+            label: '存储空间',
+            description: '统计聊天与文件占用，清理缓存或进入数据库诊断',
+            onTap: isWorking ? null : () => _push(const StorageSpacePage()),
+          ),
           Divider(height: 1, color: theme.dividerColor),
           _NavigationRow(
             icon: LucideIcons.bell,
@@ -212,41 +224,6 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
                 ? '已开启 · 每 ${state.reminderIntervalDays} 天提醒'
                 : '未开启',
             onTap: isWorking ? null : () => _push(const BackupReminderPage()),
-          ),
-          Divider(height: 1, color: theme.dividerColor),
-          _NavigationRow(
-            icon: LucideIcons.database,
-            accent: const Color(0xFF0D9488),
-            label: '数据库诊断',
-            description: '检查数据完整性，修复孤立数据',
-            onTap: isWorking ? null : () => _push(const DiagnosticPage()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // 本地备份历史
-  // ---------------------------------------------------------------------------
-
-  Widget _buildBackupHistoryCard(
-    ThemeData theme,
-    BackupState state,
-    BackupController controller,
-  ) {
-    return _SectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SectionHeader(title: '本地备份历史', description: '最近的备份文件'),
-          Divider(height: 1, color: theme.dividerColor),
-          ...state.localBackups.map(
-            (item) => _BackupFileRow(
-              item: item,
-              theme: theme,
-              onDelete: () => controller.deleteLocalBackup(item.displayName),
-            ),
           ),
         ],
       ),
@@ -862,107 +839,5 @@ class _RecommendedChip extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// A backup file row in the history section.
-class _BackupFileRow extends StatefulWidget {
-  final BackupFileItem item;
-  final ThemeData theme;
-  final VoidCallback onDelete;
-
-  const _BackupFileRow({
-    required this.item,
-    required this.theme,
-    required this.onDelete,
-  });
-
-  @override
-  State<_BackupFileRow> createState() => _BackupFileRowState();
-}
-
-class _BackupFileRowState extends State<_BackupFileRow> {
-  bool _armed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final item = widget.item;
-    return InkWell(
-      onTap: () {
-        if (_armed) {
-          setState(() => _armed = false);
-          return;
-        }
-        Navigator.of(context).push(
-          PageRouteBuilder<void>(
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero,
-            pageBuilder: (_, __, ___) => BackupPreviewPage(item: item),
-          ),
-        );
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        child: Row(
-          children: [
-            Icon(
-              item.isAuto ? LucideIcons.shieldCheck : LucideIcons.archive,
-              size: 18,
-              color: item.isAuto
-                  ? theme.colorScheme.secondary
-                  : theme.colorScheme.primary,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.displayName,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    '${item.sizeDisplay} | ${_formatDate(item.lastModified)}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 11,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              LucideIcons.chevronRight,
-              size: 16,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              icon: Icon(LucideIcons.trash2, size: 16),
-              color: _armed ? theme.colorScheme.error : null,
-              onPressed: () {
-                if (_armed) {
-                  widget.onDelete();
-                } else {
-                  setState(() => _armed = true);
-                }
-              },
-              visualDensity: VisualDensity.compact,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatDate(DateTime? dt) {
-    if (dt == null) return '';
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
-        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }
