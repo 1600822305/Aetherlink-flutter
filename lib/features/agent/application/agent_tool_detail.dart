@@ -67,7 +67,9 @@ List<String> toolChangedFilePaths(
     add(data['path'] ?? args['export']);
   } else {
     final resolved = _text(data['path']);
-    final path = _text(args['path']) ?? _text(args['file']);
+    final path = _text(args['path']) ??
+        (toolName == 'move' ? _text(args['source_path']) : null) ??
+        _text(args['file']);
     final target = toolName == 'pptx_modify' ? _text(args['output']) ?? path : path;
     add(resolved ?? target);
     if (toolName == 'pptx_render') {

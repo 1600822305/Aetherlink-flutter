@@ -48,6 +48,26 @@ void main() {
     );
     expect(toolChangedFilePaths('move', '{"path":"a"}'), ['a']);
   });
+  test('move accepts source_path with the same precedence as its executor', () {
+    expect(
+      toolChangedFilePaths(
+        'move',
+        '{"source_path":"old/a","destination_path":"new"}',
+        resultText: '{"success":true,"data":{"path":"/work/new/a"}}',
+      ),
+      ['/work/new/a', 'old/a'],
+    );
+    expect(
+      toolChangedFilePaths('move', '{"source_path":"a","new_name":"b"}'),
+      ['a', 'b'],
+    );
+    expect(
+      toolChangedFilePaths('move', '{"path":"a","source_path":"wrong","new_name":"b"}'),
+      ['a', 'b'],
+    );
+    expect(toolChangedFilePaths('move', '{"source_path":3}'), isEmpty);
+    expect(toolChangedFilePaths('write', '{"source_path":"a"}'), isEmpty);
+  });
 
   test('presentation tools report write targets, not read-only sources', () {
     expect(toolChangedFilePaths('pptx_modify', '{"path":"in.pptx","output":"out.pptx"}'), ['out.pptx']);
