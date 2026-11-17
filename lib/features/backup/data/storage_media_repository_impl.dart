@@ -63,8 +63,21 @@ FROM encoded_media
 
 const kStorageReferencesSql = '''
 SELECT data AS value FROM message_block_rows
+UNION ALL SELECT data FROM message_rows
 UNION ALL SELECT data FROM assistant_rows
 UNION ALL SELECT data FROM topic_rows
+UNION ALL SELECT payload_json FROM agent_event_rows
+UNION ALL SELECT data FROM agent_task_rows
+UNION ALL SELECT data FROM agent_profile_rows
+UNION ALL SELECT data FROM provider_rows
+UNION ALL SELECT data FROM group_rows
+UNION ALL SELECT data FROM memory_rows
+UNION ALL SELECT previous_value FROM memory_history_rows
+UNION ALL SELECT new_value FROM memory_history_rows
+UNION ALL SELECT source FROM knowledge_item_rows
+UNION ALL SELECT source_fingerprint FROM knowledge_item_rows
+UNION ALL SELECT content FROM knowledge_content_rows
+UNION ALL SELECT content FROM kb_chunk_rows
 UNION ALL SELECT value FROM app_setting_rows
 UNION ALL SELECT key FROM app_setting_rows
 ''';

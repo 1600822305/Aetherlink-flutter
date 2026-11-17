@@ -16,9 +16,18 @@ void main() {
     db = sqlite3.open(p.join(documents.path, 'aetherlink.sqlite'));
     db.execute('CREATE TABLE message_block_rows (id TEXT, message_id TEXT, data TEXT)');
     db.execute('CREATE TABLE message_rows (id TEXT, topic_id TEXT)');
+    db.execute("ALTER TABLE message_rows ADD COLUMN data TEXT DEFAULT '{}'");
     db.execute('CREATE TABLE topic_rows (id TEXT, data TEXT)');
     db.execute('CREATE TABLE assistant_rows (id TEXT, data TEXT)');
     db.execute('CREATE TABLE app_setting_rows (key TEXT, value TEXT)');
+    db.execute('CREATE TABLE agent_event_rows (id TEXT, payload_json TEXT)');
+    for (final table in ['agent_task_rows', 'agent_profile_rows', 'provider_rows', 'group_rows', 'memory_rows']) {
+      db.execute('CREATE TABLE $table (id TEXT, data TEXT)');
+    }
+    db.execute('CREATE TABLE memory_history_rows (previous_value TEXT, new_value TEXT)');
+    db.execute('CREATE TABLE knowledge_item_rows (source TEXT, source_fingerprint TEXT)');
+    db.execute('CREATE TABLE knowledge_content_rows (content TEXT)');
+    db.execute('CREATE TABLE kb_chunk_rows (content TEXT)');
   });
 
   tearDown(() async {
@@ -78,7 +87,7 @@ void main() {
         [payload['id'], 'message', jsonEncode(payload)]);
     }
     db.execute("INSERT INTO message_block_rows VALUES ('bad', 'orphan', 'invalid-json')");
-    db.execute("INSERT INTO message_rows VALUES ('message', 'topic')");
+    db.execute("INSERT INTO message_rows (id, topic_id) VALUES ('message', 'topic')");
     db.execute('INSERT INTO topic_rows VALUES (?, ?)', ['topic', jsonEncode({'name': '测试', 'assistantId': 'assistant'})]);
     final rows = db.select(kStorageMediaSql).map((row) => Map<String, Object?>.from(row)).toList();
     expect(rows.every((row) => !row.containsKey('block_json') && !row.containsKey('inline_data')), isTrue);
@@ -130,6 +139,58 @@ void main() {
     final result = deleteStorageMedia(documents.path, {'disk:${avatar.path}'}, [avatar.path]);
     expect(result.kept, 1);
     expect(await avatar.exists(), isTrue);
+  });
+
+  test('agent-only screenshot and overflow references protect listing and deletion', () async {
+    final screenshot = await file('browser_screenshots/agent-only.png');
+    final overflow = await file('agent_tool_outputs/agent-only.txt');
+    final ids = {'disk:${screenshot.path}', 'disk:${overflow.path}'};
+    expect(loadStorageMedia(documents.path, []).every((item) => item.canDelete), isTrue);
+    db.execute('INSERT INTO agent_event_rows VALUES (?, ?)', ['tool-call', jsonEncode({
+      'imagePath': screenshot.path,
+      'resultOverflowPath': overflow.path,
+    })]);
+    final listed = loadStorageMedia(documents.path, []);
+    expect(listed.length, 2);
+    expect(listed.every((item) => item.isInUse && !item.canDelete), isTrue);
+    final result = deleteStorageMedia(documents.path, ids, []);
+    expect(result.deleted, 0);
+    expect(result.kept, 2);
+    expect(await screenshot.exists(), isTrue);
+    expect(await overflow.exists(), isTrue);
+    db.execute('DELETE FROM agent_event_rows');
+    expect(deleteStorageMedia(documents.path, ids, []).deleted, 2);
+  });
+
+  test('other persisted payloads, knowledge sources and workspace settings protect files', () async {
+    final target = await file('agent_tool_outputs/persisted.txt');
+    final sources = {
+      'message_rows': 'data',
+      'agent_task_rows': 'data',
+      'agent_profile_rows': 'data',
+      'provider_rows': 'data',
+      'group_rows': 'data',
+      'memory_rows': 'data',
+      'memory_history_rows': 'previous_value',
+      'knowledge_item_rows': 'source',
+      'knowledge_content_rows': 'content',
+      'kb_chunk_rows': 'content',
+      'app_setting_rows': 'value',
+    };
+    for (final entry in sources.entries) {
+      expect(loadStorageMedia(documents.path, []).single.canDelete, isTrue);
+      db.execute('INSERT INTO ${entry.key} (${entry.value}) VALUES (?)',
+        [jsonEncode({'root': target.path})]);
+      expect(loadStorageMedia(documents.path, []).single.isInUse, isTrue);
+      expect(deleteStorageMedia(documents.path, {'disk:${target.path}'}, []).kept, 1);
+      db.execute('DELETE FROM ${entry.key}');
+    }
+    for (final entry in {'memory_history_rows': 'new_value', 'knowledge_item_rows': 'source_fingerprint'}.entries) {
+      db.execute('INSERT INTO ${entry.key} (${entry.value}) VALUES (?)', [target.path]);
+      expect(deleteStorageMedia(documents.path, {'disk:${target.path}'}, []).kept, 1);
+      db.execute('DELETE FROM ${entry.key}');
+    }
+    expect(await target.exists(), isTrue);
   });
 
   test('database references decode JSON keys, escaped unicode and encoded URIs', () async {
