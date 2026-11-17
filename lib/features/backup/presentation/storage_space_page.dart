@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/backup/application/storage_controlle
 import 'package:aetherlink_flutter/features/backup/domain/storage_report.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/diagnostic_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/storage_category_page.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/storage_media_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/storage_widgets.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/topic_storage_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
@@ -83,17 +84,25 @@ class _StorageSpacePageState extends ConsumerState<StorageSpacePage> {
                         icon: category.icon,
                         accent: category.color,
                         label: category.label,
-                        description:
-                            '${formatStorageBytes(report.categories[category]!.bytes)}'
-                            ' · ${report.categories[category]!.fileCount} 个文件',
+                        description: category == StorageCategory.images ||
+                                category == StorageCategory.files
+                            ? '管理视图 · 不重复计量'
+                            : '${formatStorageBytes(report.categories[category]!.bytes)}'
+                              ' · ${report.categories[category]!.fileCount} 个文件',
                         onTap: !enabled
                             ? null
                             : () async {
                                 await openStoragePage(
                                   context,
-                                  category == StorageCategory.chat
-                                      ? const TopicStoragePage()
-                                      : StorageCategoryPage(category: category),
+                                  switch (category) {
+                                    StorageCategory.chat =>
+                                      const TopicStoragePage(),
+                                    StorageCategory.images =>
+                                      const StorageMediaPage(isImageView: true),
+                                    StorageCategory.files =>
+                                      const StorageMediaPage(isImageView: false),
+                                    _ => StorageCategoryPage(category: category),
+                                  },
                                 );
                                 await controller.refresh();
                               },

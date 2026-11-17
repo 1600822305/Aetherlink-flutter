@@ -17,6 +17,8 @@ extension StorageCategoryPresentation on StorageCategory {
     StorageCategory.other => '其他',
     StorageCategory.workspaceHistory => '工作区历史',
     StorageCategory.terminal => '终端环境',
+    StorageCategory.images => '图片',
+    StorageCategory.files => '文件',
   };
 
   IconData get icon => switch (this) {
@@ -30,6 +32,8 @@ extension StorageCategoryPresentation on StorageCategory {
     StorageCategory.other => LucideIcons.box,
     StorageCategory.workspaceHistory => LucideIcons.history,
     StorageCategory.terminal => LucideIcons.terminal,
+    StorageCategory.images => LucideIcons.image,
+    StorageCategory.files => LucideIcons.file,
   };
 
   Color get color => switch (this) {
@@ -43,13 +47,15 @@ extension StorageCategoryPresentation on StorageCategory {
     StorageCategory.other => const Color(0xFF9333EA),
     StorageCategory.workspaceHistory => const Color(0xFFD97706),
     StorageCategory.terminal => const Color(0xFF0D9488),
+    StorageCategory.images => const Color(0xFFE11D48),
+    StorageCategory.files => const Color(0xFF4F46E5),
   };
 
   String get description => switch (this) {
     StorageCategory.chat =>
       '包含数据库、写入日志及共享内存文件。图片和视频内容也保存在聊天数据库中。',
     StorageCategory.backups => '已保存到本机的备份包。可进入文件列表查看时间、大小或移除旧备份。',
-    StorageCategory.tools => '包括智能体工具生成的文件、浏览器截图和演示文稿快照。清理会使历史引用失效。',
+    StorageCategory.tools => '包括工具执行结果、浏览器截图和演示文稿快照。进入图片或文件管理可检查引用并移除未使用项目。',
     StorageCategory.avatars => '助手和用户使用的本地头像。请在相应资料设置中更换或移除。',
     StorageCategory.fonts => '自行导入的字体文件。在线字体下载缓存归入缓存类别，此处不提供批量清理。',
     StorageCategory.notes => '本地笔记文件。请在笔记中检查内容并按需删除，此处不批量移除笔记。',
@@ -57,6 +63,8 @@ extension StorageCategoryPresentation on StorageCategory {
     StorageCategory.other => 'PDF 引擎与下载的伙伴皮肤。现有管理器没有安全删除文件的接口，因此这里只展示占用。',
     StorageCategory.workspaceHistory => '文件修改前保存的本地版本。清理后无法通过文件历史恢复这些版本，不会删除工作区当前文件。',
     StorageCategory.terminal => '内置终端的系统文件与临时文件。系统文件仅展示，管理环境请进入终端；清理临时文件前请停止终端任务。',
+    StorageCategory.images => '图片管理视图，占用已计入聊天记录、头像或工具输出，不重复累计。',
+    StorageCategory.files => '文件与视频管理视图，占用已计入聊天记录或工具输出，不重复累计。',
   };
 }
 

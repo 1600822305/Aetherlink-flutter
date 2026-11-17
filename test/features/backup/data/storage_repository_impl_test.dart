@@ -198,7 +198,8 @@ void main() {
       ).create('${documents.path}/notes');
     }
     await repository.clean(StorageCleanup.fontCache);
-    await repository.clean(StorageCleanup.tools);
+    await expectLater(repository.clean(StorageCleanup.tools), throwsStateError);
+    await expectLater(repository.cleanItem('agent_tool_outputs'), throwsArgumentError);
     await repository.clean(StorageCleanup.cache);
     expect(await File('${documents.path}/fonts/imported.ttf').exists(), isTrue);
     expect(await File('${documents.path}/notes/note.md').exists(), isTrue);
@@ -209,7 +210,7 @@ void main() {
     expect(await temporary.exists(), isTrue);
     expect(await temporary.list().toList(), isEmpty);
     final report = await repository.scan();
-    expect(report.categories[StorageCategory.tools]!.bytes, 0);
+    expect(report.categories[StorageCategory.tools]!.bytes, 12);
     expect(report.categories[StorageCategory.fonts]!.bytes, 6);
     expect(report.categories[StorageCategory.cache]!.bytes, 0);
   });

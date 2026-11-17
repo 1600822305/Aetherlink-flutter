@@ -9,6 +9,8 @@ enum StorageCategory {
   other,
   workspaceHistory,
   terminal,
+  images,
+  files,
 }
 
 enum StorageCleanup { cache, tools, fontCache, workspaceHistory }

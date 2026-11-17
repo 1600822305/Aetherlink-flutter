@@ -158,7 +158,7 @@ ORDER BY bytes DESC, t.id
       }.entries)
         entry(
           item.key, StorageCategory.tools, item.value, documents,
-          p.join(documents, item.key), canClean: true,
+          p.join(documents, item.key),
         ),
       entry(
         'avatars', StorageCategory.avatars, '头像文件', documents,
@@ -222,6 +222,9 @@ ORDER BY bytes DESC, t.id
 
   @override
   Future<void> clean(StorageCleanup target) async {
+    if (target == StorageCleanup.tools) {
+      throw StateError('请进入图片或文件管理，按引用状态清理工具文件');
+    }
     final allPaths = await _paths(isCleanup: true);
     final paths = allPaths.where((spec) => switch (target) {
       StorageCleanup.cache => spec.category == StorageCategory.cache,

@@ -6,7 +6,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/backup/application/storage_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_report.dart';
+import 'package:aetherlink_flutter/features/backup/domain/storage_media.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/local_backup_page.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/storage_media_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/storage_widgets.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
@@ -26,7 +28,6 @@ class StorageCategoryPage extends ConsumerWidget {
         state.report?.canCleanCache != true;
     final target = switch (category) {
       StorageCategory.cache => StorageCleanup.cache,
-      StorageCategory.tools => StorageCleanup.tools,
       StorageCategory.workspaceHistory => StorageCleanup.workspaceHistory,
       _ => null,
     };
@@ -109,6 +110,24 @@ class StorageCategoryPage extends ConsumerWidget {
                               await controller.refresh();
                             },
                     ),
+                  ],
+                  if (category == StorageCategory.tools) ...[
+                    for (final isImageView in [true, false]) ...[
+                      Divider(height: 1, color: theme.dividerColor),
+                      StorageRow(
+                        icon: isImageView ? LucideIcons.image : LucideIcons.file,
+                        label: isImageView ? '管理图片与截图' : '管理文件与视频',
+                        onTap: !enabled
+                            ? null
+                            : () async {
+                                await openStoragePage(context, StorageMediaPage(
+                                  isImageView: isImageView,
+                                  initialFilter: StorageMediaFilter.tools,
+                                ));
+                                await controller.refresh();
+                              },
+                      ),
+                    ],
                   ],
                 ],
               ),
