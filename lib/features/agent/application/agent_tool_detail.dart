@@ -111,7 +111,7 @@ int? findToolDiffFileIndex(
     return null;
   }
   final normalized = normalize(path);
-  if (normalized == '.') {
+  if (normalized == '.' || normalized == '~' || normalized.startsWith('~/')) {
     return null;
   }
   final isAbsolute = p.posix.isAbsolute(normalized) ||

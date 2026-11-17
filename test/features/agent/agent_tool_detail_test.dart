@@ -103,4 +103,16 @@ void main() {
     expect(findToolDiffFileIndex('b.dart', [], workspaceRoot: '/work'), isNull);
     expect(findToolDiffFileIndex('src/a.dart', [files[1]], workspaceRoot: '/work/repo1'), isNull);
   });
+  test('home-relative paths never resolve beneath the workspace', () {
+    for (final path in ['~', '~/deck.json', r'~\deck.json']) {
+      expect(
+        findToolDiffFileIndex(
+          path,
+          ['/work/~', '/work/~/deck.json', '/home/user/deck.json'],
+          workspaceRoot: '/work',
+        ),
+        isNull,
+      );
+    }
+  });
 }
