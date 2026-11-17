@@ -17,6 +17,7 @@ class StorageCategoryPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(storageControllerProvider);
     final controller = ref.read(storageControllerProvider.notifier);
+    final theme = Theme.of(context);
     final usage = state.report?.categories[category] ?? const StorageUsage();
     final isCacheUnavailable =
         category == StorageCategory.cache &&
@@ -39,52 +40,67 @@ class StorageCategoryPage extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           children: [
             StorageCard(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      formatStorageBytes(usage.bytes),
-                      style: Theme.of(context).textTheme.headlineSmall,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        StorageUsageText(formatStorageBytes(usage.bytes)),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${usage.fileCount} 个文件',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 12,
+                            height: 1.3,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        StorageNotice(category.description),
+                        if (isCacheUnavailable && state.report != null)
+                          const StorageNotice(
+                            '此平台的临时目录可能由多个应用共享，为避免影响其他程序，'
+                            '不统计或清理其中的缓存。',
+                          ),
+                      ],
                     ),
-                    Text('${usage.fileCount} 个文件'),
-                    StorageNotice(category.description),
-                    if (isCacheUnavailable && state.report != null)
-                      const StorageNotice(
-                        '此平台的临时目录可能由多个应用共享，为避免影响其他程序，'
-                        '不统计或清理其中的缓存。',
-                      ),
-                    if (target != null && !isCacheUnavailable)
-                      FilledButton.icon(
-                        icon: const Icon(LucideIcons.trash2, size: 18),
-                        label: Text(actionLabel),
-                        onPressed: !enabled
-                            ? null
-                            : () => confirmStorageAction(
-                                context,
-                                title: actionLabel,
-                                message: '${category.description}\n\n'
-                                    '此操作将移除对应文件，无法撤销。确定继续吗？',
-                                action: () => controller.clean(target),
-                              ),
-                      ),
-                    if (category == StorageCategory.backups)
-                      FilledButton.icon(
-                        icon: const Icon(LucideIcons.archive, size: 18),
-                        label: const Text('查看备份文件'),
-                        onPressed: !enabled
-                            ? null
-                            : () async {
-                                await openStoragePage(
-                                  context,
-                                  const LocalBackupPage(filesOnly: true),
-                                );
-                                await controller.refresh();
-                              },
-                      ),
+                  ),
+                  if (target != null && !isCacheUnavailable) ...[
+                    Divider(height: 1, color: theme.dividerColor),
+                    StorageRow(
+                      icon: LucideIcons.trash2,
+                      label: actionLabel,
+                      isDestructive: true,
+                      onTap: !enabled
+                          ? null
+                          : () => confirmStorageAction(
+                              context,
+                              title: actionLabel,
+                              message: '${category.description}\n\n'
+                                  '此操作将移除对应文件，无法撤销。确定继续吗？',
+                              action: () => controller.clean(target),
+                            ),
+                    ),
                   ],
-                ),
+                  if (category == StorageCategory.backups) ...[
+                    Divider(height: 1, color: theme.dividerColor),
+                    StorageRow(
+                      icon: LucideIcons.archive,
+                      label: '查看备份文件',
+                      onTap: !enabled
+                          ? null
+                          : () async {
+                              await openStoragePage(
+                                context,
+                                const LocalBackupPage(filesOnly: true),
+                              );
+                              await controller.refresh();
+                            },
+                    ),
+                  ],
+                ],
               ),
             ),
             if (state.isBusy || state.isLoading)
