@@ -100,6 +100,25 @@ List<String> toolChangedFilePaths(
   return paths.toList();
 }
 
+List<T> prioritizeToolDiffRepository<T>(
+  List<T> files,
+  int focusIndex, {
+  required String Function(T) repoRootOf,
+}) {
+  if (focusIndex < 0 || focusIndex >= files.length) {
+    return [...files];
+  }
+  final focused = files[focusIndex];
+  final root = repoRootOf(focused);
+  return [
+    focused,
+    for (var i = 0; i < files.length; i++)
+      if (i != focusIndex && repoRootOf(files[i]) == root) files[i],
+    for (final file in files)
+      if (repoRootOf(file) != root) file,
+  ];
+}
+
 int? findToolDiffFileIndex(
   String path,
   List<String> absolutePaths, {

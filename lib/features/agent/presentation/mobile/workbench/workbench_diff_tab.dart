@@ -117,7 +117,7 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
     void refresh() =>
         ref.invalidate(agentWorkspaceChangesProvider(workspaceId));
 
-    final changes = [...snapshot.changes];
+    var changes = [...snapshot.changes];
     final path = widget.initialFilePath;
     final focusIndex = path == null
         ? null
@@ -127,8 +127,12 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
             workspaceRoot: snapshot.workspaceRoot,
           );
     if (focusIndex != null) {
-      final focused = changes.removeAt(focusIndex);
-      changes.insert(0, focused);
+      final focused = changes[focusIndex];
+      changes = prioritizeToolDiffRepository(
+        changes,
+        focusIndex,
+        repoRootOf: (change) => change.repoRoot,
+      );
       if (!_hasFocusedFile) {
         _expanded.add(focused.absPath);
         _hasFocusedFile = true;

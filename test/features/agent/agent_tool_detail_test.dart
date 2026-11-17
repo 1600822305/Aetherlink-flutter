@@ -115,4 +115,20 @@ void main() {
       );
     }
   });
+  test('focus brings the complete repository group forward without splitting it', () {
+    const entries = ['a/1', 'a/2', 'b/1', 'b/2', 'b/3', 'c/1'];
+    String root(String file) => file.split('/').first;
+    expect(
+      prioritizeToolDiffRepository(entries, 3, repoRootOf: root),
+      ['b/2', 'b/1', 'b/3', 'a/1', 'a/2', 'c/1'],
+    );
+    expect(entries, ['a/1', 'a/2', 'b/1', 'b/2', 'b/3', 'c/1']);
+    expect(
+      prioritizeToolDiffRepository(entries, 0, repoRootOf: root),
+      entries,
+    );
+    expect(prioritizeToolDiffRepository(<String>[], 0, repoRootOf: root), isEmpty);
+    expect(prioritizeToolDiffRepository(entries, -1, repoRootOf: root), entries);
+    expect(prioritizeToolDiffRepository(entries, 6, repoRootOf: root), entries);
+  });
 }
