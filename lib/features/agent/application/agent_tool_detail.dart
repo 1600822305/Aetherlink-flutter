@@ -17,6 +17,9 @@ Map<String, dynamic> _object(String? text) {
 String? _text(Object? value) =>
     value is String && value.trim().isNotEmpty ? value : null;
 
+bool _isTrue(Object? value) =>
+    value == true || (value is String && value.trim().toLowerCase() == 'true');
+
 String? toolCommandText(String toolName, String argsText) {
   if (!const {'terminal_execute', 'terminal_session', 'run_command'}
       .contains(toolName)) {
@@ -45,7 +48,7 @@ List<String> toolChangedFilePaths(
     return const [];
   }
   final args = _object(argsText);
-  if (toolName == 'pptx_edit' && args['dry_run'] == true) {
+  if (toolName == 'pptx_edit' && _isTrue(args['dry_run'])) {
     return const [];
   }
   final result = _object(resultText);

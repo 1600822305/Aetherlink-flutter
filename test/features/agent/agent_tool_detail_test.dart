@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_tool_detail.dart';
@@ -85,6 +87,27 @@ void main() {
     expect(toolChangedFilePaths('pptx_edit', '{"source":"in.json","dry_run":true}'), isEmpty);
     for (final tool in ['pptx_draft', 'pptx_illustrate']) {
       expect(toolChangedFilePaths(tool, '{"path":"out"}'), ['out']);
+    }
+  });
+  test('PPTX dry_run follows executor boolean and string boolean semantics', () {
+    for (final value in <Object?>[true, 'true', ' TrUe ']) {
+      expect(
+        toolChangedFilePaths(
+          'pptx_edit',
+          jsonEncode({'source': 'in.json', 'export': 'out.pptx', 'dry_run': value}),
+          resultText: '{"success":true,"data":{"source":"in.json"}}',
+        ),
+        isEmpty,
+      );
+    }
+    for (final value in <Object?>[false, 'false', ' FALSE ', '', 'yes', 1, null]) {
+      expect(
+        toolChangedFilePaths(
+          'pptx_edit',
+          jsonEncode({'source': 'in.json', 'dry_run': value}),
+        ),
+        ['in.json'],
+      );
     }
   });
 
