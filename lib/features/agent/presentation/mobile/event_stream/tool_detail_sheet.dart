@@ -1,15 +1,19 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_tool_detail.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_page.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 工具调用详情底部抽屉（UI 稿 §4.1）：完整参数 + 完整输出。
-/// 面板固定屏高 2/3；参数区限高、输出区占满余下高度，各自内部滑动。
+/// 面板固定屏高 2/3；各分区限高、内部滑动，面板也可整体滚动。
 /// 大输出默认显截断内容，「查看全文」从落盘文件回读。
 /// 传入 [taskId] 时抽屉订阅事件流，参数/状态/输出随执行实时更新。
 Future<void> showToolDetailSheet(
@@ -59,6 +63,43 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
   String? _fullText;
   bool _loadingFull = false;
 
+  Future<void> _copy(String text) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (mounted) AppToast.success(context, '已复制');
+    } catch (error) {
+      if (mounted) AppToast.error(context, '复制失败：$error');
+    }
+  }
+
+  void _openDiff(String path) {
+    final task = ref.read(agentTasksProvider)
+        .where((task) => task.id == widget.taskId)
+        .firstOrNull;
+    if (task == null) {
+      AppToast.info(context, '未找到关联任务，无法打开工作台');
+      return;
+    }
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    navigator.push<void>(
+      PageRouteBuilder<void>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (context, animation, secondaryAnimation) => Scaffold(
+          body: SafeArea(
+            top: false,
+            child: WorkbenchPage(
+              task: task,
+              initialFilePath: path,
+              onBackToChat: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadFullText() async {
     final path = event.resultOverflowPath;
     if (path == null || _loadingFull) return;
@@ -83,6 +124,19 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
     final cs = theme.colorScheme;
     final muted = cs.onSurface.withValues(alpha: 0.55);
     final bottomPad = MediaQuery.paddingOf(context).bottom;
+    final argsText = ref.watch(
+      agentToolStreamProvider.select((m) => m[event.id]?.argsText),
+    ) ?? event.argsDetail ?? event.argSummary;
+    final outputText = _fullText ??
+        ((event.resultDetail?.isNotEmpty ?? false)
+            ? event.resultDetail!
+            : (event.resultSummary.isEmpty ? '（暂无输出）' : event.resultSummary));
+    final command = toolCommandText(event.toolName, argsText);
+    final changedFiles = toolChangedFilePaths(
+      event.toolName,
+      argsText,
+      resultText: _fullText ?? event.resultDetail,
+    );
     final stateLabel = switch (event.state) {
       AgentToolCallState.running => '执行中…',
       AgentToolCallState.success => '成功 ✓',
@@ -149,53 +203,97 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
                 16,
                 bottomPad > 0 ? bottomPad : 12,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _Section(
-                    title: '参数',
-                    body: ref.watch(
-                          agentToolStreamProvider
-                              .select((m) => m[event.id]?.argsText),
-                        ) ??
-                        event.argsDetail ??
-                        event.argSummary,
-                    maxHeight: 140,
-                  ),
-                  if (event.imagePath != null) ...[
-                    const SizedBox(height: 14),
-                    _ImageSection(path: event.imagePath!),
-                  ],
-                  const SizedBox(height: 14),
-                  Expanded(
-                    child: _Section(
-                      title: '输出',
-                      body: _fullText ??
-                          ((event.resultDetail?.isNotEmpty ?? false)
-                              ? event.resultDetail!
-                              : (event.resultSummary.isEmpty
-                                    ? '（暂无输出）'
-                                    : event.resultSummary)),
-                      fill: true,
-                      trailing: event.resultOverflowPath != null &&
-                              _fullText == null
-                          ? TextButton(
-                              onPressed: _loadingFull ? null : _loadFullText,
-                              style: TextButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Section(
+                      title: '参数',
+                      body: argsText,
+                      maxHeight: 140,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (command != null)
+                            TextButton(
+                              onPressed: () => _copy(command),
+                              style: _headerButtonStyle,
+                              child: Text('复制命令', style: theme.textTheme.labelSmall),
+                            ),
+                          _CopyButton(
+                            tooltip: '复制参数',
+                            onPressed: () => _copy(argsText),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (changedFiles.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        '变更的文件',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: muted,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 120),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              for (final path in changedFiles)
+                                InkWell(
+                                  onTap: () => _openDiff(path),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 6),
+                                    child: Row(
+                                      children: [
+                                        Icon(LucideIcons.fileText, size: 14, color: muted),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(path, style: theme.textTheme.labelSmall),
+                                        ),
+                                        Icon(LucideIcons.chevronRight, size: 14, color: muted),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (event.imagePath != null) ...[
+                      const SizedBox(height: 14),
+                      _ImageSection(path: event.imagePath!),
+                    ],
+                    const SizedBox(height: 14),
+                    _Section(
+                      title: '输出',
+                      body: outputText,
+                      maxHeight: 320,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (event.resultOverflowPath != null && _fullText == null)
+                            TextButton(
+                              onPressed: _loadingFull ? null : _loadFullText,
+                              style: _headerButtonStyle,
                               child: Text(
                                 _loadingFull ? '加载中…' : '查看全文',
                                 style: theme.textTheme.labelSmall,
                               ),
-                            )
-                          : null,
+                            ),
+                          _CopyButton(
+                            tooltip: '复制输出',
+                            onPressed: () => _copy(outputText),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -203,6 +301,30 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
       ),
     );
   }
+}
+
+final _headerButtonStyle = TextButton.styleFrom(
+  visualDensity: VisualDensity.compact,
+  minimumSize: const Size(0, 32),
+  padding: const EdgeInsets.symmetric(horizontal: 8),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
+
+class _CopyButton extends StatelessWidget {
+  const _CopyButton({required this.tooltip, required this.onPressed});
+
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    icon: const Icon(LucideIcons.copy, size: 14),
+    visualDensity: VisualDensity.compact,
+    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+    padding: const EdgeInsets.all(6),
+  );
 }
 
 /// 图片结果缩略图（截图类工具）：从落盘文件渲染，文件丢失时降级为提示行。
@@ -251,20 +373,17 @@ class _ImageSection extends StatelessWidget {
   }
 }
 
-/// 内容块：固定高度内部滑动。[fill] 时占满父约束（外层配 Expanded），
-/// 否则按 [maxHeight] 限高，内容不足时自适应。
+/// 内容块：按 [maxHeight] 限高并内部滑动，内容不足时自适应。
 class _Section extends StatelessWidget {
   const _Section({
     required this.title,
     required this.body,
-    this.fill = false,
     this.maxHeight,
     this.trailing,
   });
 
   final String title;
   final String body;
-  final bool fill;
   final double? maxHeight;
 
   /// 标题行右侧动作（如「查看全文」）。
@@ -291,7 +410,7 @@ class _Section extends StatelessWidget {
         ),
       ),
     );
-    if (!fill && maxHeight != null) {
+    if (maxHeight != null) {
       box = ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight!),
         child: box,
@@ -315,7 +434,7 @@ class _Section extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        if (fill) Expanded(child: box) else box,
+        box,
       ],
     );
   }

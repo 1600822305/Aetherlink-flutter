@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_workspace_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_tool_detail.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/devin_diff_lines.dart';
@@ -18,9 +19,10 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 /// 手风琴展开 diff（HEAD ↔ 工作区当前内容），可全屏查看/复制路径。
 /// 智能体文件写入/终端工具成功后自动刷新，也支持手动下拉/按钮刷新。
 class WorkbenchDiffTab extends ConsumerStatefulWidget {
-  const WorkbenchDiffTab({required this.task, super.key});
+  const WorkbenchDiffTab({required this.task, this.initialFilePath, super.key});
 
   final AgentTask task;
+  final String? initialFilePath;
 
   @override
   ConsumerState<WorkbenchDiffTab> createState() => _WorkbenchDiffTabState();
@@ -29,6 +31,7 @@ class WorkbenchDiffTab extends ConsumerStatefulWidget {
 class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
   /// 已行内展开的文件（absPath，多仓库下 relPath 可能重名）。
   final Set<String> _expanded = {};
+  bool _hasFocusedFile = false;
 
   /// 已触发过自动刷新的最新工具事件 seq，防止重复 invalidate。
   int _lastRefreshSeq = -1;
@@ -39,6 +42,10 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
     if (widget.task.id != oldWidget.task.id) {
       _lastRefreshSeq = -1;
       _expanded.clear();
+    }
+    if (widget.task.id != oldWidget.task.id ||
+        widget.initialFilePath != oldWidget.initialFilePath) {
+      _hasFocusedFile = false;
     }
   }
 
@@ -110,6 +117,28 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
     void refresh() =>
         ref.invalidate(agentWorkspaceChangesProvider(workspaceId));
 
+    var changes = [...snapshot.changes];
+    final path = widget.initialFilePath;
+    final focusIndex = path == null
+        ? null
+        : findToolDiffFileIndex(
+            path,
+            [for (final change in changes) change.absPath],
+            workspaceRoot: snapshot.workspaceRoot,
+          );
+    if (focusIndex != null) {
+      final focused = changes[focusIndex];
+      changes = prioritizeToolDiffRepository(
+        changes,
+        focusIndex,
+        repoRootOf: (change) => change.repoRoot,
+      );
+      if (!_hasFocusedFile) {
+        _expanded.add(focused.absPath);
+        _hasFocusedFile = true;
+      }
+    }
+
     return Column(
       children: [
         Padding(
@@ -135,6 +164,11 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
             ],
           ),
         ),
+        if (path != null && focusIndex == null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text('当前改动中未找到：$path', style: theme.textTheme.labelSmall),
+          ),
         Expanded(
           child: snapshot.changes.isEmpty
               ? _Empty(
@@ -146,9 +180,9 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
                   onRefresh: () async => refresh(),
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: snapshot.changes.length,
+                    itemCount: changes.length,
                     itemBuilder: (context, i) {
-                      final change = snapshot.changes[i];
+                      final change = changes[i];
                       // 多仓库工作区里 relPath 可能跨仓库重名，展开态用
                       // 唯一的 absPath 作键。
                       final expanded = _expanded.contains(change.absPath);
@@ -156,7 +190,7 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
                       final showRepoHeader =
                           snapshot.repoCount > 1 &&
                           (i == 0 ||
-                              snapshot.changes[i - 1].repoRoot !=
+                              changes[i - 1].repoRoot !=
                                   change.repoRoot);
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
