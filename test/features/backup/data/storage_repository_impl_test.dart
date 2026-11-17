@@ -13,6 +13,8 @@ void main() {
   late Directory root;
   late Directory documents;
   late Directory temporary;
+  late Directory support;
+  var imageCacheClears = 0;
   late StorageRepositoryImpl repository;
 
   setUp(() async {
@@ -20,10 +22,15 @@ void main() {
     root = await Directory.systemTemp.createTemp('aetherlink_storage_test_');
     documents = await Directory('${root.path}/documents').create();
     temporary = await Directory('${root.path}/temporary').create();
+    support = await Directory('${root.path}/support').create();
+    imageCacheClears = 0;
     repository = StorageRepositoryImpl(
       db,
       documentsDirectory: () async => documents,
       temporaryDirectory: () async => temporary,
+      supportDirectory: () async => support,
+      workspaceNames: () async => {'known': '示例工作区'},
+      clearImageCache: () async { imageCacheClears++; },
       canCleanCache: true,
     );
   });
@@ -35,6 +42,12 @@ void main() {
 
   Future<void> write(String relative, int bytes) async {
     final file = File('${documents.path}/$relative');
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(List.filled(bytes, 1));
+  }
+
+  Future<void> writeSupport(String relative, int bytes) async {
+    final file = File('${support.path}/$relative');
     await file.parent.create(recursive: true);
     await file.writeAsBytes(List.filled(bytes, 1));
   }
@@ -62,8 +75,12 @@ void main() {
     final report = await repository.scan();
     expect(report.totalBytes, 0);
     expect(report.totalFiles, 0);
+    expect(report.items, isNotEmpty);
+    expect(report.items.every((item) => item.usage.bytes == 0), isTrue);
     expect(await repository.topicUsage(), isEmpty);
     await repository.clean(StorageCleanup.fontCache);
+    await repository.clean(StorageCleanup.workspaceHistory);
+    await repository.cleanItem('terminalTmp');
   });
 
   test('directory resolution failures reach the caller', () async {
@@ -82,6 +99,7 @@ void main() {
     final shared = StorageRepositoryImpl(
       db,
       documentsDirectory: () async => documents,
+      supportDirectory: () async => support,
       temporaryDirectory: () async {
         resolutions++;
         return temporary;
@@ -100,6 +118,7 @@ void main() {
       final platformDefault = StorageRepositoryImpl(
         db,
         documentsDirectory: () async => documents,
+        supportDirectory: () async => support,
         temporaryDirectory: () async => throw StateError('shared directory'),
       );
       expect((await platformDefault.scan()).canCleanCache, isFalse);
@@ -127,7 +146,8 @@ void main() {
     expect(report.categories[StorageCategory.chat]!.bytes, 17);
     expect(report.categories[StorageCategory.chat]!.fileCount, 3);
     expect(report.categories[StorageCategory.tools]!.bytes, 12);
-    expect(report.categories[StorageCategory.fonts]!.bytes, 13);
+    expect(report.categories[StorageCategory.fonts]!.bytes, 6);
+    expect(report.categories[StorageCategory.cache]!.bytes, 9);
     expect(report.categories[StorageCategory.notes]!.bytes, 10);
     expect(report.totalBytes, 71);
     expect(report.totalFiles, 12);
@@ -140,6 +160,7 @@ void main() {
     final configured = StorageRepositoryImpl(
       db,
       documentsDirectory: () async => documents,
+      supportDirectory: () async => support,
       notesDirectory: () async => selected,
       canCleanCache: false,
     );
@@ -156,6 +177,7 @@ void main() {
     final configured = StorageRepositoryImpl(
       db,
       documentsDirectory: () async => documents,
+      supportDirectory: () async => support,
       notesDirectory: () async => throw FileSystemException('notes unavailable'),
       canCleanCache: false,
     );
@@ -190,6 +212,156 @@ void main() {
     expect(report.categories[StorageCategory.tools]!.bytes, 0);
     expect(report.categories[StorageCategory.fonts]!.bytes, 6);
     expect(report.categories[StorageCategory.cache]!.bytes, 0);
+  });
+
+  test('details include only existing database files and support subitems', () async {
+    await write('aetherlink.sqlite', 10);
+    await write('aetherlink.sqlite-wal', 2);
+    await writeSupport('pdfium/library.so', 3);
+    await writeSupport('buddy_skins/pet.webp', 4);
+    await writeSupport('file_history/known/index.json', 5);
+    await writeSupport('file_history/unknown/objects/hash', 6);
+    await writeSupport('terminal/rootfs/bin/sh', 7);
+    await writeSupport('terminal/tmp/session', 8);
+    final report = await repository.scan();
+    expect(report.itemsFor(StorageCategory.chat).map((item) => item.name),
+      ['aetherlink.sqlite', 'aetherlink.sqlite-wal']);
+    expect(report.itemsFor(StorageCategory.workspaceHistory).map((item) => item.name),
+      ['示例工作区', 'unknown']);
+    expect(report.categories[StorageCategory.other]!.bytes, 7);
+    expect(report.categories[StorageCategory.workspaceHistory]!.bytes, 11);
+    expect(report.categories[StorageCategory.terminal]!.bytes, 15);
+    expect(report.totalBytes, 45);
+    expect(report.items.every((item) => FileSystemEntity.typeSync(
+      item.path, followLinks: false) != FileSystemEntityType.notFound), isTrue);
+    expect(report.itemsFor(StorageCategory.other).every((item) => !item.canClean), isTrue);
+  });
+
+  test('cache details do not double count and support independent cleanup', () async {
+    await write('google_fonts_cache/font.ttf', 7);
+    await File('${temporary.path}/export.tmp').writeAsBytes([1, 2]);
+    final image = File('${temporary.path}/libCachedImageData/image');
+    await image.parent.create();
+    await image.writeAsBytes(List.filled(11, 1));
+    final report = await repository.scan();
+    final items = {for (final item in report.itemsFor(StorageCategory.cache)) item.id: item};
+    expect(items['temporary']!.usage.bytes, 2);
+    expect(items['fontCache']!.usage.bytes, 7);
+    expect(items['imageCache']!.usage.bytes, 11);
+    expect(report.totalBytes, 20);
+    await repository.cleanItem('temporary');
+    expect(await image.exists(), isTrue);
+    expect(await File('${documents.path}/google_fonts_cache/font.ttf').exists(), isTrue);
+    expect(imageCacheClears, 0);
+    await repository.cleanItem('fontCache');
+    expect(await image.exists(), isTrue);
+    await repository.cleanItem('imageCache');
+    expect(await image.exists(), isFalse);
+    expect(imageCacheClears, 1);
+    expect((await repository.scan()).totalBytes, 0);
+  });
+
+  test('all-cache cleanup clears every cache but keeps imported fonts', () async {
+    await write('fonts/import.ttf', 3);
+    await write('google_fonts_cache/font.ttf', 7);
+    final image = File('${temporary.path}/libCachedImageData/image');
+    await image.parent.create();
+    await image.writeAsBytes([1]);
+    await File('${temporary.path}/export.tmp').writeAsBytes([2]);
+    await repository.clean(StorageCleanup.cache);
+    expect((await repository.scan()).categories[StorageCategory.cache]!.bytes, 0);
+    expect(await File('${documents.path}/fonts/import.ttf').exists(), isTrue);
+    expect(imageCacheClears, 1);
+  });
+
+  test('desktop cache cleanup still clears fonts without resolving shared temp', () async {
+    await write('google_fonts_cache/font.ttf', 7);
+    final shared = StorageRepositoryImpl(db,
+      documentsDirectory: () async => documents,
+      supportDirectory: () async => support,
+      temporaryDirectory: () async => throw StateError('shared temp'),
+      canCleanCache: false,
+    );
+    expect((await shared.scan()).itemsFor(StorageCategory.cache).map((item) => item.id),
+      ['fontCache']);
+    await shared.clean(StorageCleanup.cache);
+    expect((await shared.scan()).categories[StorageCategory.cache]!.bytes, 0);
+    await expectLater(shared.cleanItem('temporary'), throwsArgumentError);
+    await expectLater(shared.cleanItem('imageCache'), throwsArgumentError);
+  });
+
+  test('history supports individual and all-workspace cleanup', () async {
+    await writeSupport('file_history/known/index.json', 5);
+    await writeSupport('file_history/known/objects/hash', 6);
+    await writeSupport('file_history/unknown/index.json', 7);
+    await writeSupport('terminal/rootfs/keep', 8);
+    await repository.cleanItem('history:known');
+    expect(await Directory('${support.path}/file_history/known').exists(), isTrue);
+    expect((await repository.scan()).categories[StorageCategory.workspaceHistory]!.bytes, 7);
+    await repository.clean(StorageCleanup.workspaceHistory);
+    expect((await repository.scan()).itemsFor(StorageCategory.workspaceHistory), isEmpty);
+    expect(await File('${support.path}/terminal/rootfs/keep').exists(), isTrue);
+  });
+
+  test('terminal tmp cleanup leaves rootfs untouched', () async {
+    await writeSupport('terminal/rootfs/bin/sh', 7);
+    await writeSupport('terminal/tmp/nested/session', 8);
+    await repository.cleanItem('terminalTmp');
+    expect(await File('${support.path}/terminal/rootfs/bin/sh').exists(), isTrue);
+    expect((await repository.scan()).categories[StorageCategory.terminal]!.bytes, 7);
+  });
+
+  test('unknown, read-only and traversal item identifiers are rejected', () async {
+    await writeSupport('pdfium/library.so', 3);
+    await writeSupport('buddy_skins/pet.webp', 4);
+    await writeSupport('terminal/rootfs/keep', 5);
+    await writeSupport('file_history/known/index.json', 6);
+    for (final id in ['pdfium', 'buddySkins', 'terminalRootfs', 'fonts', 'notes',
+      'database', '../terminal', 'history:../terminal', 'history:known/../../terminal']) {
+      await expectLater(repository.cleanItem(id), throwsArgumentError);
+    }
+    expect((await repository.scan()).totalBytes, 18);
+  });
+
+  test('intermediate and item-root symlinks cannot escape support roots', () async {
+    if (Platform.isWindows) return;
+    final outside = await Directory('${root.path}/outside').create();
+    await File('${outside.path}/keep').writeAsBytes([1, 2, 3]);
+    await Link('${support.path}/terminal').create(outside.path);
+    final history = await Directory('${support.path}/file_history').create();
+    await Link('${history.path}/linked').create(outside.path);
+    final report = await repository.scan();
+    expect(report.categories[StorageCategory.terminal]!.bytes, 0);
+    expect(report.itemsFor(StorageCategory.workspaceHistory), isEmpty);
+    await expectLater(repository.cleanItem('terminalTmp'), throwsA(isA<FileSystemException>()));
+    await expectLater(repository.cleanItem('history:linked'), throwsArgumentError);
+    await repository.clean(StorageCleanup.workspaceHistory);
+    expect(await File('${outside.path}/keep').readAsBytes(), [1, 2, 3]);
+  });
+
+  test('workspace names fall back to ids when metadata cannot be read', () async {
+    await writeSupport('file_history/known/index.json', 5);
+    final fallback = StorageRepositoryImpl(db,
+      documentsDirectory: () async => documents,
+      supportDirectory: () async => support,
+      workspaceNames: () async => throw StateError('metadata unavailable'),
+      canCleanCache: false,
+    );
+    expect((await fallback.scan()).itemsFor(StorageCategory.workspaceHistory).single.name,
+      'known');
+    await fallback.cleanItem('history:known');
+    expect((await fallback.scan()).totalBytes, 0);
+  });
+
+  test('image cache metadata failures are not reported as success', () async {
+    final failing = StorageRepositoryImpl(db,
+      documentsDirectory: () async => documents,
+      supportDirectory: () async => support,
+      temporaryDirectory: () async => temporary,
+      clearImageCache: () async => throw StateError('cache manager unavailable'),
+      canCleanCache: true,
+    );
+    await expectLater(failing.cleanItem('imageCache'), throwsStateError);
   });
 
   test('SQL aggregates message counts, media and UTF-8 sizes', () async {

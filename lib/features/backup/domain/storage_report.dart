@@ -1,6 +1,35 @@
-enum StorageCategory { chat, backups, tools, avatars, fonts, notes, cache }
+enum StorageCategory {
+  chat,
+  backups,
+  tools,
+  avatars,
+  fonts,
+  notes,
+  cache,
+  other,
+  workspaceHistory,
+  terminal,
+}
 
-enum StorageCleanup { cache, tools, fontCache }
+enum StorageCleanup { cache, tools, fontCache, workspaceHistory }
+
+class StorageItem {
+  const StorageItem({
+    required this.id,
+    required this.category,
+    required this.name,
+    required this.path,
+    required this.usage,
+    this.canClean = false,
+  });
+
+  final String id;
+  final StorageCategory category;
+  final String name;
+  final String path;
+  final StorageUsage usage;
+  final bool canClean;
+}
 
 class StorageUsage {
   const StorageUsage({this.bytes = 0, this.fileCount = 0});
@@ -18,13 +47,19 @@ class StorageReport {
   StorageReport(
     Map<StorageCategory, StorageUsage> categories, {
     this.canCleanCache = false,
+    List<StorageItem> items = const [],
   }) : categories = Map.unmodifiable({
         for (final category in StorageCategory.values)
           category: categories[category] ?? const StorageUsage(),
-      });
+      }),
+       items = List.unmodifiable(items);
 
   final Map<StorageCategory, StorageUsage> categories;
   final bool canCleanCache;
+  final List<StorageItem> items;
+
+  List<StorageItem> itemsFor(StorageCategory category) =>
+      items.where((item) => item.category == category).toList();
 
   int get totalBytes =>
       categories.values.fold(0, (sum, item) => sum + item.bytes);

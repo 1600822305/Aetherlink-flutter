@@ -5,5 +5,6 @@ abstract interface class StorageRepository {
   Future<StorageReport> scan();
   Future<List<TopicStorageUsage>> topicUsage();
   Future<void> clean(StorageCleanup target);
+  Future<void> cleanItem(String id);
   Future<void> vacuum();
 }

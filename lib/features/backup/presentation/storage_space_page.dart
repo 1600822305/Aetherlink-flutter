@@ -88,12 +88,15 @@ class _StorageSpacePageState extends ConsumerState<StorageSpacePage> {
                             ' · ${report.categories[category]!.fileCount} 个文件',
                         onTap: !enabled
                             ? null
-                            : () => openStoragePage(
-                                context,
-                                category == StorageCategory.chat
-                                    ? const TopicStoragePage()
-                                    : StorageCategoryPage(category: category),
-                              ),
+                            : () async {
+                                await openStoragePage(
+                                  context,
+                                  category == StorageCategory.chat
+                                      ? const TopicStoragePage()
+                                      : StorageCategoryPage(category: category),
+                                );
+                                await controller.refresh();
+                              },
                       ),
                     ],
                   ],

@@ -42,4 +42,21 @@ void main() {
     expect(StorageReport({}).totalBytes, 0);
     expect(StorageReport({}).totalFiles, 0);
   });
+
+  test('report retains immutable details without double-counting totals', () {
+    final items = <StorageItem>[
+      const StorageItem(id: 'tmp', category: StorageCategory.terminal,
+        name: 'tmp', path: '/support/terminal/tmp',
+        usage: StorageUsage(bytes: 12, fileCount: 1), canClean: true),
+    ];
+    final report = StorageReport({
+      StorageCategory.terminal: const StorageUsage(bytes: 12, fileCount: 1),
+    }, items: items);
+    items.clear();
+    expect(report.itemsFor(StorageCategory.terminal).single.name, 'tmp');
+    expect(report.itemsFor(StorageCategory.chat), isEmpty);
+    expect(report.totalBytes, 12);
+    expect(() => report.items.clear(), throwsUnsupportedError);
+    expect(StorageReport({}).items, isEmpty);
+  });
 }

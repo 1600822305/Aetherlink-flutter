@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:aetherlink_flutter/core/database/app_database.dart';
+import 'package:aetherlink_flutter/features/backup/data/storage_file_operations.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_report.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_repository.dart';
 import 'package:aetherlink_flutter/features/backup/domain/topic_storage_usage.dart';
@@ -15,11 +16,17 @@ class StorageRepositoryImpl implements StorageRepository {
     Future<Directory> Function()? documentsDirectory,
     Future<Directory> Function()? temporaryDirectory,
     Future<Directory> Function()? notesDirectory,
+    Future<Directory> Function()? supportDirectory,
+    Future<Map<String, String>> Function()? workspaceNames,
+    Future<void> Function()? clearImageCache,
     bool? canCleanCache,
   }) : _documentsDirectory =
            documentsDirectory ?? getApplicationDocumentsDirectory,
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
        _notesDirectory = notesDirectory,
+       _supportDirectory = supportDirectory ?? getApplicationSupportDirectory,
+       _workspaceNames = workspaceNames,
+       _clearImageCache = clearImageCache,
        _canCleanCache =
            canCleanCache ??
            (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
@@ -28,6 +35,9 @@ class StorageRepositoryImpl implements StorageRepository {
   final Future<Directory> Function() _documentsDirectory;
   final Future<Directory> Function() _temporaryDirectory;
   final Future<Directory> Function()? _notesDirectory;
+  final Future<Directory> Function() _supportDirectory;
+  final Future<Map<String, String>> Function()? _workspaceNames;
+  final Future<void> Function()? _clearImageCache;
   final bool _canCleanCache;
 
   static const topicUsageSql = '''
@@ -87,57 +97,151 @@ ORDER BY bytes DESC, t.id
 
   @override
   Future<StorageReport> scan() async {
+    final paths = await _paths();
+    final canCleanCache = _canCleanCache;
+    return Isolate.run(
+      () => scanStoragePaths(paths, canCleanCache: canCleanCache),
+    );
+  }
+
+  Future<List<StoragePathSpec>> _paths({bool isCleanup = false}) async {
     final documents = (await _documentsDirectory()).path;
+    final support = (await _supportDirectory()).path;
     final notesDirectory = _notesDirectory;
-    final notes = notesDirectory == null
+    final notes = notesDirectory == null || isCleanup
         ? p.join(documents, 'notes')
         : (await notesDirectory()).path;
-    final canCleanCache = _canCleanCache;
-    final paths = <StorageCategory, List<String>>{
-      StorageCategory.chat: [
-        for (final suffix in ['', '-wal', '-shm'])
+    final temporary = _canCleanCache ? (await _temporaryDirectory()).path : null;
+    final networkCache = temporary == null
+        ? null
+        : p.join(temporary, 'libCachedImageData');
+    var names = const <String, String>{};
+    if (!isCleanup) {
+      try {
+        names = await _workspaceNames?.call() ?? const <String, String>{};
+      } catch (_) {
+        names = const {};
+      }
+    }
+    StoragePathSpec entry(
+      String id,
+      StorageCategory category,
+      String name,
+      String root,
+      String path, {
+      bool canClean = false,
+    }) => StoragePathSpec(
+      id: id,
+      category: category,
+      name: name,
+      root: root,
+      path: path,
+      canClean: canClean,
+    );
+    return [
+      for (final suffix in ['', '-wal', '-shm'])
+        entry(
+          'database$suffix',
+          StorageCategory.chat,
+          'aetherlink.sqlite$suffix',
+          documents,
           p.join(documents, 'aetherlink.sqlite$suffix'),
-      ],
-      StorageCategory.backups: [p.join(documents, 'backups')],
-      StorageCategory.tools: [
-        for (final name in [
-          'agent_tool_outputs',
-          'browser_screenshots',
-          'pptx_snapshots',
-        ])
-          p.join(documents, name),
-      ],
-      StorageCategory.avatars: [p.join(documents, 'avatars')],
-      StorageCategory.fonts: [
+        ),
+      entry(
+        'backups', StorageCategory.backups, '本地备份', documents,
+        p.join(documents, 'backups'),
+      ),
+      for (final item in const {
+        'agent_tool_outputs': '工具执行结果',
+        'browser_screenshots': '浏览器截图',
+        'pptx_snapshots': '演示文稿快照',
+      }.entries)
+        entry(
+          item.key, StorageCategory.tools, item.value, documents,
+          p.join(documents, item.key), canClean: true,
+        ),
+      entry(
+        'avatars', StorageCategory.avatars, '头像文件', documents,
+        p.join(documents, 'avatars'),
+      ),
+      entry(
+        'fonts', StorageCategory.fonts, '导入的字体', documents,
         p.join(documents, 'fonts'),
-        p.join(documents, 'google_fonts_cache'),
+      ),
+      entry(
+        'notes', StorageCategory.notes, '笔记文件',
+        p.isWithin(documents, notes) ? documents : notes, notes,
+      ),
+      entry(
+        'fontCache', StorageCategory.cache, '在线字体缓存', documents,
+        p.join(documents, 'google_fonts_cache'), canClean: true,
+      ),
+      if (temporary != null && networkCache != null) ...[
+        StoragePathSpec(
+          id: 'temporary',
+          category: StorageCategory.cache,
+          name: '临时目录',
+          root: temporary,
+          path: temporary,
+          canClean: true,
+          excludedPaths: [networkCache],
+        ),
+        entry(
+          'imageCache', StorageCategory.cache, '网络图片缓存', temporary,
+          networkCache, canClean: true,
+        ),
       ],
-      StorageCategory.notes: [notes],
-      StorageCategory.cache: [
-        if (canCleanCache) (await _temporaryDirectory()).path,
-      ],
-    };
-    return Isolate.run(() => _scan(paths, canCleanCache: canCleanCache));
+      entry(
+        'pdfium', StorageCategory.other, 'PDF 引擎', support,
+        p.join(support, 'pdfium'),
+      ),
+      entry(
+        'buddySkins', StorageCategory.other, '伙伴皮肤', support,
+        p.join(support, 'buddy_skins'),
+      ),
+      StoragePathSpec(
+        id: 'history',
+        category: StorageCategory.workspaceHistory,
+        name: '工作区历史',
+        root: support,
+        path: p.join(support, 'file_history'),
+        canClean: true,
+        isContainer: true,
+        childNames: names,
+      ),
+      entry(
+        'terminalRootfs', StorageCategory.terminal, 'rootfs', support,
+        p.join(support, 'terminal', 'rootfs'),
+      ),
+      entry(
+        'terminalTmp', StorageCategory.terminal, '终端临时文件', support,
+        p.join(support, 'terminal', 'tmp'), canClean: true,
+      ),
+    ];
   }
 
   @override
   Future<void> clean(StorageCleanup target) async {
-    if (target == StorageCleanup.cache && !_canCleanCache) return;
-    final documents = (await _documentsDirectory()).path;
-    final paths = switch (target) {
-      StorageCleanup.cache => [(await _temporaryDirectory()).path],
-      StorageCleanup.tools => [
-        for (final name in [
-          'agent_tool_outputs',
-          'browser_screenshots',
-          'pptx_snapshots',
-        ])
-          p.join(documents, name),
-      ],
-      StorageCleanup.fontCache => [p.join(documents, 'google_fonts_cache')],
-    };
-    final failures = await Isolate.run(() => _cleanContents(paths));
-    if (failures > 0) throw FileSystemException('有 $failures 个项目未能移除，请稍后重试');
+    final allPaths = await _paths(isCleanup: true);
+    final paths = allPaths.where((spec) => switch (target) {
+      StorageCleanup.cache => spec.category == StorageCategory.cache,
+      StorageCleanup.tools => spec.category == StorageCategory.tools,
+      StorageCleanup.fontCache => spec.id == 'fontCache',
+      StorageCleanup.workspaceHistory => spec.id == 'history',
+    }).toList();
+    await Isolate.run(() => clearStoragePaths(paths));
+    if (paths.any((spec) => spec.id == 'imageCache')) {
+      await _clearImageCache?.call();
+    }
+  }
+
+  @override
+  Future<void> cleanItem(String id) async {
+    final paths = await _paths(isCleanup: true);
+    await Isolate.run(() => cleanStorageItem(paths, id));
+    if (id == 'imageCache') {
+      await _clearImageCache?.call();
+    }
   }
 
   @override
@@ -148,76 +252,4 @@ ORDER BY bytes DESC, t.id
       throw StateError('数据库已整理，但写入日志仍被占用，请稍后再次压缩');
     }
   }
-}
-
-StorageReport _scan(
-  Map<StorageCategory, List<String>> paths, {
-  required bool canCleanCache,
-}) {
-  StorageUsage measure(String path) {
-    try {
-      switch (FileSystemEntity.typeSync(path, followLinks: false)) {
-        case FileSystemEntityType.file:
-          return StorageUsage(bytes: File(path).lengthSync(), fileCount: 1);
-        case FileSystemEntityType.directory:
-          var total = const StorageUsage();
-          for (final child in Directory(path).listSync(followLinks: false)) {
-            total += measure(child.path);
-          }
-          return total;
-        default:
-          return const StorageUsage();
-      }
-    } on FileSystemException {
-      return const StorageUsage();
-    }
-  }
-
-  return StorageReport(
-    {
-      for (final entry in paths.entries)
-        entry.key: entry.value.fold(
-          const StorageUsage(),
-          (total, path) => total + measure(path),
-        ),
-    },
-    canCleanCache: canCleanCache,
-  );
-}
-
-int _cleanContents(List<String> paths) {
-  var failures = 0;
-  void remove(String path) {
-    try {
-      final type = FileSystemEntity.typeSync(path, followLinks: false);
-      if (type == FileSystemEntityType.directory) {
-        for (final child in Directory(path).listSync(followLinks: false)) {
-          remove(child.path);
-        }
-        Directory(path).deleteSync();
-      } else if (type == FileSystemEntityType.file) {
-        File(path).deleteSync();
-      } else if (type == FileSystemEntityType.link) {
-        Link(path).deleteSync();
-      }
-    } on FileSystemException {
-      failures++;
-    }
-  }
-
-  for (final path in paths) {
-    try {
-      // 保留根目录，且不沿符号链接清理目录外的数据。
-      if (FileSystemEntity.typeSync(path, followLinks: false) !=
-          FileSystemEntityType.directory) {
-        continue;
-      }
-      for (final child in Directory(path).listSync(followLinks: false)) {
-        remove(child.path);
-      }
-    } on FileSystemException {
-      failures++;
-    }
-  }
-  return failures;
 }
