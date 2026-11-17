@@ -51,11 +51,13 @@ class AgentFileChange {
 class AgentChangesSnapshot {
   const AgentChangesSnapshot({
     required this.workspaceName,
+    required this.workspaceRoot,
     required this.changes,
     required this.repoCount,
   });
 
   final String workspaceName;
+  final String workspaceRoot;
   final List<AgentFileChange> changes;
 
   /// 发现并纳入统计的仓库数（>1 时 UI 按仓库分组显示表头）。
@@ -146,6 +148,7 @@ final agentWorkspaceChangesProvider = FutureProvider.autoDispose
 
   return AgentChangesResult.ok(AgentChangesSnapshot(
     workspaceName: workspace.name,
+    workspaceRoot: workspace.root,
     changes: changes,
     repoCount: snapshots.length,
   ));

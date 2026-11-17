@@ -15,9 +15,15 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/
 /// diff 为任务工作区的未提交改动清单 + 复用 Git 只读 diff 组件
 /// （[WorkbenchDiffTab]）。
 class WorkbenchPage extends StatefulWidget {
-  const WorkbenchPage({required this.task, this.onBackToChat, super.key});
+  const WorkbenchPage({
+    required this.task,
+    this.onBackToChat,
+    this.initialFilePath,
+    super.key,
+  });
 
   final AgentTask task;
+  final String? initialFilePath;
 
   /// 顶栏左侧返回键：滑回事件流页（不会横滑的用户的退路）。
   final VoidCallback? onBackToChat;
@@ -31,7 +37,9 @@ class _WorkbenchPageState extends State<WorkbenchPage>
   /// 各任务上次选中的 tab（内存级记忆：切回聊天再进工作台不丢选中态）。
   static final Map<String, int> _lastTabByTask = {};
 
-  late int _tab = _lastTabByTask[widget.task.id] ?? 0;
+  late int _tab = widget.initialFilePath != null
+      ? 2
+      : _lastTabByTask[widget.task.id] ?? 0;
 
   late final TabController _tabController =
       TabController(length: _tabs.length, initialIndex: _tab, vsync: this)
@@ -145,7 +153,10 @@ class _WorkbenchPageState extends State<WorkbenchPage>
           child: switch (_tab) {
             0 => WorkbenchTerminalTab(task: widget.task),
             1 => WorkbenchFocusTab(task: widget.task),
-            2 => WorkbenchDiffTab(task: widget.task),
+            2 => WorkbenchDiffTab(
+              task: widget.task,
+              initialFilePath: widget.initialFilePath,
+            ),
             3 => WorkbenchFilesTab(task: widget.task),
             _ => WorkbenchContextTab(task: widget.task),
           },
