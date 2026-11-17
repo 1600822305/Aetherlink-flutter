@@ -15,10 +15,10 @@ void listenStorageRefreshErrors(BuildContext context, WidgetRef ref) {
     }
   }
 
-  ref.listen(storageControllerProvider.select(
+  ref.listen<String?>(storageControllerProvider.select(
     (state) => state.report == null ? null : state.error,
   ), notify);
-  ref.listen(storageMediaControllerProvider.select(
+  ref.listen<String?>(storageMediaControllerProvider.select(
     (state) => state.hasLoaded ? state.error : null,
   ), notify);
 }
