@@ -176,7 +176,7 @@ class _LocalBackupPageState extends ConsumerState<LocalBackupPage> {
                 final storage = ref.read(storageControllerProvider.notifier);
                 try {
                   await controller.deleteLocalBackup(item.displayName);
-                  await storage.refresh();
+                  await storage.refresh(force: true);
                 } catch (error) {
                   if (mounted) AppToast.error(context, '删除备份失败：$error');
                 }

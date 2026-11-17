@@ -88,7 +88,7 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
     setState(() => _isRunning = true);
     try {
       final result = await controller.runDiagnostic();
-      await storage.refresh();
+      await storage.refresh(force: true);
       if (mounted) {
         setState(() {
           _result = result;
@@ -116,7 +116,7 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
     try {
       final result = await controller.repairDatabase();
       if (!mounted) {
-        await storage.refresh();
+        await storage.refresh(force: true);
         return;
       }
       setState(() => _isRunning = false);

@@ -157,6 +157,7 @@ class _StorageMediaPageState extends ConsumerState<StorageMediaPage> {
 
   @override
   Widget build(BuildContext context) {
+    listenStorageRefreshErrors(context, ref);
     final state = ref.watch(storageMediaControllerProvider);
     final controller = ref.read(storageMediaControllerProvider.notifier);
     final items = visibleStorageMedia(state.items,
@@ -224,11 +225,12 @@ class _StorageMediaPageState extends ConsumerState<StorageMediaPage> {
                 Text(selected.isEmpty ? '共 ${items.length} 项' : '已选 ${selected.length} 项',
                   style: const TextStyle(fontSize: 12)),
                 if (state.isLoading || state.isBusy) const LinearProgressIndicator(),
-                if (state.error != null) ...[
+                if (state.error != null && !state.hasLoaded) ...[
                   StorageNotice('加载未完成：${state.error}'),
                   TextButton(onPressed: controller.refresh, child: const Text('重试')),
                 ],
-                if (enabled && state.error == null && items.isEmpty) const StorageNotice('当前没有符合条件的项目'),
+                if (enabled && (state.hasLoaded || state.error == null) && items.isEmpty)
+                  const StorageNotice('当前没有符合条件的项目'),
               ],
             )),
           ),

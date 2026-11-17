@@ -29,6 +29,7 @@ class _StorageSpacePageState extends ConsumerState<StorageSpacePage> {
 
   @override
   Widget build(BuildContext context) {
+    listenStorageRefreshErrors(context, ref);
     final state = ref.watch(storageControllerProvider);
     final controller = ref.read(storageControllerProvider.notifier);
     final report = state.report;
@@ -61,7 +62,8 @@ class _StorageSpacePageState extends ConsumerState<StorageSpacePage> {
             ),
             if (state.isLoading || state.isBusy)
               const LinearProgressIndicator(),
-            if (state.error != null) StorageNotice('统计或维护遇到问题：${state.error}'),
+            if (state.error != null && report == null)
+              StorageNotice('统计或维护遇到问题：${state.error}'),
             if (report != null) ...[
               const SizedBox(height: 16),
               StorageCard(

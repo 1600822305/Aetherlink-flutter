@@ -19,6 +19,7 @@ class _TopicStoragePageState extends ConsumerState<TopicStoragePage> {
 
   @override
   Widget build(BuildContext context) {
+    listenStorageRefreshErrors(context, ref);
     final state = ref.watch(storageControllerProvider);
     final controller = ref.read(storageControllerProvider.notifier);
     final enabled = !state.isBusy && !state.isLoading;
@@ -130,7 +131,7 @@ class _TopicStoragePageState extends ConsumerState<TopicStoragePage> {
                   ),
                   if (state.isLoading || state.isBusy)
                     const LinearProgressIndicator(),
-                  if (state.error != null)
+                  if (state.error != null && state.report == null)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: StorageNotice(state.error!),
