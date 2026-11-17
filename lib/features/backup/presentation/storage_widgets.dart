@@ -14,6 +14,11 @@ extension StorageCategoryPresentation on StorageCategory {
     StorageCategory.fonts => '字体',
     StorageCategory.notes => '笔记',
     StorageCategory.cache => '缓存',
+    StorageCategory.other => '其他',
+    StorageCategory.workspaceHistory => '工作区历史',
+    StorageCategory.terminal => '终端环境',
+    StorageCategory.images => '图片',
+    StorageCategory.files => '文件',
   };
 
   IconData get icon => switch (this) {
@@ -24,6 +29,11 @@ extension StorageCategoryPresentation on StorageCategory {
     StorageCategory.fonts => LucideIcons.type,
     StorageCategory.notes => LucideIcons.notebookPen,
     StorageCategory.cache => LucideIcons.trash2,
+    StorageCategory.other => LucideIcons.box,
+    StorageCategory.workspaceHistory => LucideIcons.history,
+    StorageCategory.terminal => LucideIcons.terminal,
+    StorageCategory.images => LucideIcons.image,
+    StorageCategory.files => LucideIcons.file,
   };
 
   Color get color => switch (this) {
@@ -34,18 +44,118 @@ extension StorageCategoryPresentation on StorageCategory {
     StorageCategory.fonts => const Color(0xFF0891B2),
     StorageCategory.notes => const Color(0xFF059669),
     StorageCategory.cache => const Color(0xFF64748B),
+    StorageCategory.other => const Color(0xFF9333EA),
+    StorageCategory.workspaceHistory => const Color(0xFFD97706),
+    StorageCategory.terminal => const Color(0xFF0D9488),
+    StorageCategory.images => const Color(0xFFE11D48),
+    StorageCategory.files => const Color(0xFF4F46E5),
   };
 
   String get description => switch (this) {
     StorageCategory.chat =>
       '包含数据库、写入日志及共享内存文件。图片和视频内容也保存在聊天数据库中。',
     StorageCategory.backups => '已保存到本机的备份包。可进入文件列表查看时间、大小或移除旧备份。',
-    StorageCategory.tools => '包括智能体工具生成的文件、浏览器截图和演示文稿快照。清理会使历史引用失效。',
+    StorageCategory.tools => '包括工具执行结果、浏览器截图和演示文稿快照。进入图片或文件管理可检查引用并移除未使用项目。',
     StorageCategory.avatars => '助手和用户使用的本地头像。请在相应资料设置中更换或移除。',
-    StorageCategory.fonts => '包含自行导入的字体和在线字体下载缓存。下方操作仅移除在线字体缓存，保留导入字体。',
+    StorageCategory.fonts => '自行导入的字体文件。在线字体下载缓存归入缓存类别，此处不提供批量清理。',
     StorageCategory.notes => '本地笔记文件。请在笔记中检查内容并按需删除，此处不批量移除笔记。',
-    StorageCategory.cache => '应用临时目录中的文件。清理前请完成导入、导出和其他正在使用临时文件的任务。',
+    StorageCategory.cache => '包含临时文件、在线字体及网络图片缓存。临时目录不重复计算网络图片缓存。清理前请完成导入、导出等任务。',
+    StorageCategory.other => 'PDF 引擎与下载的伙伴皮肤。现有管理器没有安全删除文件的接口，因此这里只展示占用。',
+    StorageCategory.workspaceHistory => '文件修改前保存的本地版本。清理后无法通过文件历史恢复这些版本，不会删除工作区当前文件。',
+    StorageCategory.terminal => '内置终端的系统文件与临时文件。系统文件仅展示，管理环境请进入终端；清理临时文件前请停止终端任务。',
+    StorageCategory.images => '图片管理视图，占用已计入聊天记录、头像或工具输出，不重复累计。',
+    StorageCategory.files => '文件与视频管理视图，占用已计入聊天记录或工具输出，不重复累计。',
   };
+}
+
+class StorageDetails extends StatelessWidget {
+  const StorageDetails({
+    required this.items,
+    required this.enabled,
+    required this.onClean,
+    super.key,
+  });
+
+  final List<StorageItem> items;
+  final bool enabled;
+  final Future<void> Function(String) onClean;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '明细',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        if (items.isEmpty) const StorageNotice('没有可显示的文件或目录'),
+        for (final item in items) ...[
+          StorageCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.name,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            formatStorageBytes(item.usage.bytes),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        item.path,
+                        softWrap: true,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.3,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (item.canClean) ...[
+                  Divider(height: 1, color: theme.dividerColor),
+                  StorageRow(
+                    icon: LucideIcons.trash2,
+                    label: '清理此项',
+                    isDestructive: true,
+                    onTap: !enabled
+                        ? null
+                        : () => confirmStorageCleanup(
+                            context,
+                            name: item.name,
+                            action: () => onClean(item.id),
+                          ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ],
+    );
+  }
 }
 
 class StorageCard extends StatelessWidget {
@@ -197,6 +307,8 @@ Future<void> confirmStorageAction(
   required String message,
   required Future<void> Function() action,
   bool isDestructive = true,
+  String successMessage = '操作已完成，统计已更新',
+  String failurePrefix = '操作未完成：',
 }) async {
   final confirmed = await showDialog<bool>(
     context: context,
@@ -237,8 +349,21 @@ Future<void> confirmStorageAction(
   if (confirmed != true || !context.mounted) return;
   try {
     await action();
-    if (context.mounted) AppToast.success(context, '操作已完成，统计已更新');
+    if (context.mounted) AppToast.success(context, successMessage);
   } catch (error) {
-    if (context.mounted) AppToast.error(context, '操作未完成：$error');
+    if (context.mounted) AppToast.error(context, '$failurePrefix$error');
   }
 }
+
+Future<void> confirmStorageCleanup(
+  BuildContext context, {
+  required String name,
+  required Future<void> Function() action,
+}) => confirmStorageAction(
+  context,
+  title: '清理$name',
+  message: '确定要清理 $name 吗？移除的文件无法恢复。',
+  action: action,
+  successMessage: '已清理 $name',
+  failurePrefix: '清理失败：',
+);

@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/backup/application/storage_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_report.dart';
+import 'package:aetherlink_flutter/features/backup/domain/storage_media.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/local_backup_page.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/storage_media_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/storage_widgets.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
@@ -24,14 +28,10 @@ class StorageCategoryPage extends ConsumerWidget {
         state.report?.canCleanCache != true;
     final target = switch (category) {
       StorageCategory.cache => StorageCleanup.cache,
-      StorageCategory.tools => StorageCleanup.tools,
-      StorageCategory.fonts => StorageCleanup.fontCache,
+      StorageCategory.workspaceHistory => StorageCleanup.workspaceHistory,
       _ => null,
     };
     final enabled = !state.isBusy && !state.isLoading;
-    final actionLabel = category == StorageCategory.fonts
-        ? '清理在线字体缓存'
-        : '清理${category.label}';
     return PopScope(
       canPop: !state.isBusy,
       child: Scaffold(
@@ -62,24 +62,22 @@ class StorageCategoryPage extends ConsumerWidget {
                         if (isCacheUnavailable && state.report != null)
                           const StorageNotice(
                             '此平台的临时目录可能由多个应用共享，为避免影响其他程序，'
-                            '不统计或清理其中的缓存。',
+                            '不统计或清理临时目录及其网络图片缓存，仍可清理在线字体缓存。',
                           ),
                       ],
                     ),
                   ),
-                  if (target != null && !isCacheUnavailable) ...[
+                  if (target != null) ...[
                     Divider(height: 1, color: theme.dividerColor),
                     StorageRow(
                       icon: LucideIcons.trash2,
-                      label: actionLabel,
+                      label: '全部清理',
                       isDestructive: true,
                       onTap: !enabled
                           ? null
-                          : () => confirmStorageAction(
+                          : () => confirmStorageCleanup(
                               context,
-                              title: actionLabel,
-                              message: '${category.description}\n\n'
-                                  '此操作将移除对应文件，无法撤销。确定继续吗？',
+                              name: category.label,
                               action: () => controller.clean(target),
                             ),
                     ),
@@ -100,8 +98,45 @@ class StorageCategoryPage extends ConsumerWidget {
                             },
                     ),
                   ],
+                  if (category == StorageCategory.terminal) ...[
+                    Divider(height: 1, color: theme.dividerColor),
+                    StorageRow(
+                      icon: LucideIcons.terminal,
+                      label: '进入终端管理环境',
+                      onTap: !enabled
+                          ? null
+                          : () async {
+                              await context.push<void>(AppRouter.terminalPath);
+                              await controller.refresh();
+                            },
+                    ),
+                  ],
+                  if (category == StorageCategory.tools) ...[
+                    for (final isImageView in [true, false]) ...[
+                      Divider(height: 1, color: theme.dividerColor),
+                      StorageRow(
+                        icon: isImageView ? LucideIcons.image : LucideIcons.file,
+                        label: isImageView ? '管理图片与截图' : '管理文件与视频',
+                        onTap: !enabled
+                            ? null
+                            : () async {
+                                await openStoragePage(context, StorageMediaPage(
+                                  isImageView: isImageView,
+                                  initialFilter: StorageMediaFilter.tools,
+                                ));
+                                await controller.refresh();
+                              },
+                      ),
+                    ],
+                  ],
                 ],
               ),
+            ),
+            const SizedBox(height: 16),
+            StorageDetails(
+              items: state.report?.itemsFor(category) ?? const [],
+              enabled: enabled,
+              onClean: controller.cleanItem,
             ),
             if (state.isBusy || state.isLoading)
               const LinearProgressIndicator(),

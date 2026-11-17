@@ -120,6 +120,14 @@ class _TopicStoragePageState extends ConsumerState<TopicStoragePage> {
               child: Column(
                 children: [
                   header,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: StorageDetails(
+                      items: state.report?.itemsFor(StorageCategory.chat) ?? const [],
+                      enabled: enabled,
+                      onClean: controller.cleanItem,
+                    ),
+                  ),
                   if (state.isLoading || state.isBusy)
                     const LinearProgressIndicator(),
                   if (state.error != null)

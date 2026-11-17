@@ -1,20 +1,48 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/core/database/database_provider.dart';
 import 'package:aetherlink_flutter/features/backup/data/storage_repository_impl.dart';
+import 'package:aetherlink_flutter/features/backup/data/storage_media_repository_impl.dart';
+import 'package:aetherlink_flutter/features/backup/domain/storage_media_repository.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_repository.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart'
     show chatRepositoryProvider;
 import 'package:aetherlink_flutter/features/chat/application/sidebar/topics_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_selection_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/user_avatar_controller.dart';
 import 'package:aetherlink_flutter/features/notes/application/notes_controller.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+
+final storageMediaRepositoryProvider = Provider<StorageMediaRepository>(
+  (ref) => StorageMediaRepositoryImpl(
+    ref.watch(appDatabaseProvider),
+    activeReferences: () => [ref.read(userAvatarControllerProvider).value],
+  ),
+);
+
+final storageTopicSelectionProvider = Provider<void Function(String, String?)>(
+  (ref) => (topicId, assistantId) {
+    if (assistantId != null) {
+      ref.read(currentAssistantIdProvider.notifier).set(assistantId);
+    }
+    ref.read(currentTopicIdProvider.notifier).set(topicId);
+  },
+);
 
 final storageRepositoryProvider = Provider<StorageRepository>(
   (ref) => StorageRepositoryImpl(
     ref.watch(appDatabaseProvider),
     notesDirectory: () async =>
         Directory(await ref.read(notesFileStoreProvider).rootPath()),
+    workspaceNames: () async => {
+      for (final workspace in await ref.read(workspaceStoreProvider.future))
+        workspace.id: workspace.name,
+    },
+    clearImageCache: () =>
+        CachedNetworkImageProvider.defaultCacheManager.emptyCache(),
   ),
 );
 

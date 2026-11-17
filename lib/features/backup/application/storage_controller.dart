@@ -73,6 +73,9 @@ class StorageController extends Notifier<StorageState> {
   Future<void> clean(StorageCleanup target) =>
       _run(() => ref.read(storageRepositoryProvider).clean(target));
 
+  Future<void> cleanItem(String id) =>
+      _run(() => ref.read(storageRepositoryProvider).cleanItem(id));
+
   Future<void> vacuum() =>
       _run(() => ref.read(storageRepositoryProvider).vacuum());
 
