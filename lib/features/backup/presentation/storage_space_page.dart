@@ -47,15 +47,14 @@ class _StorageSpacePageState extends ConsumerState<StorageSpacePage> {
             Row(
               children: [
                 Expanded(
-                  child: Text(
+                  child: StorageUsageText(
                     '合计 ${formatStorageBytes(report?.totalBytes ?? 0)}',
-                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
                 ),
                 IconButton(
                   tooltip: '重新统计',
                   onPressed: enabled ? controller.refresh : null,
-                  icon: const Icon(LucideIcons.refreshCw),
+                  icon: const Icon(LucideIcons.refreshCw, size: 16),
                 ),
               ],
             ),
@@ -66,7 +65,7 @@ class _StorageSpacePageState extends ConsumerState<StorageSpacePage> {
               const SizedBox(height: 16),
               StorageCard(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(14),
                   child: _StorageDistribution(report: report),
                 ),
               ),
@@ -76,18 +75,17 @@ class _StorageSpacePageState extends ConsumerState<StorageSpacePage> {
                   children: [
                     for (final category in StorageCategory.values) ...[
                       if (category != StorageCategory.values.first)
-                        const Divider(height: 1),
-                      ListTile(
-                        leading: Icon(category.icon, color: category.color),
-                        title: Text(category.label),
-                        subtitle: Text(
-                          '${formatStorageBytes(report.categories[category]!.bytes)}'
-                          ' · ${report.categories[category]!.fileCount} 个文件',
+                        Divider(
+                          height: 1,
+                          color: Theme.of(context).dividerColor,
                         ),
-                        trailing: const Icon(
-                          LucideIcons.chevronRight,
-                          size: 18,
-                        ),
+                      StorageRow(
+                        icon: category.icon,
+                        accent: category.color,
+                        label: category.label,
+                        description:
+                            '${formatStorageBytes(report.categories[category]!.bytes)}'
+                            ' · ${report.categories[category]!.fileCount} 个文件',
                         onTap: !enabled
                             ? null
                             : () => openStoragePage(
@@ -104,11 +102,10 @@ class _StorageSpacePageState extends ConsumerState<StorageSpacePage> {
             ],
             const SizedBox(height: 16),
             StorageCard(
-              child: ListTile(
-                leading: const Icon(LucideIcons.heartPulse),
-                title: const Text('健康检查与孤儿数据修复'),
-                subtitle: const Text('使用数据库诊断工具检查记录之间的关联'),
-                trailing: const Icon(LucideIcons.chevronRight, size: 18),
+              child: StorageRow(
+                icon: LucideIcons.heartPulse,
+                label: '健康检查与孤儿数据修复',
+                description: '使用数据库诊断工具检查记录之间的关联',
                 onTap: !enabled
                     ? null
                     : () async {
@@ -143,7 +140,7 @@ class _StorageDistribution extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
           child: SizedBox(
             width: double.infinity,
-            height: 14,
+            height: 8,
             child: report.totalBytes == 0
                 ? ColoredBox(color: Theme.of(context).dividerColor)
                 : Row(
@@ -164,16 +161,23 @@ class _StorageDistribution extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Wrap(
-          spacing: 16,
+          spacing: 12,
           runSpacing: 8,
           children: [
             for (final category in categories)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(LucideIcons.circle, size: 10, color: category.color),
+                  Icon(LucideIcons.circle, size: 8, color: category.color),
                   const SizedBox(width: 5),
-                  Text(category.label),
+                  Text(
+                    category.label,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                      height: 1.3,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ],
               ),
           ],

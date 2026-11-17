@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/domain/storage_report.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 extension StorageCategoryPresentation on StorageCategory {
@@ -54,24 +55,111 @@ class StorageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+    return ModelSettingsCard(
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.dividerColor),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
+        child: child,
       ),
-      child: child,
     );
   }
+}
+
+class StorageRow extends StatelessWidget {
+  const StorageRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.description,
+    this.accent,
+    this.isDestructive = false,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? description;
+  final Color? accent;
+  final bool isDestructive;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = isDestructive
+        ? theme.colorScheme.error
+        : accent ?? theme.colorScheme.primary;
+    final labelColor = isDestructive ? color : theme.colorScheme.onSurface;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 16, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: onTap == null
+                          ? theme.disabledColor
+                          : labelColor,
+                    ),
+                  ),
+                  if (description != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      description!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 12,
+                        height: 1.3,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class StorageUsageText extends StatelessWidget {
+  const StorageUsageText(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+      fontSize: 20,
+      fontWeight: FontWeight.w600,
+    ),
+  );
 }
 
 class StorageNotice extends StatelessWidget {
@@ -81,8 +169,15 @@ class StorageNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 12),
-    child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        fontSize: 12,
+        height: 1.3,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    ),
   );
 }
 
@@ -101,20 +196,40 @@ Future<void> confirmStorageAction(
   required String title,
   required String message,
   required Future<void> Function() action,
+  bool isDestructive = true,
 }) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      scrollable: true,
+      titlePadding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+      contentPadding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+      actionsPadding: const EdgeInsets.all(8),
+      titleTextStyle: Theme.of(context).textTheme.titleSmall?.copyWith(
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      contentTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        fontSize: 12.5,
+        height: 1.3,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
       title: Text(title),
       content: Text(message),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child: const Text('取消', style: TextStyle(fontSize: 13)),
         ),
-        FilledButton(
+        TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: isDestructive
+                ? Theme.of(context).colorScheme.error
+                : Theme.of(context).colorScheme.primary,
+          ),
           onPressed: () => Navigator.pop(context, true),
-          child: const Text('继续'),
+          child: const Text('继续', style: TextStyle(fontSize: 13)),
         ),
       ],
     ),
