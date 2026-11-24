@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/selection_menu_panel.dart';
 import 'package:aetherlink_flutter/app/di/selection_menu_access.dart';
@@ -146,5 +147,22 @@ class _MessageSelectionAreaState extends ConsumerState<MessageSelectionArea> {
       contextMenuBuilder: _buildContextMenu,
       child: widget.child,
     );
+  }
+}
+
+/// Wraps [child] in a [MessageSelectionArea] only when the 「消息可选中复制」
+/// setting is on, so callers outside the chat feature (e.g. the agent event
+/// stream, which cannot read chat's settings directly) honor the same toggle.
+class SettingAwareMessageSelectionArea extends ConsumerWidget {
+  const SettingAwareMessageSelectionArea({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSelectable = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.selectableMessageText),
+    );
+    return isSelectable ? MessageSelectionArea(child: child) : child;
   }
 }

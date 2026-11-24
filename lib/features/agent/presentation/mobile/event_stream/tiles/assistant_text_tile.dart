@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:aetherlink_flutter/app/di/markdown_access.dart';
+import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 
@@ -30,9 +31,11 @@ class AssistantTextTile extends StatelessWidget {
               content: '${event.text}▍',
               style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
             )
-          : AppMarkdown(
-              content: event.text,
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+          : SettingAwareMessageSelectionArea(
+              child: AppMarkdown(
+                content: event.text,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+              ),
             ),
     );
   }

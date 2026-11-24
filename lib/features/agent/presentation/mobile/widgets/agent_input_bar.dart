@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/app/di/model_selector_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
@@ -30,6 +31,7 @@ class AgentInputBar extends ConsumerStatefulWidget {
 
 class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   bool _hasText = false;
   // 模式 chip 与侧边栏「执行设置」同源：无话题时取全局默认模式（持久化），
   // 有话题时跟话题自身模式走。
@@ -57,6 +59,21 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       }
       _lastText = text;
     });
+    // 复制面板「引用到输入框」走聊天同一个钩子，智能体页挂载时由本输入框承接。
+    ChatInputBar.insertTextHook = _insertText;
+  }
+
+  void _insertText(String content) {
+    final value = _controller.value;
+    final text = value.text;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
+    _controller.value = TextEditingValue(
+      text: text.replaceRange(start, end, content),
+      selection: TextSelection.collapsed(offset: start + content.length),
+    );
+    _focusNode.requestFocus();
   }
 
   @override
@@ -71,6 +88,10 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
 
   @override
   void dispose() {
+    if (ChatInputBar.insertTextHook == _insertText) {
+      ChatInputBar.insertTextHook = null;
+    }
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -102,6 +123,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       workspaceId: _workspaceId,
       task: widget.task,
     );
+    if (!mounted) return;
     _addAttachments(attachments);
   }
 
@@ -113,7 +135,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       ref,
       workspaceId: _workspaceId,
     );
-    if (attachment == null) return;
+    if (attachment == null || !mounted) return;
     final text = _controller.text;
     if (atEnd <= text.length && atEnd > 0 && text[atEnd - 1] == '@') {
       final inserted = '${attachment.name} ';
@@ -158,6 +180,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
         mode: _mode,
         attachments: attachments,
       );
+      if (!mounted) return;
       ref.read(selectedAgentTaskIdProvider.notifier).select(created.id);
       return;
     }
@@ -207,6 +230,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       return;
     }
     final action = await showAgentSendActionSheet(context);
+    if (!mounted) return;
     if (action == AgentSendAction.queue) {
       clearInput();
       await runner.sendMessage(
@@ -231,6 +255,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
 
   Future<void> _onForceStopLongPress() async {
     final confirmed = await confirmAgentForceStop(context);
+    if (!mounted) return;
     final task = widget.task;
     if (confirmed == true && task != null) {
       ref.read(agentTaskRunnerProvider.notifier).forceStop(task.id);
@@ -241,7 +266,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     // 先释放焦点，面板关闭后不自动顶起输入法。
     FocusManager.instance.primaryFocus?.unfocus();
     final mode = await showAgentModePicker(context, current: _mode);
-    if (mode == null) return;
+    if (mode == null || !mounted) return;
     setState(() => _mode = mode);
     final task = widget.task;
     if (task == null || task.status == AgentTaskStatus.draft) {
@@ -334,6 +359,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                 padding: const EdgeInsets.only(left: 8, right: 2),
                 child: TextField(
                   controller: _controller,
+                  focusNode: _focusNode,
                   minLines: 1,
                   maxLines: 5,
                   style: const TextStyle(fontSize: 16, height: 1.4),

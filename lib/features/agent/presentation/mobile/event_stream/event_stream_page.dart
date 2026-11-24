@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/markdown_access.dart';
+import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_blocks.dart';
@@ -113,43 +114,50 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
         Expanded(
           child: Stack(
             children: [
-              NotificationListener<ScrollNotification>(
-                onNotification: (n) {
-                  if (n is ScrollStartNotification) {
-                    DeferredContentScheduler.instance.setScrolling(true);
-                  } else if (n is ScrollEndNotification) {
-                    DeferredContentScheduler.instance.setScrolling(false);
-                  }
-                  _syncJumpButton();
-                  return false;
-                },
-                child: ListView.builder(
-                  controller: _scrollController,
-                  // 拦截焦点 / showOnScreen 驱动的隐式滚动（与聊天页同机制）。
-                  physics: const NoImplicitScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                  itemCount: blocks.length + trailing,
-                  itemBuilder: (context, i) => i >= blocks.length
-                      ? (showPlanReady
-                          ? PlanReadyCard(task: widget.task)
-                          : WorkingIndicatorTile(
-                              label: plan?.items
-                                  .where((it) =>
-                                      it.status ==
-                                      AgentPlanItemStatus.inProgress)
-                                  .firstOrNull
-                                  ?.content,
-                            ))
-                      : switch (blocks[i]) {
-                          final SegmentBlock b => WorkSegmentTile(
-                              block: b,
-                              taskId: widget.task.id,
-                            ),
-                          final SingleBlock b => AgentEventTile(
-                              event: b.event,
-                              taskId: widget.task.id,
-                            ),
-                        },
+              // 每条消息各自一个小 SelectionArea，点别处到不了持有选区的那块，
+              // 这里统一在按下时清掉其他区域的残留选区（与聊天页同机制）。
+              Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (event) =>
+                    MessageSelectionArea.clearOutside(event.position),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    if (n is ScrollStartNotification) {
+                      DeferredContentScheduler.instance.setScrolling(true);
+                    } else if (n is ScrollEndNotification) {
+                      DeferredContentScheduler.instance.setScrolling(false);
+                    }
+                    _syncJumpButton();
+                    return false;
+                  },
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    // 拦截焦点 / showOnScreen 驱动的隐式滚动（与聊天页同机制）。
+                    physics: const NoImplicitScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                    itemCount: blocks.length + trailing,
+                    itemBuilder: (context, i) => i >= blocks.length
+                        ? (showPlanReady
+                            ? PlanReadyCard(task: widget.task)
+                            : WorkingIndicatorTile(
+                                label: plan?.items
+                                    .where((it) =>
+                                        it.status ==
+                                        AgentPlanItemStatus.inProgress)
+                                    .firstOrNull
+                                    ?.content,
+                              ))
+                        : switch (blocks[i]) {
+                            final SegmentBlock b => WorkSegmentTile(
+                                block: b,
+                                taskId: widget.task.id,
+                              ),
+                            final SingleBlock b => AgentEventTile(
+                                event: b.event,
+                                taskId: widget.task.id,
+                              ),
+                          },
+                  ),
                 ),
               ),
               if (_showJumpToLatest)
