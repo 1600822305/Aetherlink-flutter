@@ -38,8 +38,13 @@ class BackupService {
   /// literal mirrors `kSshCredentialsKey` in the workspace feature — duplicated
   /// here on purpose because the cross-feature import-boundary rule forbids
   /// backup from importing workspace's `application`.
+  ///
+  /// WebDAV / S3 配置里同样是明文密码与 secretAccessKey，而备份包本身不加密、
+  /// 还会被上传到这些云端，按同一原则排除。
   static const Set<String> _excludedSettingKeys = {
     'workspace_ssh_credentials',
+    'webdav_config',
+    's3_config',
   };
 
   /// How many records to write between progress emits / event-loop yields when
@@ -61,6 +66,10 @@ class BackupService {
     'skills': '技能',
     'documents': '文档',
   };
+
+  /// 本应用生成的备份文件名前缀；WebDAV 自动同步靠它区分自己的备份与目录里的
+  /// 其他文件。
+  static const String kBackupFilePrefix = 'aetherlink_backup_';
 
   BackupService({required this.db});
 
@@ -111,7 +120,7 @@ class BackupService {
         .split('.')
         .first;
     final backupDir = await _backupDirectory();
-    final outPath = p.join(backupDir.path, 'aetherlink_backup_$timestamp.zip');
+    final outPath = p.join(backupDir.path, '$kBackupFilePrefix$timestamp.zip');
 
     // 4. Serialize JSON, compute the checksum and pack the ZIP — all inside one
     // isolate so a large database never blocks the UI on jsonEncode / sha256.
@@ -1433,26 +1442,34 @@ class BackupService {
     final extractDir = Directory(extractPath);
     await extractDir.create(recursive: true);
 
-    final bytes = await zipFile.readAsBytes();
-    await Isolate.run(() {
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final rootPath = p.canonicalize(extractPath);
-      for (final file in archive) {
-        // Zip-slip guard: an entry name like `../../x` (or an absolute path)
-        // must never escape the extraction directory.
-        final outPath = p.canonicalize(p.join(extractPath, file.name));
-        if (outPath != rootPath && !p.isWithin(rootPath, outPath)) {
-          throw FormatException('备份包含非法路径条目: ${file.name}');
+    try {
+      final bytes = await zipFile.readAsBytes();
+      await Isolate.run(() {
+        final archive = ZipDecoder().decodeBytes(bytes);
+        final rootPath = p.canonicalize(extractPath);
+        for (final file in archive) {
+          // Zip-slip guard: an entry name like `../../x` (or an absolute path)
+          // must never escape the extraction directory.
+          final outPath = p.canonicalize(p.join(extractPath, file.name));
+          if (outPath != rootPath && !p.isWithin(rootPath, outPath)) {
+            throw FormatException('备份包含非法路径条目: ${file.name}');
+          }
+          if (file.isFile) {
+            File(outPath)
+              ..createSync(recursive: true)
+              ..writeAsBytesSync(file.content as List<int>);
+          } else {
+            Directory(outPath).createSync(recursive: true);
+          }
         }
-        if (file.isFile) {
-          File(outPath)
-            ..createSync(recursive: true)
-            ..writeAsBytesSync(file.content as List<int>);
-        } else {
-          Directory(outPath).createSync(recursive: true);
-        }
-      }
-    });
+      });
+    } catch (_) {
+      // 包损坏或被 zip-slip 校验拒绝时，调用方拿不到目录，没法在 finally 里清理。
+      try {
+        await extractDir.delete(recursive: true);
+      } catch (_) {}
+      rethrow;
+    }
 
     return extractDir;
   }
@@ -1522,8 +1539,10 @@ class BackupService {
     RestoreSelection? selection,
     void Function(RestoreProgress)? onProgress,
   }) async {
+    // 备份里没有记录的类别一律不动：覆盖模式下清空它只会丢数据（精细化备份未勾选的
+    // 消息、Web 备份恒为空的分组、旧备份没有的知识库…）。
     bool selected(BackupCategory c) =>
-        selection == null || selection.includes(c);
+        (selection?.includes(c) ?? true) && _hasRecords(data, c);
 
     final stats = <BackupCategory, CategoryStat>{};
 
@@ -1532,7 +1551,11 @@ class BackupService {
         // Clear only the tables for the categories being restored. Child tables
         // first to respect referential order.
         if (selected(BackupCategory.settings)) {
-          await db.delete(db.appSettingRows).go();
+          // 排除导出的键备份里本来就没有，清表时必须保留，否则覆盖后永久丢失（恢复前的
+          // 自动备份同样不含它们）。
+          await (db.delete(db.appSettingRows)
+                ..where((t) => t.key.isNotIn(_excludedSettingKeys)))
+              .go();
         }
         if (selected(BackupCategory.messageBlocks)) {
           await db.delete(db.messageBlockRows).go();
@@ -1552,14 +1575,11 @@ class BackupService {
         if (selected(BackupCategory.groups)) {
           await db.delete(db.groupRows).go();
         }
-        // Only clear memories when the backup actually carries them, so that
-        // restoring a native Flutter backup (which has none) doesn't wipe them.
-        if (selected(BackupCategory.memories) && data.memories.isNotEmpty) {
+        if (selected(BackupCategory.memories)) {
           await db.delete(db.memoryRows).go();
         }
-        // 同理：旧备份没有 knowledge.json，不能拿空集把现有知识库清掉。清表顺序
-        // 先派生后权威，孤儿嵌入在写入完成后统一 GC。
-        if (selected(BackupCategory.knowledge) && data.knowledge.isNotEmpty) {
+        // 清表顺序先派生后权威，孤儿嵌入在写入完成后统一 GC。
+        if (selected(BackupCategory.knowledge)) {
           await db.delete(db.kbChunkRows).go();
           await db.delete(db.knowledgeContentRows).go();
           await db.delete(db.knowledgeItemRows).go();
@@ -1646,7 +1666,7 @@ class BackupService {
           onProgress: onProgress,
         );
       }
-      if (selected(BackupCategory.memories) && data.memories.isNotEmpty) {
+      if (selected(BackupCategory.memories)) {
         stats[BackupCategory.memories] = await _restoreList(
           BackupCategory.memories,
           data.memories,
@@ -1658,7 +1678,7 @@ class BackupService {
           onProgress: onProgress,
         );
       }
-      if (selected(BackupCategory.knowledge) && data.knowledge.isNotEmpty) {
+      if (selected(BackupCategory.knowledge)) {
         stats[BackupCategory.knowledge] = await _restoreList(
           BackupCategory.knowledge,
           data.knowledge,
@@ -1689,6 +1709,19 @@ class BackupService {
       byCategory: stats,
     );
   }
+
+  static bool _hasRecords(_RawBackupData data, BackupCategory c) =>
+      switch (c) {
+        BackupCategory.topics => data.topics.isNotEmpty,
+        BackupCategory.messages => data.messages.isNotEmpty,
+        BackupCategory.messageBlocks => data.messageBlocks.isNotEmpty,
+        BackupCategory.assistants => data.assistants.isNotEmpty,
+        BackupCategory.providers => data.providers.isNotEmpty,
+        BackupCategory.groups => data.groups.isNotEmpty,
+        BackupCategory.settings => data.settings.isNotEmpty,
+        BackupCategory.memories => data.memories.isNotEmpty,
+        BackupCategory.knowledge => data.knowledge.isNotEmpty,
+      };
 
   /// Writes one category's records with conflict handling, reconciliation
   /// counting and streamed progress.
