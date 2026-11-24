@@ -1472,7 +1472,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'description':
                 '要发送的特殊按键序列（write 可选，驱动箭头选择器/TUI；支持 '
                 'up / down / left / right / enter / tab / space / esc / '
-                'backspace / ctrl-c / ctrl-d / ctrl-z；与 input 同传时先写 input '
+                'backspace / ctrl-c / ctrl-d / ctrl-x / ctrl-z；与 input 同传时先写 input '
                 '再发按键，且不自动追加回车）',
           },
           'press_enter': {

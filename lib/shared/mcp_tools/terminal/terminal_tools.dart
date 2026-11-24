@@ -352,6 +352,7 @@ Future<McpToolResult> _execute(
     'timedOut': result.timedOut,
     'canceled': result.canceled,
     'waitingInput': result.waitingInput,
+    if (result.fullScreen) 'fullScreen': true,
     if (result.background) 'background': true,
     if (result.background)
       'hint':
@@ -359,17 +360,30 @@ Future<McpToolResult> _execute(
           'terminal_session action=output 查看进度（busy=false 且 '
           'lastExitCode 非空即已结束）；需要并行执行其他命令请传新的 '
           'session 名字。'
+    else if (result.fullScreen)
+      'hint':
+          '前台是全屏交互程序（vim / less / htop / nano 等），它不会自己退出，'
+          '会话保持占用（sessionId=${session.id}）。下一步：用 terminal_session '
+          'action=write 发按键退出：vim 先 keys=["esc"] 再 input=":q!"，'
+          'less/htop/top 用 input="q" press_enter=false，nano 用 keys=["ctrl-x"]；'
+          '不退出就 action=interrupt，仍不行 action=close。之后改用非交互方式（cat / sed / 重定向）完成任务。'
     else if (result.waitingInput)
       'hint':
-          '命令疑似在等交互输入（未结束，仍在会话里跑，会话保持占用）：'
-          '看 stdout 尾部的提示，用 terminal_session action=write 往 stdin '
-          '写入回答（需要回车确认就在末尾带 \n）；action=output 可回看'
-          '后续输出。如果判断不需要交互，可继续用 action=output 等它跑完。'
+          '命令在等交互输入（未结束，会话保持占用，sessionId=${session.id}）。'
+          '下一步三选一：①知道答案就用 terminal_session action=write 写入'
+          '（默认自动回车）；②密码 / passphrase / token 等凭据不要猜，也不要'
+          '编造，停下来询问用户，或 action=interrupt 放弃；③判断不需要交互就 '
+          'action=output 继续看。答错或卡住时用 action=interrupt 中断，'
+          '不响应再 action=close。下次尽量加 -y / --yes / --non-interactive '
+          '或用管道喂答案。'
     else if (result.timedOut)
       'hint':
-          '命令超时未结束，仍在会话里继续跑（该会话在其结束前保持占用）；'
-          '可用 terminal_session action=output 回看进度，若它在等交互输入可用 '
-          'action=write 写 stdin；需要并行执行其他命令请传新的 session 名字。'
+          '命令超时未结束，仍在会话里跑（会话保持占用，sessionId='
+          '${session.id}）。下一步：用 terminal_session action=output 看输出'
+          '尾部——还在正常推进就继续等；尾部像提示（含无回显的密码提示、'
+          '空白静默）按等输入处理（action=write 或询问用户）；无进展或跑飞就 '
+          'action=interrupt，不响应再 action=close。不要对该会话重复提交命令'
+          '（会被拒绝），并行执行请传新的 session 名字。'
     else if (result.canceled)
       'hint': '命令被用户中断（已向会话发 Ctrl-C），会话仍可继续使用。',
     'stdout': _clipExecOutput(result.output),
@@ -530,6 +544,7 @@ const Map<String, String> _kWriteKeySequences = {
   'left': '\x1b[D',
   'ctrl-c': '\x03',
   'ctrl-d': '\x04',
+  'ctrl-x': '\x18',
   'ctrl-z': '\x1a',
 };
 
