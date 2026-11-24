@@ -355,6 +355,10 @@ class BackupController extends _$BackupController {
   void updateWebDavConfig(WebDavConfig config) {
     state = state.copyWith(webDavConfig: config);
     _saveWebDavConfig(config);
+    // 自动同步持有的是启动时读到的配置；不同步过去，定时器会一直用旧地址 / 旧密码
+    // 上传，启动时未配置的话也永远不会开始。
+    _autoSync.configure(backupService: _service, webDavConfig: config);
+    _autoSync.resumeIfEnabled();
   }
 
   Future<void> testWebDavConnection() async {

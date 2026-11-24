@@ -97,6 +97,11 @@ class _RestoreSelectionSheetState extends State<RestoreSelectionSheet> {
       for (final dep in c.requiredAncestors) {
         if (_present.contains(dep) && !_selected.contains(dep)) return true;
       }
+      // 反方向同样会孤立：覆盖会清空所选上级的表，下级没一起导入时，本地现存的
+      // 下级记录（例如只导话题时的旧消息）就失去归属。
+      for (final child in c.dependentDescendants) {
+        if (!_selected.contains(child)) return true;
+      }
     }
     return false;
   }
@@ -256,7 +261,7 @@ class _RestoreSelectionSheetState extends State<RestoreSelectionSheet> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '所选数据的关联上级未一并导入，覆盖后可能产生无法关联的记录',
+                    '所选数据的关联数据未一并导入，覆盖后可能产生无法关联的记录',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.error,
                     ),

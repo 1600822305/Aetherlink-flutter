@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -13,67 +11,7 @@ import 'package:aetherlink_flutter/features/backup/domain/restore_plan.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 
-/// 手工拼一个 Flutter ZIP 备份（跳过 createBackup 对 path_provider 的依赖），
-/// 数据文件齐全、checksum 与打包逻辑一致，可选携带 knowledge.json。
-Future<File> _writeZipBackup(
-  Directory dir, {
-  List<Map<String, dynamic>> knowledge = const [],
-  bool includeKnowledgeEntry = true,
-}) async {
-  final categories = <String, List<Map<String, dynamic>>>{
-    'topics.json': const [],
-    'messages.json': const [],
-    'message_blocks.json': const [],
-    'assistants.json': const [],
-    'providers.json': const [],
-    'groups.json': const [],
-    'settings.json': const [],
-    if (includeKnowledgeEntry) 'knowledge.json': knowledge,
-  };
-  final manifest = {
-    'version': 1,
-    'appVersion': '0.0.0',
-    'platform': 'test',
-    'schemaVersion': 12,
-    'createdAt': DateTime.now().toIso8601String(),
-    'deviceInfo': '',
-    // checksum 为空则跳过校验（与真实旧备份兼容路径一致）。
-    'checksum': '',
-    'stats': {'knowledge': knowledge.length},
-    'options': {
-      'includeMessages': true,
-      'includeProviders': true,
-      'includeSettings': true,
-    },
-  };
-
-  final archive = Archive();
-  void add(String name, Object json) {
-    final bytes = utf8.encode(jsonEncode(json));
-    archive.addFile(ArchiveFile(name, bytes.length, bytes));
-  }
-
-  add('manifest.json', manifest);
-  categories.forEach(add);
-
-  final file = File('${dir.path}/backup.zip');
-  await file.writeAsBytes(ZipEncoder().encode(archive));
-  return file;
-}
-
-/// 把 path_provider 的临时目录指向测试专用目录，让 _extractZip 在纯 Dart 测试
-/// 里也能解包（无真实平台通道）。
-class _FakePathProvider extends PathProviderPlatform {
-  _FakePathProvider(this.root);
-
-  final String root;
-
-  @override
-  Future<String?> getTemporaryPath() async => root;
-
-  @override
-  Future<String?> getApplicationDocumentsPath() async => root;
-}
+import 'backup_test_helpers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -89,7 +27,7 @@ void main() {
       service = BackupService(db: db);
       knowledge = KnowledgeService(db.knowledgeDao);
       tempDir = await Directory.systemTemp.createTemp('aether_kb_backup');
-      PathProviderPlatform.instance = _FakePathProvider(tempDir.path);
+      PathProviderPlatform.instance = FakePathProvider(tempDir.path);
     });
 
     tearDown(() async {
@@ -131,9 +69,11 @@ void main() {
 
     test('scan surfaces knowledge as a supported category with its count',
         () async {
-      final file = await _writeZipBackup(
+      final file = await writeZipBackup(
         tempDir,
-        knowledge: [sampleKnowledgeRecord()],
+        data: {
+          'knowledge.json': [sampleKnowledgeRecord()],
+        },
       );
       final scan = await service.scanBackup(file);
       expect(scan.countOf(BackupCategory.knowledge), 1);
@@ -141,9 +81,11 @@ void main() {
 
     test('restore rebuilds authority rows + derived chunks; keyword search '
         'works immediately', () async {
-      final file = await _writeZipBackup(
+      final file = await writeZipBackup(
         tempDir,
-        knowledge: [sampleKnowledgeRecord()],
+        data: {
+          'knowledge.json': [sampleKnowledgeRecord()],
+        },
       );
 
       final result = await service.restoreFromFile(file);
@@ -182,7 +124,12 @@ void main() {
         'content': 'trashed note content',
         'contentHash': 'hash-2',
       });
-      final file = await _writeZipBackup(tempDir, knowledge: [record]);
+      final file = await writeZipBackup(
+        tempDir,
+        data: {
+          'knowledge.json': [record],
+        },
+      );
 
       final result = await service.restoreFromFile(file);
       expect(result.failed, 0);
@@ -211,7 +158,12 @@ void main() {
         ..['groupName'] = '工作'
         ..['rerankModelKey'] = 'provider|rerank-model'
         ..['fileProcessorId'] = 'mineru';
-      final file = await _writeZipBackup(tempDir, knowledge: [record]);
+      final file = await writeZipBackup(
+        tempDir,
+        data: {
+          'knowledge.json': [record],
+        },
+      );
 
       await service.restoreFromFile(file);
 
@@ -226,10 +178,7 @@ void main() {
       final base = await knowledge.createBase(name: '现存库');
       await knowledge.addNote(baseId: base.id, title: 't', text: 'keep me');
 
-      final file = await _writeZipBackup(
-        tempDir,
-        includeKnowledgeEntry: false,
-      );
+      final file = await writeZipBackup(tempDir, omit: {'knowledge.json'});
       await service.restoreFromFile(file);
 
       final bases = await knowledge.listBases();
@@ -242,9 +191,11 @@ void main() {
       final old = await knowledge.createBase(name: '旧库');
       await knowledge.addNote(baseId: old.id, title: 'x', text: 'old text');
 
-      final file = await _writeZipBackup(
+      final file = await writeZipBackup(
         tempDir,
-        knowledge: [sampleKnowledgeRecord()],
+        data: {
+          'knowledge.json': [sampleKnowledgeRecord()],
+        },
       );
       await service.restoreFromFile(file);
 
@@ -257,9 +208,11 @@ void main() {
         () async {
       final existing = await knowledge.createBase(name: '现存库');
 
-      final file = await _writeZipBackup(
+      final file = await writeZipBackup(
         tempDir,
-        knowledge: [sampleKnowledgeRecord()],
+        data: {
+          'knowledge.json': [sampleKnowledgeRecord()],
+        },
       );
       final result = await service.restoreFromFile(
         file,

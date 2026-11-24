@@ -97,6 +97,8 @@ class BackupReminderService {
       _enabled = false;
       _snoozedForSession = false;
       await _persist();
+      // 已排好的系统通知不取消的话，关掉提醒后到点仍会弹出。
+      await _syncSystemNotification();
       return;
     }
     await saveSchedule(
@@ -110,6 +112,11 @@ class BackupReminderService {
     _lastBackupAt = DateTime.now();
     _snoozedForSession = false;
     await _persist();
+    // 下次提醒时间随本次备份后移，按旧时间排好的通知要重排。通知失败不能让已经
+    // 成功的备份报错。
+    try {
+      await _syncSystemNotification();
+    } catch (_) {}
   }
 
   void snoozeForSession() {

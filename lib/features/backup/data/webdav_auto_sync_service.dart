@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aetherlink_flutter/features/backup/data/backup_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/webdav_client.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
+import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 
 /// Preset sync interval options in minutes.
 const List<int> kAutoSyncIntervalOptions = [15, 30, 60, 120, 360, 720, 1440];
@@ -80,7 +82,11 @@ class WebDavAutoSyncService {
   }
 
   /// Resume auto-sync if previously enabled (call at app startup).
+  ///
+  /// 已在运行的定时器不重启：WebDAV 配置每次输入都会走到这里，重启会让同步一直
+  /// 往后推。
   void resumeIfEnabled() {
+    if (_timer != null) return;
     if (_enabled && _webDavConfig != null && _webDavConfig!.isConfigured) {
       _startTimer();
     }
@@ -95,8 +101,9 @@ class WebDavAutoSyncService {
     _syncing = true;
     _lastError = null;
 
+    File? file;
     try {
-      final file = await _backupService!.createBackup();
+      file = await _backupService!.createBackup();
       final client = WebDavClient(config: _webDavConfig!);
       await client.upload(file);
 
@@ -105,12 +112,17 @@ class WebDavAutoSyncService {
       await prefs.setString(_lastSyncAtKey, _lastSyncAt!.toIso8601String());
 
       await _cleanupOldBackups(client);
-      _syncing = false;
       return true;
     } catch (e) {
       _lastError = e.toString();
-      _syncing = false;
       return false;
+    } finally {
+      _syncing = false;
+      // createBackup 会在本地 backups/ 留一份完整副本，而本地清理只管 auto_ 前缀；
+      // 定时同步不删的话每个周期都多一份，永不回收。
+      try {
+        if (file != null && await file.exists()) await file.delete();
+      } catch (_) {}
     }
   }
 
@@ -136,7 +148,8 @@ class WebDavAutoSyncService {
   Future<void> _cleanupOldBackups(WebDavClient client) async {
     if (_maxBackups <= 0) return;
     try {
-      final files = await client.listFiles();
+      // 备份目录里可能有用户自己的文件（甚至目录设成了网盘根目录），不能一并删。
+      final files = (await client.listFiles()).where(_isAppBackup).toList();
       if (files.length <= _maxBackups) return;
 
       // Sort newest first by date.
@@ -150,5 +163,12 @@ class WebDavAutoSyncService {
         await client.delete(item);
       }
     } catch (_) {}
+  }
+
+  static bool _isAppBackup(BackupFileItem item) {
+    final segments = item.href.pathSegments.where((s) => s.isNotEmpty);
+    final name = segments.isEmpty ? item.displayName : segments.last;
+    return name.startsWith(BackupService.kBackupFilePrefix) &&
+        name.endsWith('.zip');
   }
 }
