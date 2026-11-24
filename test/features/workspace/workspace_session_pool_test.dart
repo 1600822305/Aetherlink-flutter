@@ -10,6 +10,7 @@ class _FakeShell implements WorkspaceShellSession {
   final StreamController<List<int>> _out = StreamController.broadcast();
   final Completer<void> _done = Completer<void>();
   final StringBuffer written = StringBuffer();
+  final List<(int, int)> resizes = [];
 
   @override
   Stream<List<int>> get output => _out.stream;
@@ -18,7 +19,7 @@ class _FakeShell implements WorkspaceShellSession {
   void write(List<int> data) => written.write(utf8.decode(data));
 
   @override
-  void resize(int columns, int rows) {}
+  void resize(int columns, int rows) => resizes.add((columns, rows));
 
   @override
   Future<void> get done => _done.future;
@@ -238,6 +239,64 @@ void main() {
     expect(r3.output, isEmpty);
     expect(r3.cursor, r2.cursor);
     expect(session.outputCursor, r2.cursor);
+  });
+
+  test('用户键入未回车的半行时 exec 拒绝执行，不写入命令', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    session.writeUserInput('rm -');
+    expect(session.isUserTyping, isTrue);
+    await expectLater(
+      session.exec('echo hi'),
+      throwsA(
+        isA<WorkspaceSessionException>().having(
+          (e) => e.message,
+          'message',
+          contains('用户正在'),
+        ),
+      ),
+    );
+    expect(shell.written.toString(), isNot(contains('__AETHER_DONE_')));
+    expect(session.busy, isFalse);
+  });
+
+  test('用户回车后不再占用，exec 先发 Ctrl-U 清行再写命令', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    session.writeUserInput('ls');
+    session.writeUserInput('\r');
+    expect(session.isUserTyping, isFalse);
+    shell.written.clear();
+    final future = session.exec('echo hi');
+    await Future<void>.delayed(Duration.zero);
+    expect(shell.written.toString(), startsWith('\x15'));
+    final nonce = _nonceOf(shell);
+    shell.emit('hi\n__AETHER_DONE_${nonce}_0__\n');
+    expect((await future).exitCode, 0);
+  });
+
+  test('AI 命令运行期间用户写 stdin 不算占用', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    final future = session.exec('read x');
+    await Future<void>.delayed(Duration.zero);
+    session.writeUserInput('abc');
+    final nonce = _nonceOf(shell);
+    shell.emit('__AETHER_DONE_${nonce}_0__\n');
+    await future;
+    expect(session.isUserTyping, isFalse);
+  });
+
+  test('resize 转发到 shell，尺寸未变时不重复转发', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    session.resize(45, 30);
+    session.resize(45, 30);
+    session.resize(kDefaultSessionColumns, kDefaultSessionRows);
+    expect(shell.resizes, [
+      (45, 30),
+      (kDefaultSessionColumns, kDefaultSessionRows),
+    ]);
   });
 
   test('markWaitingInputAll 传 sessionRef 只标记目标会话', () async {

@@ -11,7 +11,10 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -44,6 +47,8 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
         val fileDescriptor: ParcelFileDescriptor,
         val output: FileInputStream,
         val input: FileOutputStream,
+        val writer: ExecutorService = Executors.newSingleThreadExecutor(),
+        val readerDone: CountDownLatch = CountDownLatch(1),
     )
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -153,11 +158,17 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
                 }
             } catch (_: Exception) {
                 // fd closed (session killed) — the waiter reports the exit.
+            } finally {
+                session.readerDone.countDown()
             }
         }
-        // Waiter: report the exit code, then clean up.
+        // Waiter: report the exit code once the reader has drained the PTY
+        // (posted after its last chunk), then clean up.
         executor.execute {
             val exitCode = AetherPty.waitFor(session.pid)
+            // A background job may keep the slave open past the shell's exit;
+            // don't block forever — closing the fd below unblocks the reader.
+            session.readerDone.await(2, TimeUnit.SECONDS)
             mainHandler.post {
                 eventSink?.success(mapOf("id" to id, "exitCode" to exitCode))
             }
@@ -175,13 +186,17 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
             result.success(null)
             return
         }
-        executor.execute {
-            try {
-                session.input.write(data)
-                session.input.flush()
-            } catch (_: Exception) {
-                // Session already gone.
+        try {
+            session.writer.execute {
+                try {
+                    session.input.write(data)
+                    session.input.flush()
+                } catch (_: Exception) {
+                    // Session already gone.
+                }
             }
+        } catch (_: Exception) {
+            // Writer shut down: session is closing.
         }
         result.success(null)
     }
@@ -208,6 +223,7 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
 
     private fun closeSession(id: Int) {
         val session = sessions.remove(id) ?: return
+        session.writer.shutdown()
         try {
             session.fileDescriptor.close()
         } catch (_: Exception) {

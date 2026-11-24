@@ -22,6 +22,13 @@ const Duration kSessionIdleTimeout = Duration(minutes: 10);
 /// 单个后端的并发会话上限（Agent 并发时按需扩容的上限）。
 const int kMaxPooledSessions = 4;
 
+/// 无终端视图接入时会话 PTY 的默认尺寸；接入视图后按视图实际尺寸同步。
+const int kDefaultSessionColumns = 200;
+const int kDefaultSessionRows = 50;
+
+/// 用户键入半行后多久仍视为占用会话；超过后视为遗留半行，由 Ctrl-U 兜底清掉。
+const Duration kUserTypingHold = Duration(seconds: 30);
+
 /// 单个会话保留的输出回看缓冲上限（字符）。
 const int kSessionBufferLimit = 200 * 1024;
 
@@ -148,6 +155,18 @@ class PooledWorkspaceSession {
   /// 当前输出流游标；下次用 [outputSince] 传回可只取新增输出。
   int get outputCursor => _streamBase + _buffer.length;
 
+  /// 用户在提示符下键入了未回车的半行（不含 AI 命令运行期间写进 stdin 的输入）。
+  bool _hasPendingUserLine = false;
+  DateTime _lastUserInputAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 用户正在提示符下键入（半行未回车）：此时 AI 命令会与半行拼接，exec 拒绝执行。
+  bool get isUserTyping =>
+      _hasPendingUserLine &&
+      DateTime.now().difference(_lastUserInputAt) < kUserTypingHold;
+
+  int _columns = kDefaultSessionColumns;
+  int _rows = kDefaultSessionRows;
+
   /// 当前 exec 的「标记为等交互」触发器；无 exec 在等时为 null。
   void Function()? _flagWaitingInput;
 
@@ -246,6 +265,11 @@ class PooledWorkspaceSession {
     if (busy) {
       throw const WorkspaceSessionException('会话正忙（上一条命令还没结束），可换一个会话或稍后再试');
     }
+    if (isUserTyping) {
+      throw const WorkspaceSessionException(
+        '用户正在该会话终端里键入（有未回车的输入），为避免与命令拼接已拒绝执行；可换一个会话或稍后再试',
+      );
+    }
     _busy = true;
     lastUsedAt = DateTime.now();
     lastExitCode = null;
@@ -319,6 +343,8 @@ class PooledWorkspaceSession {
       if (match != null && !done.isCompleted) done.complete(match);
     });
     try {
+      _hasPendingUserLine = false;
+      _shell.write(const [0x15]);
       _shell.write(
         utf8.encode(
           buildSentinelInput(command, nonce, splitStderr: splitStderr),
@@ -410,6 +436,25 @@ class PooledWorkspaceSession {
     _shell.write(utf8.encode(data));
   }
 
+  /// 用户在终端视图里的键入：同 [writeInput]，另外记录提示符下是否留有
+  /// 未回车的半行，供 [isUserTyping] 判定占用。
+  void writeUserInput(String data) {
+    writeInput(data);
+    if (busy || data.isEmpty) return;
+    _lastUserInputAt = DateTime.now();
+    final lineEnd = data.lastIndexOf(RegExp('[\r\n\x03\x15]'));
+    _hasPendingUserLine = lineEnd < data.length - 1;
+  }
+
+  /// 同步 PTY 窗口尺寸（终端视图布局变化时调用）；尺寸未变或会话已结束时忽略。
+  void resize(int columns, int rows) {
+    if (!_alive || columns <= 0 || rows <= 0) return;
+    if (columns == _columns && rows == _rows) return;
+    _columns = columns;
+    _rows = rows;
+    _shell.resize(columns, rows);
+  }
+
   Future<void> close() async {
     _alive = false;
     // 让正在等哨兵的 exec（含超时后的后台等待）立即出错返回，
@@ -479,8 +524,8 @@ class WorkspaceSessionPool {
       );
     }
     final shell = await _backend.startShell(
-      columns: 200,
-      rows: 50,
+      columns: kDefaultSessionColumns,
+      rows: kDefaultSessionRows,
       workingDirectory: workingDirectory,
     );
     if (environment.isNotEmpty) {

@@ -56,9 +56,11 @@ class SessionTerminalAttachment {
     _sub = session.chunks.listen(terminal.write);
     terminal.onOutput = (data) {
       if (session.alive) {
-        session.writeInput(transform == null ? data : transform(data));
+        session.writeUserInput(transform == null ? data : transform(data));
       }
     };
+    terminal.onResize = (width, height, _, __) =>
+        session.resize(width, height);
   }
 
   final PooledWorkspaceSession session;
