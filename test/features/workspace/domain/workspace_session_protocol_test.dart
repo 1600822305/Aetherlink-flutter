@@ -273,6 +273,8 @@ void main() {
       expect(looksLikeInteractivePrompt('Select an option: '), isTrue);
       expect(looksLikeInteractivePrompt('--More--'), isTrue);
       expect(looksLikeInteractivePrompt('(END)'), isTrue);
+      expect(looksLikeInteractivePrompt('line 42\n:'), isTrue);
+      expect(looksLikeInteractivePrompt('? Pick a framework › React'), isTrue);
     });
 
     test('按键继续 / 带默认值提示 / Enter …: 命中', () {
@@ -283,6 +285,15 @@ void main() {
       expect(looksLikeInteractivePrompt('Enter the target branch: '), isTrue);
       expect(looksLikeInteractivePrompt('build finished in 3s'), isFalse);
       expect(looksLikeInteractivePrompt('[INFO] compiled 12 files'), isFalse);
+    });
+  });
+
+  group('lastAlternateScreenToggle（全屏 TUI 识别）', () {
+    test('切入备用屏返回 true、切出返回 false、无切换返回 null', () {
+      expect(lastAlternateScreenToggle('\x1b[?1049h\x1b[H~\n~'), isTrue);
+      expect(lastAlternateScreenToggle('\x1b[?1049h…\x1b[?1049l'), isFalse);
+      expect(lastAlternateScreenToggle('\x1b[?47h'), isTrue);
+      expect(lastAlternateScreenToggle('\x1b[?25l\x1b[2Kplain'), isNull);
     });
   });
 

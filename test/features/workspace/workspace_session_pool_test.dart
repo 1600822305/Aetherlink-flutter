@@ -269,7 +269,7 @@ void main() {
     shell.written.clear();
     final future = session.exec('echo hi');
     await Future<void>.delayed(Duration.zero);
-    expect(shell.written.toString(), startsWith('\x15'));
+    expect(shell.written.toString(), startsWith('\x05\x15'));
     final nonce = _nonceOf(shell);
     shell.emit('hi\n__AETHER_DONE_${nonce}_0__\n');
     expect((await future).exitCode, 0);
@@ -285,6 +285,43 @@ void main() {
     shell.emit('__AETHER_DONE_${nonce}_0__\n');
     await future;
     expect(session.isUserTyping, isFalse);
+  });
+
+  test('exec 期间 interrupt 立即收尾（Ctrl-C 后哨兵不会再来），会话释放', () async {
+    final session = await pool.create();
+    final future = session.exec('sleep 999');
+    await Future<void>.delayed(Duration.zero);
+    session.interrupt();
+    final result = await future;
+    expect(result.canceled, isTrue);
+    expect(session.busy, isFalse);
+  });
+
+  test('超时后 interrupt 释放仍在等哨兵的 busy 会话', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    await session.exec('sleep 999', timeout: const Duration(milliseconds: 20));
+    expect(session.busy, isTrue);
+    session.writeInput('\x03');
+    await Future<void>.delayed(Duration.zero);
+    expect(session.busy, isFalse);
+    shell.written.clear();
+    final next = session.exec('echo hi');
+    await Future<void>.delayed(Duration.zero);
+    final nonce = _nonceOf(shell);
+    shell.emit('hi\n__AETHER_DONE_${nonce}_0__\n');
+    expect((await next).exitCode, 0);
+  });
+
+  test('exec 先发 Ctrl-E 再 Ctrl-U：光标在行中时也清干净整行', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    final future = session.exec('echo hi');
+    await Future<void>.delayed(Duration.zero);
+    expect(shell.written.toString(), startsWith('\x05\x15'));
+    final nonce = _nonceOf(shell);
+    shell.emit('__AETHER_DONE_${nonce}_0__\n');
+    await future;
   });
 
   test('resize 转发到 shell，尺寸未变时不重复转发', () async {

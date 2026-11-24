@@ -235,6 +235,10 @@ final List<RegExp> _interactivePromptPatterns = [
   RegExp(r'(是否|请输入|请选择|请确认)'),
   RegExp(r'[?？]\s*$'),
   RegExp(r'^\s*❯', multiLine: true),
+  // less 自带分页（LESS=FRX 不切备用屏）停在底部的 `:` 提示。
+  RegExp(r'^:\s*$'),
+  // inquirer / prompts 类交互问句以 `? ` 开头。
+  RegExp(r'^\?\s\S'),
   // REPL 提示符（python `>>>` / `...`、node/irb 等裸 `>`）停在行尾。
   RegExp(r'^(>>>|\.\.\.|In \[\d*\]:)\s*$'),
   // 数字菜单 / 选项选择："Enter your choice [1-3]:" / "Select an option:"。
@@ -270,6 +274,20 @@ bool looksLikeInteractivePrompt(String tail) {
   }
   if (lastLine.isEmpty) return false;
   return _interactivePromptPatterns.any((p) => p.hasMatch(lastLine));
+}
+
+/// 备用屏开 / 关序列（vim / less / htop / nano 等全屏程序启动时切入备用屏）。
+final RegExp _altScreenToggle = RegExp(r'\x1b\[\?(?:1049|1047|47)([hl])');
+
+/// [text] 中最后一次备用屏切换：切入返回 true、切出返回 false，没有返回 null。
+/// 全屏 TUI 持续重绘、尾行也不像提示，静默 + 提示双条件判定对它无效，
+/// 只能靠「仍处于备用屏」识别。
+bool? lastAlternateScreenToggle(String text) {
+  bool? state;
+  for (final m in _altScreenToggle.allMatches(text)) {
+    state = m.group(1) == 'h';
+  }
+  return state;
 }
 
 class SentinelMatch {

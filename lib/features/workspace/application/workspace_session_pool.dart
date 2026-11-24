@@ -56,6 +56,7 @@ class WorkspaceSessionExecResult {
     this.canceled = false,
     this.waitingInput = false,
     this.background = false,
+    this.fullScreen = false,
     this.stderr,
   });
 
@@ -75,6 +76,9 @@ class WorkspaceSessionExecResult {
   /// 主动后台执行：命令已提交到会话里跑，调用立即返回（不等结果），
   /// 结束后退出码可由 [PooledWorkspaceSession.lastExitCode] 查到。
   final bool background;
+
+  /// 等交互的原因是前台跑着全屏 TUI（仍在备用屏），需按键退出该程序。
+  final bool fullScreen;
 
   /// splitStderr 模式下分流出的 stderr；合流模式为 null。
   final String? stderr;
@@ -174,6 +178,11 @@ class PooledWorkspaceSession {
   /// exec（含超时后的后台等待）立即出错返回，不永久悬挂。
   void Function()? _failPendingExec;
 
+  /// 当前 exec 的「已发 Ctrl-C」触发器：交互式 shell 收到 SIGINT 会放弃
+  /// 整个命令列表，哨兵不会再打印；不在此收尾的话会话会永久 busy，
+  /// 后续命令全部被拒。
+  void Function()? _cancelPendingExec;
+
   /// 手动标记当前前台命令在等交互输入（自动检测漏网时的用户兜底）：
   /// 正在等哨兵的 exec 立即带已有输出提前返回（waitingInput = true），
   /// 命令继续在会话里跑。没有正在等的 exec 时返回 false。
@@ -214,6 +223,7 @@ class PooledWorkspaceSession {
     }
     lastUsedAt = DateTime.now();
     _shell.write(const [0x03]);
+    _cancelPendingExec?.call();
   }
 
   void _append(String chunk) {
@@ -263,7 +273,11 @@ class PooledWorkspaceSession {
       throw const WorkspaceSessionException('会话已结束，请新建会话');
     }
     if (busy) {
-      throw const WorkspaceSessionException('会话正忙（上一条命令还没结束），可换一个会话或稍后再试');
+      throw const WorkspaceSessionException(
+        '会话正忙（上一条命令还没结束）：用 terminal_session action=output 看它'
+        '是否在等输入，action=interrupt 中断它，或不传 session / 换新的 session '
+        '名字执行',
+      );
     }
     if (isUserTyping) {
       throw const WorkspaceSessionException(
@@ -283,6 +297,9 @@ class PooledWorkspaceSession {
     var canceled = false;
     var releaseInFinally = true;
     var lastChunkAt = DateTime.now();
+    final startedAt = DateTime.now();
+    var altScreen = false;
+    var fullScreen = false;
     _flagWaitingInput = () {
       if (settled || done.isCompleted) return;
       done.completeError(const _SessionExecWaitingInput());
@@ -291,10 +308,22 @@ class PooledWorkspaceSession {
       if (done.isCompleted) return;
       done.completeError(const WorkspaceSessionException('会话已关闭，命令结果不可得'));
     };
+    _cancelPendingExec = () {
+      if (done.isCompleted) return;
+      canceled = true;
+      done.completeError(const _SessionExecCanceled());
+    };
     // 自动判定：输出静默超阈 + 尾部像交互提示 → 不等满超时，提前把
     // 控制权和已有输出还给调用方（模型可立刻写 stdin 回答）。
     final silenceTimer = Timer.periodic(kInteractiveCheckInterval, (_) {
       if (settled || done.isCompleted) return;
+      if (altScreen &&
+          DateTime.now().difference(startedAt) >=
+              kInteractiveSilenceThreshold) {
+        fullScreen = true;
+        _flagWaitingInput?.call();
+        return;
+      }
       if (DateTime.now().difference(lastChunkAt) <
           kInteractiveSilenceThreshold) {
         return;
@@ -311,13 +340,10 @@ class PooledWorkspaceSession {
       unawaited(
         cancelSignal.then((_) {
           if (settled) return;
-          canceled = true;
           // Ctrl-C 中断前台命令；shell 回到提示符后哨兵行不会再来，
           // 直接以当前已收集的输出收尾。
           _shell.write(utf8.encode('\x03'));
-          if (!done.isCompleted) {
-            done.completeError(const _SessionExecCanceled());
-          }
+          _cancelPendingExec?.call();
         }),
       );
     }
@@ -334,6 +360,8 @@ class PooledWorkspaceSession {
       windowTail = window.length <= 96
           ? window
           : window.substring(window.length - 96);
+      final toggle = lastAlternateScreenToggle(window);
+      if (toggle != null) altScreen = toggle;
       if (!window.contains('__AETHER_DONE_$nonce')) return;
       final match = matchSentinel(
         collected.toString(),
@@ -344,7 +372,9 @@ class PooledWorkspaceSession {
     });
     try {
       _hasPendingUserLine = false;
-      _shell.write(const [0x15]);
+      // Ctrl-E 先移到行尾再 Ctrl-U：Ctrl-U 只删光标前内容，用户把光标
+      // 移到行中留下的半行尾巴会拼进命令。
+      _shell.write(const [0x05, 0x15]);
       _shell.write(
         utf8.encode(
           buildSentinelInput(command, nonce, splitStderr: splitStderr),
@@ -358,6 +388,7 @@ class PooledWorkspaceSession {
             _busy = false;
             lastUsedAt = DateTime.now();
             _failPendingExec = null;
+            _cancelPendingExec = null;
             sub.cancel();
           }),
         );
@@ -382,6 +413,7 @@ class PooledWorkspaceSession {
           _busy = false;
           lastUsedAt = DateTime.now();
           _failPendingExec = null;
+          _cancelPendingExec = null;
           sub.cancel();
         }),
       );
@@ -405,6 +437,7 @@ class PooledWorkspaceSession {
           _busy = false;
           lastUsedAt = DateTime.now();
           _failPendingExec = null;
+          _cancelPendingExec = null;
           sub.cancel();
         }),
       );
@@ -412,6 +445,7 @@ class PooledWorkspaceSession {
         output: stripSessionEcho(collected.toString(), command, nonce),
         exitCode: null,
         waitingInput: true,
+        fullScreen: fullScreen,
       );
     } finally {
       settled = true;
@@ -419,6 +453,7 @@ class PooledWorkspaceSession {
       _flagWaitingInput = null;
       if (releaseInFinally) {
         _failPendingExec = null;
+        _cancelPendingExec = null;
         _busy = false;
         lastUsedAt = DateTime.now();
         await sub.cancel();
@@ -428,12 +463,14 @@ class PooledWorkspaceSession {
 
   /// 往会话的运行中进程写 stdin（交互式程序输入，设计稿 §3.4）。
   /// 不自动追加换行，需要回车确认时由调用方在 [data] 末尾带 `\n`。
+  /// 含 Ctrl-C 时按中断处理，收尾正在等哨兵的 exec（见 [interrupt]）。
   void writeInput(String data) {
     if (!_alive) {
       throw const WorkspaceSessionException('会话已结束，请新建会话');
     }
     lastUsedAt = DateTime.now();
     _shell.write(utf8.encode(data));
+    if (data.contains('\x03')) _cancelPendingExec?.call();
   }
 
   /// 用户在终端视图里的键入：同 [writeInput]，另外记录提示符下是否留有
