@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
@@ -83,11 +84,14 @@ class _ReasoningTileState extends State<ReasoningTile> {
                       ),
                     ),
                   ),
-                  child: Text(
-                    streaming ? '${widget.event.text}▍' : widget.event.text,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.7),
-                      height: 1.5,
+                  child: _selectableUnlessStreaming(
+                    streaming,
+                    Text(
+                      streaming ? '${widget.event.text}▍' : widget.event.text,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.7),
+                        height: 1.5,
+                      ),
                     ),
                   ),
                 )
@@ -96,4 +100,8 @@ class _ReasoningTileState extends State<ReasoningTile> {
       ],
     );
   }
+
+  // 流式中正文每帧在变，选区会被重建打断，定稿后才允许选中。
+  Widget _selectableUnlessStreaming(bool streaming, Widget child) =>
+      streaming ? child : SettingAwareMessageSelectionArea(child: child);
 }

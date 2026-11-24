@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
 /// 用户指令：贴右对称气泡（Devin/IDE 同款，与 agent 侧时间线叙述区分；
@@ -44,7 +46,9 @@ class UserMessageTile extends StatelessWidget {
                     ),
                   ),
                 ),
-              Text(event.text, style: theme.textTheme.bodyMedium),
+              SettingAwareMessageSelectionArea(
+                child: Text(event.text, style: theme.textTheme.bodyMedium),
+              ),
               if (event.attachments.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -55,11 +59,11 @@ class UserMessageTile extends StatelessWidget {
                     children: [
                       for (final a in event.attachments)
                         if (a.kind == AgentAttachmentKind.image &&
-                            a.base64Data != null)
+                            _decodeImage(a.base64Data) != null)
                           ClipRRect(
                             borderRadius: BorderRadius.circular(6),
                             child: Image.memory(
-                              base64Decode(a.base64Data!),
+                              _decodeImage(a.base64Data)!,
                               width: 120,
                               height: 120,
                               fit: BoxFit.cover,
@@ -77,6 +81,17 @@ class UserMessageTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // 损坏的 base64 会在 build 期直接抛 FormatException（Image.memory 的
+  // errorBuilder 接不住解码前的异常），这里兜底退回附件 chip。
+  static Uint8List? _decodeImage(String? data) {
+    if (data == null) return null;
+    try {
+      return base64Decode(data);
+    } on FormatException {
+      return null;
+    }
   }
 
   Widget _chip(ThemeData theme, AgentUserAttachment a) {
