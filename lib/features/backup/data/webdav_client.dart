@@ -76,6 +76,7 @@ class WebDavClient {
         '    <d:displayname/>\n'
         '    <d:getcontentlength/>\n'
         '    <d:getlastmodified/>\n'
+        '    <d:resourcetype/>\n'
         '  </d:prop>\n'
         '</d:propfind>';
 
@@ -103,7 +104,7 @@ class WebDavClient {
         throw Exception('WebDAV download failed: HTTP ${streamed.statusCode}');
       }
       final tmpDir = await Directory.systemTemp.createTemp('webdav_dl_');
-      final file = File(p.join(tmpDir.path, item.displayName));
+      final file = File(p.join(tmpDir.path, _localFileName(item.displayName)));
       final sink = file.openWrite();
       await streamed.stream.pipe(sink);
       return file;
@@ -194,6 +195,13 @@ class WebDavClient {
     }
   }
 
+  /// displayName 来自服务器，不能直接拼进本地路径（`../` 会跳出临时目录）。
+  static String _localFileName(String displayName) {
+    final name = p.basename(displayName);
+    if (name.isEmpty || name == '.' || name == '..') return 'backup.zip';
+    return name;
+  }
+
   List<BackupFileItem> _parsePropfindResponse(String body, Uri baseUri) {
     final doc = XmlDocument.parse(body);
     final items = <BackupFileItem>[];
@@ -210,6 +218,11 @@ class WebDavClient {
       if (abs == baseStr) continue;
       // Skip directories.
       if (abs.endsWith('/')) continue;
+      // 有的服务器返回的目录 href 不带末尾 `/`，只靠斜杠判断会把子目录甚至备份目录
+      // 本身当成文件，进而被自动同步的清理逻辑 DELETE 掉。
+      if (resp.findAllElements('collection', namespace: '*').isNotEmpty) {
+        continue;
+      }
 
       final disp = resp
           .findAllElements('displayname', namespace: '*')
