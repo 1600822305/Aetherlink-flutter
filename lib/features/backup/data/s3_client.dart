@@ -39,7 +39,7 @@ class S3BackupClient {
       },
     );
     if (res.statusCode != 200) {
-      throw Exception('S3 test failed: ${_extractErrorMessage(manifestRes)}');
+      throw Exception('S3 test failed: ${_extractErrorMessage(res)}');
     }
   }
 
@@ -51,14 +51,13 @@ class S3BackupClient {
   }) async {
     _validateConfig(cfg);
     final uri = _buildObjectUri(cfg, key);
-    final streamed = await _sendSignedStreamedFile(
+    final res = await _sendSignedStreamedFile(
       cfg,
       method: 'PUT',
       uri: uri,
       bodyFile: file,
       headers: {'content-type': 'application/zip'},
     );
-    final res = await http.Response.fromStream(streamed);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw Exception('S3 upload failed: ${_extractErrorMessage(res)}');
     }
@@ -384,7 +383,7 @@ class S3BackupClient {
     }
   }
 
-  static Future<http.StreamedResponse> _sendSignedStreamedFile(
+  static Future<http.Response> _sendSignedStreamedFile(
     S3Config cfg, {
     required String method,
     required Uri uri,
@@ -444,10 +443,10 @@ class S3BackupClient {
 
     final client = http.Client();
     try {
-      return await client.send(req);
-    } catch (e) {
+      final streamed = await client.send(req);
+      return await http.Response.fromStream(streamed);
+    } finally {
       client.close();
-      rethrow;
     }
   }
 
