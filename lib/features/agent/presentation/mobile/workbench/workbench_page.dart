@@ -41,11 +41,17 @@ class _WorkbenchPageState extends State<WorkbenchPage>
       ? 2
       : _lastTabByTask[widget.task.id] ?? 0;
 
+  /// 终端 tab 首次进入后常驻（离屏保活），切回时复用已有视图与滚动位置。
+  late bool _hasShownTerminal = _tab == 0;
+
   late final TabController _tabController =
       TabController(length: _tabs.length, initialIndex: _tab, vsync: this)
         ..addListener(() {
           if (_tab != _tabController.index) {
-            setState(() => _tab = _tabController.index);
+            setState(() {
+              _tab = _tabController.index;
+              if (_tab == 0) _hasShownTerminal = true;
+            });
             _lastTabByTask[widget.task.id] = _tabController.index;
           }
         });
@@ -150,16 +156,32 @@ class _WorkbenchPageState extends State<WorkbenchPage>
         ),
         const Divider(height: 1),
         Expanded(
-          child: switch (_tab) {
-            0 => WorkbenchTerminalTab(task: widget.task),
-            1 => WorkbenchFocusTab(task: widget.task),
-            2 => WorkbenchDiffTab(
-              task: widget.task,
-              initialFilePath: widget.initialFilePath,
-            ),
-            3 => WorkbenchFilesTab(task: widget.task),
-            _ => WorkbenchContextTab(task: widget.task),
-          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_hasShownTerminal)
+                Offstage(
+                  offstage: _tab != 0,
+                  child: TickerMode(
+                    enabled: _tab == 0,
+                    child: ExcludeFocus(
+                      excluding: _tab != 0,
+                      child: WorkbenchTerminalTab(task: widget.task),
+                    ),
+                  ),
+                ),
+              if (_tab != 0)
+                switch (_tab) {
+                  1 => WorkbenchFocusTab(task: widget.task),
+                  2 => WorkbenchDiffTab(
+                    task: widget.task,
+                    initialFilePath: widget.initialFilePath,
+                  ),
+                  3 => WorkbenchFilesTab(task: widget.task),
+                  _ => WorkbenchContextTab(task: widget.task),
+                },
+            ],
+          ),
         ),
       ],
     );

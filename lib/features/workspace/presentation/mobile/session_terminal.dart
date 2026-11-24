@@ -5,6 +5,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:xterm/xterm.dart';
@@ -51,9 +52,8 @@ class SessionTerminalAttachment {
     this.session, {
     String Function(String)? transform,
   }) {
-    // 缓冲里就是 PTY 原始字节（含 \r\n 与 ANSI 序列），直接回放。
-    terminal.write(session.snapshot());
-    _sub = session.chunks.listen(terminal.write);
+    final history = session.snapshot();
+    _sub = session.chunks.listen(_onChunk);
     terminal.onOutput = (data) {
       if (session.alive) {
         session.writeUserInput(transform == null ? data : transform(data));
@@ -61,6 +61,16 @@ class SessionTerminalAttachment {
     };
     terminal.onResize = (width, height, _, __) =>
         session.resize(width, height);
+    // 历史可达数百 KB，构造常发生在 build 里：推迟到事件循环下一轮再
+    // 回放，期间到达的实时输出先暂存，保证与历史的先后顺序。
+    ready = Future<void>(() {
+      final pending = _pending;
+      _pending = null;
+      if (pending == null) return;
+      // 缓冲里就是 PTY 原始字节（含 \r\n 与 ANSI 序列），直接回放。
+      terminal.write(history);
+      pending.forEach(terminal.write);
+    });
   }
 
   final PooledWorkspaceSession session;
@@ -68,11 +78,33 @@ class SessionTerminalAttachment {
   final TerminalController controller = TerminalController();
   final FocusNode focusNode = FocusNode();
   StreamSubscription<String>? _sub;
+  List<String>? _pending = [];
+
+  /// 历史回放完成（detach 早于回放时直接完成、不再回放）。
+  late final Future<void> ready;
+
+  void _onChunk(String data) {
+    final pending = _pending;
+    if (pending != null) {
+      pending.add(data);
+    } else {
+      terminal.write(data);
+    }
+  }
 
   Future<void> detach() async {
-    focusNode.dispose();
-    await _sub?.cancel();
+    _pending = null;
+    terminal.onOutput = null;
+    terminal.onResize = null;
+    final sub = _sub;
     _sub = null;
+    // 当前帧的 TerminalView 可能仍持有 focusNode / controller，帧末再释放。
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      focusNode.dispose();
+      controller.dispose();
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
+    await sub?.cancel();
   }
 }
 
@@ -171,10 +203,13 @@ class SessionChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              LucideIcons.bot,
-              size: 13,
-              color: session.busy ? Colors.amberAccent : Colors.greenAccent,
+            ValueListenableBuilder<bool>(
+              valueListenable: session.busyListenable,
+              builder: (context, busy, _) => Icon(
+                LucideIcons.bot,
+                size: 13,
+                color: busy ? Colors.amberAccent : Colors.greenAccent,
+              ),
             ),
             const SizedBox(width: 6),
             Text(
