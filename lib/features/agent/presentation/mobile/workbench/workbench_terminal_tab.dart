@@ -157,12 +157,16 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
             ),
             AiSessionStatusBar(session: active),
             Expanded(
-              child: TerminalView(
-                view.terminal,
+              child: TerminalSelectionMenu(
+                terminal: view.terminal,
                 controller: view.controller,
-                focusNode: view.focusNode,
-                textStyle: const TerminalStyle(fontSize: 13),
-                padding: const EdgeInsets.all(8),
+                child: TerminalView(
+                  view.terminal,
+                  controller: view.controller,
+                  focusNode: view.focusNode,
+                  textStyle: const TerminalStyle(fontSize: 13),
+                  padding: const EdgeInsets.all(8),
+                ),
               ),
             ),
             TerminalExtraKeysBar(

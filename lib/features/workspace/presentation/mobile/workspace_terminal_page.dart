@@ -727,12 +727,16 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
         children: [
           AiSessionStatusBar(session: aiView.session),
           Expanded(
-            child: TerminalView(
-              aiView.terminal,
+            child: TerminalSelectionMenu(
+              terminal: aiView.terminal,
               controller: aiView.controller,
-              focusNode: aiView.focusNode,
-              textStyle: textStyle,
-              padding: const EdgeInsets.all(8),
+              child: TerminalView(
+                aiView.terminal,
+                controller: aiView.controller,
+                focusNode: aiView.focusNode,
+                textStyle: textStyle,
+                padding: const EdgeInsets.all(8),
+              ),
             ),
           ),
           TerminalExtraKeysBar(
@@ -762,12 +766,16 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
               index: _active,
               children: [
                 for (final t in _tabs)
-                  TerminalView(
-                    t.terminal,
+                  TerminalSelectionMenu(
+                    terminal: t.terminal,
                     controller: t.controller,
-                    focusNode: t.focusNode,
-                    textStyle: textStyle,
-                    padding: const EdgeInsets.all(8),
+                    child: TerminalView(
+                      t.terminal,
+                      controller: t.controller,
+                      focusNode: t.focusNode,
+                      textStyle: textStyle,
+                      padding: const EdgeInsets.all(8),
+                    ),
                   ),
               ],
             ),

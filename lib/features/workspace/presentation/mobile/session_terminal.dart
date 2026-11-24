@@ -44,6 +44,167 @@ Future<void> pasteClipboardToTerminal(
   terminal.paste(text);
 }
 
+/// 终端选区浮动菜单：长按选中（或拖拽扩展选区）松手后，在手指附近弹出
+/// 「复制 / 粘贴 / 全选」。点按终端其他位置、选区被清空时自动收起。
+class TerminalSelectionMenu extends StatefulWidget {
+  const TerminalSelectionMenu({
+    super.key,
+    required this.terminal,
+    required this.controller,
+    required this.child,
+  });
+
+  final Terminal terminal;
+  final TerminalController controller;
+  final Widget child;
+
+  @override
+  State<TerminalSelectionMenu> createState() => _TerminalSelectionMenuState();
+}
+
+class _TerminalSelectionMenuState extends State<TerminalSelectionMenu> {
+  Offset? _menuAt;
+  Offset? _lastPointer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onSelectionChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant TerminalSelectionMenu oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onSelectionChanged);
+      widget.controller.addListener(_onSelectionChanged);
+      _menuAt = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onSelectionChanged);
+    super.dispose();
+  }
+
+  void _onSelectionChanged() {
+    if (widget.controller.selection == null && _menuAt != null) {
+      setState(() => _menuAt = null);
+    }
+  }
+
+  void _onPointerDown(PointerDownEvent e) {
+    _lastPointer = e.localPosition;
+    if (_menuAt != null) setState(() => _menuAt = null);
+  }
+
+  void _onPointerUp(PointerUpEvent e) {
+    _lastPointer = e.localPosition;
+    // 等 xterm 手势处理完本次抬起再判断是否留下了选区。
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.controller.selection != null) {
+        HapticFeedback.selectionClick();
+        setState(() => _menuAt = _lastPointer);
+      }
+    });
+  }
+
+  Future<void> _copy() async {
+    setState(() => _menuAt = null);
+    await copyTerminalSelection(context, widget.terminal, widget.controller);
+  }
+
+  Future<void> _paste() async {
+    setState(() => _menuAt = null);
+    widget.controller.clearSelection();
+    await pasteClipboardToTerminal(context, widget.terminal);
+  }
+
+  void _selectAll() {
+    final buffer = widget.terminal.buffer;
+    widget.controller.setSelection(
+      buffer.createAnchor(0, 0),
+      buffer.createAnchor(widget.terminal.viewWidth, buffer.height - 1),
+    );
+    setState(() {}); // 菜单保持显示，位置不变。
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final at = _menuAt;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _onPointerDown,
+                onPointerUp: _onPointerUp,
+                child: widget.child,
+              ),
+            ),
+            if (at != null) _buildMenu(at, constraints.biggest),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMenu(Offset at, Size size) {
+    const menuWidth = 216.0;
+    const menuHeight = 40.0;
+    const gap = 48.0; // 避开手指遮挡
+    final left = (at.dx - menuWidth / 2).clamp(4.0, size.width - menuWidth - 4);
+    var top = at.dy - menuHeight - gap;
+    if (top < 4) top = at.dy + gap; // 上方放不下则放到下方
+    top = top.clamp(4.0, size.height - menuHeight - 4);
+    return Positioned(
+      left: left.toDouble(),
+      top: top.toDouble(),
+      width: menuWidth,
+      height: menuHeight,
+      child: Material(
+        color: const Color(0xFF2C2C2E),
+        elevation: 6,
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          children: [
+            _MenuItem(label: '复制', onTap: _copy),
+            _MenuItem(label: '粘贴', onTap: _paste),
+            _MenuItem(label: '全选', onTap: _selectAll),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuItem extends StatelessWidget {
+  const _MenuItem({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 会话池会话的联动视图状态：接入会话回放历史缓冲 + 订阅实时输出，
 /// 键入直接写进会话 stdin（用户可接管）。detach 只断订阅，不关会话
 /// 本身（会话生命周期归会话池 / AI 管）。
