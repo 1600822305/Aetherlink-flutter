@@ -112,6 +112,15 @@ final Map<String, ({int added, int removed})> _lineStatsCache = {};
   return (added: added, removed: removed);
 }
 
+/// 单条工具调用的增删行数（工具行右侧 +N −N）；仅成功的调用。
+({int added, int removed}) toolLineStats(ToolCallEvent e) {
+  final raw = e.argsDetail;
+  if (e.state != AgentToolCallState.success || raw == null || raw.isEmpty) {
+    return (added: 0, removed: 0);
+  }
+  return _lineStatsCache[e.id] ??= _eventLineStats(raw);
+}
+
 /// 段内代码行变更统计（Devin 风格段头 +N −N）：从写类工具的
 /// 完整参数里估算——content/replace 行数计增、search 行数计减，
 /// diff 文本按 +/− 前缀行计。仅统计成功的调用。
