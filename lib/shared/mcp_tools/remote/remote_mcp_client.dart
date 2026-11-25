@@ -45,6 +45,7 @@ class RemoteMcpClient {
     _subscription = _transport.messages.listen(
       _onMessage,
       onError: _onStreamError,
+      onDone: _onStreamDone,
     );
     final initResult = await _request('initialize', {
       'protocolVersion': kMcpProtocolVersion,
@@ -209,6 +210,15 @@ class RemoteMcpClient {
   void _onStreamError(Object error, StackTrace stackTrace) {
     for (final completer in _pending.values) {
       if (!completer.isCompleted) completer.completeError(error, stackTrace);
+    }
+    _pending.clear();
+  }
+
+  void _onStreamDone() {
+    for (final completer in _pending.values) {
+      if (!completer.isCompleted) {
+        completer.completeError(const McpRpcException('连接已关闭'));
+      }
     }
     _pending.clear();
   }
