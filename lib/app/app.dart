@@ -110,7 +110,17 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
     // Start/stop the performance monitor as the 显示性能监控 flag flips (incl. the
     // hydrated value resolving from storage). Both calls are idempotent.
     ref.listen(perfMonitorControllerProvider, (_, next) {
-      next ? PerfMonitor.instance.start() : PerfMonitor.instance.stop();
+      if (!next) {
+        PerfMonitor.instance.stop();
+        return;
+      }
+      PerfMonitor.instance.start();
+      final router = _router;
+      if (router != null) {
+        PerfMonitor.instance.setRoute(
+          router.routeInformationProvider.value.uri.path,
+        );
+      }
     });
     final perfEnabled = ref.watch(perfMonitorControllerProvider);
     final devToolsButtonEnabled = ref.watch(devToolsButtonControllerProvider);
@@ -150,8 +160,8 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
         startAtAgent: mainMode.value == AppMainMode.agent,
       );
       // Feed the active route to the performance monitor so jank events can be
-      // attributed to a screen (e.g. "/chat"). setRoute is a no-op while the
-      // monitor is stopped, so this is harmless when the overlay is off.
+      // attributed to a screen (e.g. "/chat"). Only the context is updated
+      // while the monitor is stopped, so this is harmless when the overlay is off.
       final provider = _router!.routeInformationProvider;
       String? lastPath;
       void report() {

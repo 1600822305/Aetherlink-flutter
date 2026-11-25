@@ -54,10 +54,13 @@ class ChatPage extends ConsumerWidget {
     );
 
     // Tag the performance monitor with the streaming state so jank during a
-    // streaming response is attributed correctly. No-op while the monitor is off.
+    // streaming response is attributed correctly. Fires immediately because the
+    // router resets page context on entering /chat, and an unchanged value
+    // would never re-report.
     ref.listen(
       chatControllerProvider.select((s) => s.value?.isStreaming ?? false),
       (_, streaming) => PerfMonitor.instance.setStreaming(streaming),
+      fireImmediately: true,
     );
 
     // The sidebar is hosted by [SidebarHost] (not `Scaffold.drawer`) so its

@@ -1,10 +1,11 @@
-import 'dart:ui' show FrameTiming;
+import 'dart:developer' show Timeline;
+import 'dart:ui' show FramePhase, FrameTiming;
 
 import 'histogram.dart';
 import 'models/perf_models.dart';
 
 /// One captured frame: the build (UI thread) / raster (GPU thread) split, the
-/// total span, the wall-clock capture time and the app context at that moment.
+/// total span, its vsync time and the app context at that moment.
 class _FrameSample {
   _FrameSample({
     required this.wallMs,
@@ -14,7 +15,7 @@ class _FrameSample {
     required this.context,
   });
 
-  /// Milliseconds since [FrameCollector] epoch (host wall clock).
+  /// Milliseconds from the [FrameCollector] epoch to the frame's vsync start.
   final int wallMs;
   final double buildMs;
   final double rasterMs;
@@ -52,7 +53,8 @@ class FrameCollector {
     this.recentCapacity = 240,
     this.slowCapacity = 240,
     this.warmupMs = 1500,
-  });
+    int Function()? clock,
+  }) : _clock = clock ?? _engineNowUs;
 
   /// Frozen-frame threshold (ms). A frame this slow reads as a freeze to the
   /// user; aligned with Firebase Performance's 700ms "frozen frame".
@@ -67,6 +69,9 @@ class FrameCollector {
   /// Frames within this many ms of the epoch are the warm-up phase.
   final int warmupMs;
 
+  /// Microseconds on the engine clock that stamps [FrameTiming]s.
+  final int Function() _clock;
+
   final List<_FrameSample> _recent = <_FrameSample>[];
   final List<_FrameSample> _slow = <_FrameSample>[];
 
@@ -75,6 +80,7 @@ class FrameCollector {
   Histogram _total = Histogram();
 
   DateTime _epoch = DateTime.now();
+  int _epochUs = 0;
   double _budgetMs = 1000 / 60;
 
   int _steadyCount = 0;
@@ -87,6 +93,12 @@ class FrameCollector {
   double _warmupWorst = 0;
 
   DateTime get epoch => _epoch;
+
+  /// [epoch] on the engine clock, in microseconds.
+  int get epochUs => _epochUs;
+
+  /// Current time on the engine clock, in microseconds.
+  int nowUs() => _clock();
   double get budgetMs => _budgetMs;
 
   /// Resets all state and arms the per-frame budget for the active display.
@@ -98,6 +110,7 @@ class FrameCollector {
     _raster = Histogram();
     _total = Histogram();
     _epoch = DateTime.now();
+    _epochUs = _clock();
     _steadyCount = 0;
     _slowCount = 0;
     _severeCount = 0;
@@ -115,19 +128,30 @@ class FrameCollector {
   }
 
   /// Ingests a batch of [FrameTiming]s (the signature of
-  /// `WidgetsBinding.addTimingsCallback`). [context] tags these frames.
-  void addTimings(List<FrameTiming> timings, PerfContext context) {
-    final now = DateTime.now().difference(_epoch).inMilliseconds;
+  /// `WidgetsBinding.addTimingsCallback`). Batches arrive late and coalesced,
+  /// so each frame is placed by its own vsync start and tagged with
+  /// [contextAt] that instant (engine-clock microseconds).
+  void addTimings(
+    List<FrameTiming> timings,
+    PerfContext Function(int vsyncUs) contextAt,
+  ) {
     for (final t in timings) {
+      final vsyncUs = t.timestampInMicroseconds(FramePhase.vsyncStart);
+      if (vsyncUs < _epochUs) continue;
+      final now = (vsyncUs - _epochUs) ~/ 1000;
       final build = _ms(t.buildDuration);
       final raster = _ms(t.rasterDuration);
       final total = _ms(t.totalSpan);
+      // UI and raster threads are pipelined: a frame only drops when one of
+      // them overruns the budget; totalSpan can approach two periods without
+      // any visible jank, so it stays a latency metric only.
+      final worst = build > raster ? build : raster;
       final s = _FrameSample(
         wallMs: now,
         buildMs: build,
         rasterMs: raster,
         totalMs: total,
-        context: context,
+        context: contextAt(vsyncUs),
       );
 
       _recent.add(s);
@@ -144,13 +168,13 @@ class FrameCollector {
         _build.add(build);
         _raster.add(raster);
         _total.add(total);
-        if (total > _budgetMs) _slowCount++;
-        if (total > _budgetMs * 2) _severeCount++;
+        if (worst > _budgetMs) _slowCount++;
+        if (worst > _budgetMs * 2) _severeCount++;
         if (total > frozenMs) _frozenCount++;
       }
 
       // Keep slow frames (any phase) for the jank-event list with context.
-      if (total > _budgetMs) {
+      if (worst > _budgetMs) {
         _slow.add(s);
         if (_slow.length > slowCapacity) {
           _slow.removeRange(0, _slow.length - slowCapacity);
@@ -166,7 +190,7 @@ class FrameCollector {
   /// burst. This is a live gauge only — never a window summary.
   double recentFps([int seconds = 1]) {
     if (_recent.isEmpty || seconds <= 0) return 0;
-    final nowMs = DateTime.now().difference(_epoch).inMilliseconds;
+    final nowMs = (_clock() - _epochUs) ~/ 1000;
     final cutoff = nowMs - seconds * 1000;
     var count = 0;
     for (var i = _recent.length - 1; i >= 0; i--) {
@@ -196,7 +220,7 @@ class FrameCollector {
         worstTotalMs: _warmupWorst,
       );
 
-  /// The worst [limit] slow frames (total span over budget), newest-biased,
+  /// The worst [limit] slow frames (build or raster over budget),
   /// each classified UI- vs raster-bound and tagged with its context.
   List<JankEvent> jankEvents({int limit = 30}) {
     final janks = [..._slow]..sort((a, b) => b.totalMs.compareTo(a.totalMs));
@@ -215,4 +239,6 @@ class FrameCollector {
   }
 
   static double _ms(Duration d) => d.inMicroseconds / 1000.0;
+
+  static int _engineNowUs() => Timeline.now;
 }
