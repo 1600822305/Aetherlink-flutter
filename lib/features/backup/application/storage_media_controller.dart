@@ -57,11 +57,15 @@ class StorageMediaController extends Notifier<StorageMediaState> {
       isLoading: !state.hasLoaded, isBusy: state.isBusy);
     try {
       final items = await ref.read(storageMediaRepositoryProvider).load();
-      if (ref.mounted) state = StorageMediaState(items: items, hasLoaded: true,
-        isLoading: false, isBusy: state.isBusy);
+      if (ref.mounted) {
+        state = StorageMediaState(items: items, hasLoaded: true,
+          isLoading: false, isBusy: state.isBusy);
+      }
     } catch (error) {
-      if (ref.mounted) state = StorageMediaState(items: state.items,
-        hasLoaded: state.hasLoaded, isLoading: false, isBusy: state.isBusy, error: '$error');
+      if (ref.mounted) {
+        state = StorageMediaState(items: state.items, hasLoaded: state.hasLoaded,
+          isLoading: false, isBusy: state.isBusy, error: '$error');
+      }
     }
   }
 
