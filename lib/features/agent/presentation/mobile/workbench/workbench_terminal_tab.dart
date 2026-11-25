@@ -141,8 +141,6 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
                         onTap: () =>
                             setState(() => _activeId = sessions[index].id),
                         onClose: () => _closeSession(sessions[index]),
-                        onCloned: (clone) =>
-                            setState(() => _activeId = clone.id),
                       ),
                     ),
                   ),

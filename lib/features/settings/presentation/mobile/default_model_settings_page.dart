@@ -144,7 +144,13 @@ class _DefaultModelSettingsPageState
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        // 底部让出系统导航栏（与 edit_model_page 等页面同款）。
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.paddingOf(context).bottom,
+        ),
         children: [
           _ProvidersCard(
             multiSelect: _multiSelect,

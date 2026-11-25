@@ -653,10 +653,6 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
       selected: _activeAi == session.id,
       onTap: () => _openAiSession(session),
       onClose: () => _closeAiSession(session),
-      onCloned: (clone) {
-        _refreshAiViews();
-        _openAiSession(clone);
-      },
     );
   }
 

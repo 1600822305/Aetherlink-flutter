@@ -261,23 +261,19 @@ class AiSessionStatusBar extends StatelessWidget {
 }
 
 /// 会话池会话的 tab chip：机器人图标（忙碌琥珀色 / 空闲绿色）+ 会话名；
-/// 长按弹出菜单：克隆终端 / 复制全部输出 / 关闭会话（有命令在跑时再确认一次）。
+/// 长按弹出菜单：复制全部输出 / 关闭会话（有命令在跑时再确认一次）。
 class SessionChip extends StatelessWidget {
   const SessionChip({
     required this.session,
     required this.selected,
     required this.onTap,
     this.onClose,
-    this.onCloned,
     super.key,
   });
 
   final PooledWorkspaceSession session;
   final bool selected;
   final VoidCallback onTap;
-
-  /// 克隆成功后回调新会话（调用方切过去）。
-  final void Function(PooledWorkspaceSession clone)? onCloned;
 
   /// 非空时菜单里出现「关闭会话」，选中后回调（调用方负责真正 close）。
   final VoidCallback? onClose;
@@ -331,10 +327,6 @@ class SessionChip extends StatelessWidget {
       ),
       items: [
         const PopupMenuItem(
-          value: 'clone',
-          child: _MenuRow(icon: LucideIcons.copy, label: '克隆终端'),
-        ),
-        const PopupMenuItem(
           value: 'output',
           child: _MenuRow(icon: LucideIcons.clipboardCopy, label: '复制全部输出'),
         ),
@@ -351,17 +343,6 @@ class SessionChip extends StatelessWidget {
     );
     if (!context.mounted) return;
     switch (action) {
-      case 'clone':
-        try {
-          final clone = await session.clone();
-          if (!context.mounted) return;
-          onCloned?.call(clone);
-          AppToast.info(context, '已克隆为 ${clone.name}');
-        } on WorkspaceSessionException catch (e) {
-          if (context.mounted) AppToast.info(context, e.message);
-        } catch (e) {
-          if (context.mounted) AppToast.info(context, '克隆失败：$e');
-        }
       case 'output':
         final text = _plainText(session.snapshot());
         if (text.trim().isEmpty) {
