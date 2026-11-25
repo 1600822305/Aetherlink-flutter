@@ -430,8 +430,19 @@ class _WorkspaceManagementPageState
           Color? color,
         }) =>
             ListTile(
-              leading: Icon(icon, size: 20, color: color),
-              title: Text(title, style: TextStyle(color: color)),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+              horizontalTitleGap: 12,
+              minLeadingWidth: 20,
+              leading: Icon(icon, size: 18, color: color),
+              title: Text(
+                title,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 14,
+                  color: color,
+                ),
+              ),
               subtitle: subtitle == null ? null : Text(subtitle, style: subtle),
               onTap: () => Navigator.of(ctx).pop(value),
             );
@@ -620,7 +631,7 @@ class _WorkspaceManagementPageState
                 firstName: invalidVisible.first.name,
                 onFix: () => _reauthorize(invalidVisible.first),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
             ],
             _SectionHeader(
               title: '工作区 (${workspaces.length})',
@@ -684,7 +695,7 @@ class _WorkspaceManagementPageState
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
                         child: Text(
                           '不在「切换工作区」面板中显示。重新打开会自动取消隐藏。',
                           style: theme.textTheme.bodySmall?.copyWith(
@@ -705,36 +716,18 @@ class _WorkspaceManagementPageState
             _OutlinedCard(
               child: Column(
                 children: [
-                  ListTile(
-                    leading: Icon(
-                      LucideIcons.squareTerminal,
-                      color: theme.colorScheme.primary,
-                    ),
-                    title: const Text('主终端'),
-                    subtitle: const Text('新建工作区时默认在这里浏览目录'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          primaryLabel ?? '未设置',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(LucideIcons.chevronRight, size: 18),
-                      ],
-                    ),
+                  _SettingRow(
+                    icon: LucideIcons.squareTerminal,
+                    title: '主终端',
+                    description: '新建工作区时默认在这里浏览目录',
+                    value: primaryLabel ?? '未设置',
                     onTap: _pickPrimaryTerminal,
                   ),
                   Divider(height: 1, color: theme.dividerColor),
-                  ListTile(
-                    title: const Text('进入时恢复上次会话'),
-                    subtitle: const Text('恢复上次的工作区和打开的文件标签'),
-                    leading: Icon(
-                      LucideIcons.history,
-                      color: theme.colorScheme.primary,
-                    ),
+                  _SettingRow(
+                    icon: LucideIcons.history,
+                    title: '进入时恢复上次会话',
+                    description: '恢复上次的工作区和打开的文件标签',
                     trailing: CustomSwitch(
                       value: _autoRestore ?? true,
                       onChanged: _autoRestore == null ? null : _setAutoRestore,
@@ -751,50 +744,41 @@ class _WorkspaceManagementPageState
             _OutlinedCard(
               child: Column(
                 children: [
-                  ListTile(
-                    leading: Icon(
-                      LucideIcons.shieldCheck,
-                      color: theme.colorScheme.primary,
-                    ),
-                    title: const Text('工具授权'),
-                    subtitle: const Text('AI 调用文件/终端工具时哪些免确认（白名单）'),
-                    trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                  _SettingRow(
+                    icon: LucideIcons.shieldCheck,
+                    title: '工具授权',
+                    description: 'AI 调用文件/终端工具时哪些免确认（白名单）',
                     onTap: () => showToolAuthSettingsPage(context),
                   ),
                   Divider(height: 1, color: theme.dividerColor),
-                  ListTile(
-                    leading: Icon(
-                      LucideIcons.listChecks,
-                      color: theme.colorScheme.primary,
-                    ),
-                    title: const Text('权限规则'),
-                    subtitle: const Text('审批时「总是允许 / 总是禁止」的持久规则'),
-                    trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                  _SettingRow(
+                    icon: LucideIcons.listChecks,
+                    title: '权限规则',
+                    description: '审批时「总是允许 / 总是禁止」的持久规则',
                     onTap: () => showAgentPermissionRulesPage(context),
                   ),
                   Divider(height: 1, color: theme.dividerColor),
-                  ListTile(
-                    leading: Icon(
-                      LucideIcons.webhook,
-                      color: theme.colorScheme.primary,
-                    ),
-                    title: const Text('Hooks'),
-                    subtitle: const Text('工作区 hooks.json 的审阅与信任'),
-                    trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                  _SettingRow(
+                    icon: LucideIcons.webhook,
+                    title: 'Hooks',
+                    description: '工作区 hooks.json 的审阅与信任',
                     onTap: () => showAgentHooksPage(context),
                   ),
                 ],
               ),
             ),
             if (all.isNotEmpty) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
               Center(
                 child: TextButton.icon(
                   style: TextButton.styleFrom(
                     foregroundColor: theme.colorScheme.error,
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: theme.textTheme.bodySmall,
                   ),
                   onPressed: _clearAll,
-                  icon: const Icon(LucideIcons.trash2, size: 16),
+                  icon: const Icon(LucideIcons.trash2, size: 14),
                   label: const Text('清空所有工作区记录'),
                 ),
               ),
@@ -841,19 +825,19 @@ class _WorkspaceRow extends StatelessWidget {
       onLongPress: onMore,
       child: Container(
         color: isInvalid ? theme.colorScheme.error.withValues(alpha: 0.04) : null,
-        padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+        padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
         child: Row(
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: isInvalid ? 0.12 : 0.15),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 isInvalid ? LucideIcons.folderX : _backendIcon(w),
-                size: 18,
+                size: 16,
                 color: color,
               ),
             ),
@@ -869,8 +853,9 @@ class _WorkspaceRow extends StatelessWidget {
                           w.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w500,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -914,6 +899,8 @@ class _WorkspaceRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                      height: 1.3,
                       color: isInvalid
                           ? theme.colorScheme.error
                           : theme.colorScheme.onSurfaceVariant,
@@ -954,6 +941,10 @@ class _WorkspaceRow extends StatelessWidget {
             IconButton(
               icon: const Icon(LucideIcons.ellipsis, size: 18),
               tooltip: '更多操作',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              color: theme.colorScheme.onSurfaceVariant,
               onPressed: onMore,
             ),
           ],
@@ -1048,7 +1039,7 @@ class _InvalidBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(LucideIcons.triangleAlert, size: 18, color: error),
+          Icon(LucideIcons.triangleAlert, size: 16, color: error),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -1062,11 +1053,93 @@ class _InvalidBanner extends StatelessWidget {
             style: FilledButton.styleFrom(
               backgroundColor: error,
               visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
             ),
             onPressed: onFix,
             child: Text(count == 1 ? '修复' : '修复第一个'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 设置行：与后台执行等设置页的行同规格——内边距 14/12、标题 14 号 w600、
+/// 说明 12 号、左侧 18 号图标。[trailing] 缺省时显示 [value] + 箭头。
+class _SettingRow extends StatelessWidget {
+  const _SettingRow({
+    required this.icon,
+    required this.title,
+    this.description,
+    this.value,
+    this.trailing,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? description;
+  final String? value;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (description != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      description!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 12,
+                        height: 1.3,
+                        color: muted,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            trailing ??
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (value != null)
+                      Text(
+                        value!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 12,
+                          color: muted,
+                        ),
+                      ),
+                    const SizedBox(width: 2),
+                    Icon(LucideIcons.chevronRight, size: 16, color: muted),
+                  ],
+                ),
+          ],
+        ),
       ),
     );
   }
@@ -1116,6 +1189,7 @@ class _SectionHeader extends StatelessWidget {
             child: Text(
               title,
               style: theme.textTheme.titleSmall?.copyWith(
+                fontSize: 13,
                 color: theme.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
@@ -1180,11 +1254,18 @@ class _OutlinedCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: theme.dividerColor),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000), // 与 ModelSettingsCard 一致
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: child,
+      child: Material(type: MaterialType.transparency, child: child),
     );
   }
 }

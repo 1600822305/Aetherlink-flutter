@@ -59,20 +59,40 @@ class WorldBookDetailPage extends ConsumerWidget {
 
   Widget _body(BuildContext context, WidgetRef ref, WorldBook book) {
     final theme = Theme.of(context);
+    final constantCount = book.entries.where((e) => e.constantActive).length;
+    final keywordCount = book.entries.length - constantCount;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         if (book.description.isNotEmpty) ...[
-          Text(
-            book.description,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+          WorldBookOutlinedCard(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      book.description,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 13,
+                        height: 1.5,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  if (book.groupName != null) WorldBookBadge(book.groupName!),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
         ],
         WorldBookSectionHeader(
           title: '条目 (${book.enabledEntryCount}/${book.entries.length})',
+          trailing: book.entries.isEmpty
+              ? null
+              : Text('常驻 $constantCount · 关键词 $keywordCount'),
         ),
         if (book.entries.isEmpty)
           WorldBookOutlinedCard(
@@ -80,8 +100,9 @@ class WorldBookDetailPage extends ConsumerWidget {
               padding: const EdgeInsets.all(24),
               child: Center(
                 child: Text(
-                  '还没有条目，点右上角 + 新建',
+                  '还没有条目，点右上角 ＋ 新建',
                   style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 13,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -111,6 +132,9 @@ class WorldBookDetailPage extends ConsumerWidget {
               ],
             ),
           ),
+        if (book.entries.length > 1)
+          const WorldBookHint('同优先级的条目按列表顺序注入，可在「⋯」里上移 / 下移。'),
+        if (!book.enabled) const WorldBookHint('这本世界书已关闭，条目不会被注入。'),
       ],
     );
   }

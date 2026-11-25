@@ -59,48 +59,35 @@ class WorldBookListRow extends StatelessWidget {
   final ValueChanged<bool> onToggle;
   final ValueChanged<WorldBookRowAction> onAction;
 
+  String _subtitle() {
+    final count = '${book.enabledEntryCount}/${book.entries.length} 条启用';
+    final parts = <String>[
+      if (!book.enabled) '已关闭',
+      count,
+      if (book.description.isNotEmpty) book.description,
+    ];
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final subtitle = StringBuffer(
-      '已启用 ${book.enabledEntryCount}/${book.entries.length} 条',
-    );
-    if (book.description.isNotEmpty) subtitle.write(' · ${book.description}');
-    return ListTile(
+    return WorldBookTile(
       onTap: onOpen,
-      leading: Icon(
-        LucideIcons.bookMarked,
-        color: book.enabled
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurfaceVariant,
+      dimmed: !book.enabled,
+      leading: WorldBookIconTile(
+        icon: LucideIcons.bookMarked,
+        active: book.enabled,
       ),
-      title: Text(
-        book.name.isEmpty ? '未命名世界书' : book.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        subtitle.toString(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
+      title: book.name.isEmpty ? '未命名世界书' : book.name,
+      subtitle: Text(_subtitle()),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           CustomSwitch(value: book.enabled, onChanged: onToggle),
-          PopupMenuButton<WorldBookRowAction>(
-            popUpAnimationStyle: AnimationStyle.noAnimation,
-            icon: Icon(
-              LucideIcons.ellipsis,
-              size: 18,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            tooltip: '更多操作',
+          const SizedBox(width: 4),
+          WorldBookMoreMenu<WorldBookRowAction>(
             onSelected: onAction,
-            itemBuilder: (ctx) => const [
+            items: const [
               PopupMenuItem(
                 value: WorldBookRowAction.rename,
                 child: Text('重命名'),
@@ -130,7 +117,7 @@ class WorldBookListRow extends StatelessWidget {
   }
 }
 
-/// 分组小标题：名称 + 数量，具名分组带重命名 / 解散菜单。
+/// 分组小标题：名称 + 数量徽标；具名分组带重命名 / 解散菜单。
 class WorldBookGroupHeader extends StatelessWidget {
   const WorldBookGroupHeader({
     super.key,
@@ -150,49 +137,41 @@ class WorldBookGroupHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final hasMenu = onRename != null || onDissolve != null;
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 4),
-      child: Row(
-        children: [
-          Icon(
-            LucideIcons.folder,
-            size: 15,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              '$name ($count)',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
+      padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+      child: SizedBox(
+        height: 24,
+        child: Row(
+          children: [
+            Flexible(
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-          if (hasMenu)
-            PopupMenuButton<String>(
-              popUpAnimationStyle: AnimationStyle.noAnimation,
-              icon: Icon(
-                LucideIcons.ellipsis,
-                size: 16,
-                color: theme.colorScheme.onSurfaceVariant,
+            WorldBookBadge('$count'),
+            const Spacer(),
+            if (hasMenu)
+              WorldBookMoreMenu<String>(
+                tooltip: '分组操作',
+                onSelected: (value) {
+                  if (value == 'rename') onRename?.call();
+                  if (value == 'dissolve') onDissolve?.call();
+                },
+                items: [
+                  if (onRename != null)
+                    const PopupMenuItem(value: 'rename', child: Text('重命名分组')),
+                  if (onDissolve != null)
+                    const PopupMenuItem(value: 'dissolve', child: Text('解散分组')),
+                ],
               ),
-              tooltip: '分组操作',
-              onSelected: (value) {
-                if (value == 'rename') onRename?.call();
-                if (value == 'dissolve') onDissolve?.call();
-              },
-              itemBuilder: (ctx) => [
-                if (onRename != null)
-                  const PopupMenuItem(value: 'rename', child: Text('重命名分组')),
-                if (onDissolve != null)
-                  const PopupMenuItem(value: 'dissolve', child: Text('解散分组')),
-              ],
-            )
-          else
-            const SizedBox(height: 32),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -213,25 +192,32 @@ class WorldBooksEmptyHint extends StatelessWidget {
     final theme = Theme.of(context);
     return WorldBookOutlinedCard(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 14),
         child: Column(
           children: [
             Icon(
               LucideIcons.bookMarked,
-              size: 40,
+              size: 32,
               color: theme.colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 12),
-            Text('还没有世界书', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 10),
+            Text(
+              '还没有世界书',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 4),
             Text(
-              '世界书在对话出现关键词时，把设定文本注入给模型',
+              '对话中出现关键词时，世界书会把对应的设定文本注入给模型',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             Wrap(
               spacing: 8,
               children: [

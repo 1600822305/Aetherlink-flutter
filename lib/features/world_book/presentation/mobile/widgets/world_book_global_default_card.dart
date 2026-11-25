@@ -41,17 +41,17 @@ class WorldBookGlobalDefaultCard extends ConsumerWidget {
     final known = {for (final b in books) b.id};
     final count = ids.where(known.contains).length;
     return WorldBookOutlinedCard(
-      child: ListTile(
+      child: WorldBookTile(
         onTap: () => _edit(context, ref, ids),
-        leading: Icon(LucideIcons.globe, color: theme.colorScheme.primary),
-        title: Text(count == 0 ? '全局默认：未设置' : '全局默认：$count 本'),
-        subtitle: Text(
-          '用于未绑定世界书的助手；助手绑定优先，话题可单独覆盖或关闭',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        leading: const WorldBookIconTile(icon: LucideIcons.globe),
+        title: count == 0 ? '全局默认：未设置' : '全局默认：$count 本',
+        subtitle: const Text('用于未绑定世界书的助手；助手绑定优先，话题可单独覆盖或关闭'),
+        subtitleMaxLines: 2,
+        trailing: Icon(
+          LucideIcons.chevronRight,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
         ),
-        trailing: const Icon(LucideIcons.chevronRight, size: 18),
       ),
     );
   }

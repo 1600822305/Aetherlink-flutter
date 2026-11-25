@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/world_book/application/world_book_io_service.dart';
 import 'package:aetherlink_flutter/features/world_book/application/world_books_controller.dart';
@@ -14,6 +15,69 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 WorldBooksController _controller(WidgetRef ref) =>
     ref.read(worldBooksControllerProvider.notifier);
+
+/// 列表页右上角 ＋：一个入口给出「新建空白 / 导入 JSON」两种方式。
+Future<void> showAddWorldBookSheet(BuildContext context, WidgetRef ref) async {
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      final theme = Theme.of(ctx);
+      Widget item(String value, IconData icon, String title, String subtitle) =>
+          ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+            horizontalTitleGap: 12,
+            minLeadingWidth: 20,
+            leading: Icon(icon, size: 18, color: theme.colorScheme.primary),
+            title: Text(
+              title,
+              style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
+            ),
+            subtitle: Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            onTap: () => Navigator.of(ctx).pop(value),
+          );
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                '添加世界书',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            item('create', LucideIcons.squarePen, '新建空白世界书', '填写名称和描述'),
+            item(
+              'import',
+              LucideIcons.upload,
+              '导入 JSON',
+              '支持 SillyTavern / RikkaHub 导出的文件',
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
+  if (!context.mounted) return;
+  switch (choice) {
+    case 'create':
+      await createWorldBook(context, ref);
+    case 'import':
+      await importWorldBook(context, ref);
+  }
+}
 
 Future<void> createWorldBook(BuildContext context, WidgetRef ref) async {
   final result = await showModalBottomSheet<WorldBookEditResult>(

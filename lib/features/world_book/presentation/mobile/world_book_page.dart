@@ -88,16 +88,10 @@ class WorldBookPage extends ConsumerWidget {
             : context.go(AppRouter.settingsPath),
         actions: [
           IconButton(
-            icon: const Icon(LucideIcons.upload, size: 20),
-            color: Theme.of(context).colorScheme.primary,
-            tooltip: '导入 JSON（支持 SillyTavern）',
-            onPressed: () => importWorldBook(context, ref),
-          ),
-          IconButton(
             icon: const Icon(LucideIcons.plus, size: 22),
             color: Theme.of(context).colorScheme.primary,
-            tooltip: '新建世界书',
-            onPressed: () => createWorldBook(context, ref),
+            tooltip: '新建或导入世界书',
+            onPressed: () => showAddWorldBookSheet(context, ref),
           ),
         ],
       ),
@@ -134,6 +128,10 @@ class WorldBookPage extends ConsumerWidget {
                   WorldBookGroupHeader(name: '未分组', count: ungrouped.length),
                 _card(context, ref, ungrouped, groups),
               ],
+              const WorldBookHint(
+                '关闭的世界书对所有助手和话题都不注入；列表顺序即注入顺序，'
+                '可在「⋯」里上移 / 下移。',
+              ),
             ],
           ],
         ),

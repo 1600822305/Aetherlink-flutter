@@ -1,10 +1,11 @@
-// 条目列表行：名称 / 位置·关键词摘要 / 启用开关 / 更多菜单。
+// 条目列表行：名称 / 关键词标签·位置摘要 / 启用开关 / 更多菜单。
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
+import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
 
 enum WorldBookEntryAction { moveUp, moveDown, delete }
 
@@ -32,57 +33,59 @@ class WorldBookEntryRow extends StatelessWidget {
   final ValueChanged<bool> onToggle;
   final ValueChanged<WorldBookEntryAction> onAction;
 
-  String _summary() {
-    final position = entry.position == WorldBookInjectionPosition.atDepth
-        ? '深度 ${entry.injectDepth}'
-        : worldBookPositionLabel(entry.position);
-    final trigger = entry.constantActive
-        ? '常驻'
-        : entry.keywords.isEmpty
-        ? '无关键词'
-        : entry.keywords.join('、');
-    return '$position · $trigger';
+  /// 最多展示的关键词标签数，其余折成「+N」。
+  static const int _maxKeywordChips = 3;
+
+  String _position() => entry.position == WorldBookInjectionPosition.atDepth
+      ? '深度 ${entry.injectDepth}'
+      : worldBookPositionLabel(entry.position);
+
+  Widget _summary(ThemeData theme) {
+    final position = _position();
+    final prefix = entry.enabled ? '' : '已关闭 · ';
+    if (entry.constantActive) return Text('$prefix$position');
+    if (entry.keywords.isEmpty) return Text('$prefix无关键词 · $position');
+    final shown = entry.keywords.take(_maxKeywordChips).toList();
+    final rest = entry.keywords.length - shown.length;
+    return Text.rich(
+      TextSpan(
+        children: [
+          if (prefix.isNotEmpty) TextSpan(text: prefix),
+          for (final k in shown)
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: _KeywordChip(k),
+            ),
+          TextSpan(text: '${rest > 0 ? '+$rest ' : ''}· $position'),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListTile(
+    return WorldBookTile(
       onTap: onOpen,
-      leading: Icon(
-        entry.constantActive ? LucideIcons.pin : LucideIcons.fileText,
-        size: 20,
-        color: entry.enabled
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurfaceVariant,
+      dimmed: !entry.enabled,
+      leading: WorldBookIconTile(
+        icon: entry.constantActive ? LucideIcons.pin : LucideIcons.fileText,
+        active: entry.enabled,
       ),
-      title: Text(
-        entry.name.isEmpty ? '未命名条目' : entry.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        _summary(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
+      title: entry.name.isEmpty ? '未命名条目' : entry.name,
+      titleBadges: [
+        if (entry.constantActive)
+          const WorldBookBadge('常驻', color: Color(0xFF10B981)),
+      ],
+      subtitle: _summary(theme),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           CustomSwitch(value: entry.enabled, onChanged: onToggle),
-          PopupMenuButton<WorldBookEntryAction>(
-            popUpAnimationStyle: AnimationStyle.noAnimation,
-            icon: Icon(
-              LucideIcons.ellipsis,
-              size: 18,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            tooltip: '更多操作',
+          const SizedBox(width: 4),
+          WorldBookMoreMenu<WorldBookEntryAction>(
             onSelected: onAction,
-            itemBuilder: (ctx) => const [
+            items: const [
               PopupMenuItem(
                 value: WorldBookEntryAction.moveUp,
                 child: Text('上移'),
@@ -98,6 +101,34 @@ class WorldBookEntryRow extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _KeywordChip extends StatelessWidget {
+  const _KeywordChip(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.labelSmall?.copyWith(
+          fontSize: 11,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
