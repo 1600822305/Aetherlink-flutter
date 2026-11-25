@@ -937,14 +937,19 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   }
 
   /// [5 项目指令]：任务绑定工作区（缺省取档案绑定/当前工作区）
-  /// 根目录的 AGENTS.md。
+  /// 根目录的 AGENTS.md。任务 / 档案绑定了工作区但它已被移除时跳过该层，
+  /// 不回退到当前工作区——否则会把另一个项目的指令注入给智能体。
   Future<String?> _projectInstructions(Ref ref, AgentTask task) async {
     try {
       final workspaces = await loadWorkspaces(ref);
       if (workspaces.isEmpty) return null;
-      final bound =
-          workspaces.where((w) => w.id == task.workspaceId).firstOrNull ??
-          workspaces.where((w) => w.id == _profile.workspaceId).firstOrNull;
+      final boundId = task.workspaceId.isNotEmpty
+          ? task.workspaceId
+          : (_profile.workspaceId ?? '');
+      final bound = boundId.isEmpty
+          ? null
+          : workspaces.where((w) => w.id == boundId).firstOrNull;
+      if (boundId.isNotEmpty && bound == null) return null;
       final workspace =
           bound ?? ref.read(currentWorkspaceProvider) ?? workspaces.first;
       final backend = ref.read(workspaceBackendProvider(workspace));

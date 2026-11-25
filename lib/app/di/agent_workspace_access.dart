@@ -81,6 +81,11 @@ final agentWorkspaceChangesProvider = FutureProvider.autoDispose
     .family<AgentChangesResult, String?>((ref, workspaceId) async {
   final resolved = await resolveAgentWorkspace(ref, workspaceId);
   if (resolved == null) {
+    if (workspaceId != null && workspaceId.isNotEmpty) {
+      return const AgentChangesResult.unavailable(
+        '绑定的工作区已从列表中移除\n在话题或智能体设置里重新选择工作区后这里会显示未提交改动',
+      );
+    }
     return const AgentChangesResult.unavailable(
       '尚未打开任何工作区\n在工作区页面「打开文件夹」后这里会显示未提交改动',
     );
@@ -300,10 +305,13 @@ Future<String> readAgentWorkspaceDoc(
 
 /// 按任务/档案绑定解析工作区及其后端。
 ///
-/// [allowFallback] 为 true 时绑定未命中会回退到当前打开 → 最近
-/// 第一个，仅限纯展示型场景（diff 面板）；检查点/回滚等破坏性
-/// 操作必须传 false，绑定解析失败时直接返回 null，避免作用到
-/// 错误的工作区。
+/// [allowFallback] 为 true 时，**未绑定**（[workspaceId] 为 null / 空）会回退到
+/// 当前打开 → 最近第一个，仅限纯展示型场景（diff 面板）；检查点/回滚等破坏性
+/// 操作必须传 false。
+///
+/// 绑定了 id 但该工作区已不在列表里（被用户移除）时**一律返回 null**，不论
+/// [allowFallback]：静默落到当前工作区会让智能体读写一个用户没选过的目录
+///（工作区管理页移除后的悬空引用）。
 Future<(Workspace, WorkspaceBackend)?> resolveAgentWorkspace(
   Ref ref,
   String? workspaceId, {
@@ -316,8 +324,9 @@ Future<(Workspace, WorkspaceBackend)?> resolveAgentWorkspace(
     workspaces = const [];
   }
   if (workspaces.isEmpty) return null;
+  final hasBinding = workspaceId != null && workspaceId.isNotEmpty;
   final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
-  if (bound == null && workspaceId != null && !allowFallback) return null;
+  if (bound == null && (hasBinding || !allowFallback)) return null;
   final workspace = bound ??
       (allowFallback
           ? ref.read(currentWorkspaceProvider) ?? workspaces.first

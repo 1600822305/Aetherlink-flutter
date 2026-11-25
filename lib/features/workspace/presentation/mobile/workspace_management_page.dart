@@ -1,4 +1,4 @@
-// 「工作区管理」 page (设置 → 数据与知识 → 工作区管理, route /settings/workspace).
+// 「工作区管理」page (设置 → 数据与知识 → 工作区管理, route /settings/workspace).
 //
 // Lives in the workspace feature (not settings) because it reaches workspace
 // `application` / `data` directly — the cross-feature import-boundary guard
@@ -10,9 +10,14 @@
 // [workspaceStoreProvider], so the two surfaces stay consistent.
 //
 // Capabilities: open a folder; open / rename / re-authorize (rebind by stable
-// id) / remove a workspace; toggle "进入工作区自动恢复上次会话"; clear all records.
-// On entry it proactively probes each SAF grant (verifyAccess) to badge revoked
-// entries instead of failing only when opened.
+// id) / pin / hide / remove a workspace; pick the 主终端 (default backend for
+// 新建); toggle「进入时恢复上次会话」; clear all records.
+// On entry it proactively probes each backend (verifyAccess) to badge revoked
+// entries instead of failing only when opened, and shows a spinner while the
+// probe runs plus a summary banner when anything is broken.
+//
+// 移除 / 清空前会读 [workspaceUsageProvider]（app/di 只读 seam）提示绑定了该
+// 工作区的智能体——store 的 remove/clear 只过滤列表，不检查引用。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,10 +25,12 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/workspace_usage_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/hooks/agent_hooks_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/settings/agent_permission_rules_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/features/workspace/application/primary_terminal_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
@@ -34,8 +41,17 @@ import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dar
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/primary_terminal_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/tool_auth_settings_page.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+
+/// 后端配色：本地蓝 / 内置终端橙 / SSH 紫 / Termux 青。仅用于列表图标底色。
+const Color _kLocalColor = Color(0xFF4F6EF7);
+const Color _kProotColor = Color(0xFFF59E0B);
+const Color _kSshColor = Color(0xFF8B5CF6);
+const Color _kTermuxColor = Color(0xFF0EA5A4);
+const Color _kFullScopeColor = Color(0xFFD97706);
+const Color _kIsolatedColor = Color(0xFF7C3AED);
 
 class WorkspaceManagementPage extends ConsumerStatefulWidget {
   const WorkspaceManagementPage({super.key});
@@ -50,9 +66,15 @@ class _WorkspaceManagementPageState
   // null = still loading; defaults to true (auto-restore on) when unset.
   bool? _autoRestore;
 
-  // Ids of workspaces whose SAF grant has been revoked/expired (proactive
-  // health check via the backend's verifyAccess). Drives the 「授权已失效」 badge.
+  // Ids of workspaces whose backend access has been revoked / is unreachable
+  // (proactive health check via verifyAccess). Drives the「授权失效」badge.
   Set<String> _invalidIds = const {};
+
+  // 健康检查进行中（分组标题旁显示 spinner，避免「先正常→突然变红」的跳变）。
+  bool _checking = false;
+
+  // 「已隐藏」分组默认折叠。
+  bool _hiddenExpanded = false;
 
   @override
   void initState() {
@@ -62,20 +84,25 @@ class _WorkspaceManagementPageState
   }
 
   // Proactively probes every workspace's backend access in parallel so revoked
-  // (SAF) / unreachable (SSH) entries get a 「授权已失效」 badge instead of failing
-  // only when opened. SAF = a cheap permission lookup; SSH/Termux = an SFTP
-  // stat(root) over the pooled transport (设计文档 §4.2).
+  // (SAF) / unreachable (SSH) entries get a badge instead of failing only when
+  // opened. SAF = a cheap permission lookup; SSH/Termux = an SFTP stat(root)
+  // over the pooled transport.
   Future<void> _refreshHealth() async {
-    final workspaces = await ref.read(workspaceStoreProvider.future);
-    final saf = ref.read(localSafBackendProvider);
-    // Profiles must be hydrated before the pool can resolve connectionIds.
-    await ref.read(sshConnectionStoreProvider.future);
-    final pool = ref.read(sshBackendPoolProvider);
-    final invalid = <String>{};
-    await Future.wait([
-      for (final w in workspaces) _checkHealth(w, saf, pool, invalid),
-    ]);
-    if (mounted) setState(() => _invalidIds = invalid);
+    if (mounted) setState(() => _checking = true);
+    try {
+      final workspaces = await ref.read(workspaceStoreProvider.future);
+      final saf = ref.read(localSafBackendProvider);
+      // Profiles must be hydrated before the pool can resolve connectionIds.
+      await ref.read(sshConnectionStoreProvider.future);
+      final pool = ref.read(sshBackendPoolProvider);
+      final invalid = <String>{};
+      await Future.wait([
+        for (final w in workspaces) _checkHealth(w, saf, pool, invalid),
+      ]);
+      if (mounted) setState(() => _invalidIds = invalid);
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
   }
 
   Future<void> _checkHealth(
@@ -120,10 +147,9 @@ class _WorkspaceManagementPageState
         .saveSetting(kWorkspaceAutoRestoreKey, value ? 'true' : 'false');
   }
 
-  // + 按钮 / 空状态:打开统一的「打开文件夹」面板(本地 / SSH / Termux),与工作区内
-  // 的快速切换面板(open_workspace_sheet)共用同一套入口,新增后端自动同步。新工作区
-  // 被设为当前后跳进 /workspace —— 用一次性 listener 捕获切换,兼容本地/SSH/Termux
-  // 各自的异步流程(选择类型时外层面板已先 pop,无法在 await 之后同步判断)。
+  // + 按钮 / 空状态:打开统一的「新建工作区」面板(主终端 / 本地 / SSH / Termux /
+  // 内置终端)。新工作区被设为当前后跳进 /workspace —— 用一次性 listener 捕获切换,
+  // 兼容各自的异步流程(选择类型时外层面板已先 pop,无法在 await 之后同步判断)。
   Future<void> _addWorkspace() async {
     final before = ref.read(currentWorkspaceProvider)?.id;
     var navigated = false;
@@ -175,7 +201,7 @@ class _WorkspaceManagementPageState
     );
   }
 
-  // 重新授权(企业级:rebind by stable id)。重选目录后:
+  // 重新授权(rebind by stable id)。重选目录后:
   //   · 同一目录(root 相同,SAF 的 content:// 根是确定性的) → 静默刷新授权;
   //   · 不同目录 → 二次确认后,把新 root 绑回原条目的 id(保留 id/名称/历史),
   //     绝不产生重复条目,也不依赖脆弱的"按名字匹配"。
@@ -184,7 +210,7 @@ class _WorkspaceManagementPageState
       case WorkspaceBackendType.localSaf:
         await _reauthorizeSaf(w);
       case WorkspaceBackendType.prootLocal:
-        _snack('内置终端无需授权；环境损坏时在打开面板里重新安装即可');
+        _snack('内置终端无需授权；环境损坏时在新建面板里重新安装即可');
       case WorkspaceBackendType.ssh:
       case WorkspaceBackendType.termux:
         await _editConnection(w);
@@ -218,7 +244,7 @@ class _WorkspaceManagementPageState
     if (mounted) _snack('已重新授权');
   }
 
-  // 「重新授权」 for SSH / Termux = edit the referenced SshConnection (host /
+  // 「重新授权」for SSH / Termux = edit the referenced SshConnection (host /
   // credential / key). The form saves through and invalidates the pooled
   // transport; we then re-probe to refresh the badge.
   Future<void> _editConnection(Workspace w) async {
@@ -244,6 +270,14 @@ class _WorkspaceManagementPageState
     }
   }
 
+  // 主终端 = 新建工作区时默认浏览目录的后端。这里只改默认值，不影响已有工作区。
+  Future<void> _pickPrimaryTerminal() async {
+    final picked = await showPrimaryTerminalPickerSheet(context, ref);
+    if (picked == null) return;
+    await ref.read(primaryTerminalStoreProvider.notifier).set(picked);
+    if (mounted) _snack('已设为主终端');
+  }
+
   void _snack(String message) {
     if (!mounted) return;
     AppToast.info(context, message);
@@ -256,49 +290,257 @@ class _WorkspaceManagementPageState
       ref.read(workspaceStoreProvider.notifier).setHidden(w.id, hidden);
 
   Future<void> _remove(Workspace w) async {
+    final usage = ref.read(workspaceUsageProvider)[w.id];
     final ok = await _confirm(
-      title: '移除工作区',
-      message: '将从工作区列表中移除「${w.name}」。不会删除磁盘上的任何文件。',
+      title: '移除「${w.name}」?',
+      message: '只会从列表中移除，不删除磁盘上的任何文件。',
+      impact: usage == null || usage.isEmpty ? null : _impactText(usage),
       confirmLabel: '移除',
     );
-    if (ok) await ref.read(workspaceStoreProvider.notifier).remove(w.id);
+    if (ok) await ref.read(workspaceRemovalProvider).remove(w.id);
   }
 
   Future<void> _clearAll() async {
+    final usage = ref.read(workspaceUsageProvider);
+    final profiles = {for (final u in usage.values) ...u.profileNames};
+    final servers = {for (final u in usage.values) ...u.mcpServerNames};
     final ok = await _confirm(
       title: '清空所有工作区记录',
       message: '将清空整个工作区列表。不会删除磁盘上的任何文件。',
+      impact: profiles.isEmpty && servers.isEmpty
+          ? null
+          : [
+              if (profiles.isNotEmpty)
+                '${profiles.length} 个智能体会解除工作区绑定。',
+              if (servers.isNotEmpty)
+                '${servers.length} 个 MCP 服务器会失去运行环境并被停用。',
+              '已有话题保留记录，但无法继续操作原工作区。',
+            ].join('\n'),
       confirmLabel: '清空',
     );
-    if (ok) await ref.read(workspaceStoreProvider.notifier).clear();
+    if (ok) await ref.read(workspaceRemovalProvider).clearAll();
+  }
+
+  static String _impactText(WorkspaceUsage u) {
+    final lines = <String>[];
+    if (u.profileNames.isNotEmpty) {
+      lines.add('${u.profileNames.length} 个智能体会解除绑定：');
+      for (final n in u.profileNames.take(5)) {
+        lines.add('· $n');
+      }
+      if (u.profileNames.length > 5) {
+        lines.add('· 等 ${u.profileNames.length} 个');
+      }
+    }
+    if (u.mcpServerNames.isNotEmpty) {
+      lines.add(
+        'MCP 服务器 ${u.mcpServerNames.join('、')} 会失去运行环境并被停用。',
+      );
+    }
+    if (u.activeTaskCount > 0) {
+      lines.add('${u.activeTaskCount} 个话题仍在进行中，之后的文件/终端操作会失败。');
+    } else if (u.taskCount > 0) {
+      lines.add('${u.taskCount} 个话题保留记录，但无法继续操作这个工作区。');
+    }
+    return lines.join('\n');
   }
 
   Future<bool> _confirm({
     required String title,
     required String message,
     required String confirmLabel,
+    String? impact,
   }) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(message),
+              if (impact != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: _kFullScopeColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        LucideIcons.triangleAlert,
+                        size: 16,
+                        color: _kFullScopeColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          impact,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
             ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(confirmLabel),
+            ),
+          ],
+        );
+      },
     );
     return result ?? false;
+  }
+
+  // 行操作面板（替代原 ⋮ 菜单）：每项带一句语义说明，「移除」单独红色置底。
+  Future<void> _showActions(Workspace w, {required bool isInvalid}) async {
+    final usage = ref.read(workspaceUsageProvider)[w.id];
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final subtle = theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        );
+        Widget item(
+          String value,
+          IconData icon,
+          String title, {
+          String? subtitle,
+          Color? color,
+        }) =>
+            ListTile(
+              leading: Icon(icon, size: 20, color: color),
+              title: Text(title, style: TextStyle(color: color)),
+              subtitle: subtitle == null ? null : Text(subtitle, style: subtle),
+              onTap: () => Navigator.of(ctx).pop(value),
+            );
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      w.name,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (usage != null && usage.profileNames.isNotEmpty)
+                      Text(
+                        '被 ${usage.profileNames.length} 个智能体使用',
+                        style: subtle,
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              if (!isInvalid) item('open', LucideIcons.folderOpen, '打开'),
+              if (w.backendType != WorkspaceBackendType.prootLocal)
+                item(
+                  'reauthorize',
+                  LucideIcons.keyRound,
+                  w.backendType == WorkspaceBackendType.localSaf
+                      ? '重新授权'
+                      : '编辑连接',
+                  subtitle: w.backendType == WorkspaceBackendType.localSaf
+                      ? '重新选择文件夹，保留名称与历史'
+                      : '修改主机 / 凭据，使用同一连接的工作区一起生效',
+                ),
+              item(
+                'pin',
+                w.pinned ? LucideIcons.pinOff : LucideIcons.pin,
+                w.pinned ? '取消置顶' : '置顶',
+              ),
+              item(
+                'rename',
+                LucideIcons.pencil,
+                '重命名',
+                subtitle: '只改显示名，不影响真实目录',
+              ),
+              item(
+                'hide',
+                w.hidden ? LucideIcons.eye : LucideIcons.eyeOff,
+                w.hidden ? '取消隐藏' : '隐藏',
+                subtitle: w.hidden ? null : '不在「切换工作区」面板显示；重新打开会自动取消隐藏',
+              ),
+              const Divider(height: 1),
+              item(
+                'remove',
+                LucideIcons.trash2,
+                '从列表移除…',
+                subtitle: '不删除文件',
+                color: theme.colorScheme.error,
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    switch (action) {
+      case 'open':
+        await _open(w);
+      case 'reauthorize':
+        await _reauthorize(w);
+      case 'pin':
+        await _togglePin(w);
+      case 'rename':
+        await _rename(w);
+      case 'hide':
+        await _setHidden(w, !w.hidden);
+      case 'remove':
+        await _remove(w);
+    }
+  }
+
+  String? _connectionLabel(Workspace w) {
+    final cid = w.connectionId;
+    if (cid == null || cid.isEmpty) return null;
+    return ref.read(sshConnectionStoreProvider.notifier).byId(cid)?.label;
+  }
+
+  Widget _buildRow(
+    Workspace w, {
+    required Workspace? current,
+    required Map<String, WorkspaceUsage> usage,
+  }) {
+    final isInvalid = _invalidIds.contains(w.id);
+    return _WorkspaceRow(
+      workspace: w,
+      isCurrent: w.id == current?.id,
+      isInvalid: isInvalid,
+      connectionLabel: _connectionLabel(w),
+      agentCount: usage[w.id]?.profileNames.length ?? 0,
+      // 失效条目:点击直接走重新授权(直接打开必失败)。
+      onTap: isInvalid ? () => _reauthorize(w) : () => _open(w),
+      onMore: () => _showActions(w, isInvalid: isInvalid),
+    );
   }
 
   @override
@@ -306,6 +548,13 @@ class _WorkspaceManagementPageState
     final theme = Theme.of(context);
     final recent = ref.watch(workspaceStoreProvider);
     final current = ref.watch(currentWorkspaceProvider);
+    final usage = ref.watch(workspaceUsageProvider);
+    // 连接名 / 主终端展示名都依赖连接档案，watch 以便档案加载或改名后刷新。
+    ref.watch(sshConnectionStoreProvider);
+    final primary = ref.watch(primaryTerminalStoreProvider).value;
+    final primaryLabel =
+        primary == null ? null : primaryTerminalLabel(ref, primary);
+
     // 置顶靠前、组内按活跃时间；隐藏条目沉底到独立分组可恢复。
     final all = recent.asData?.value ?? const <Workspace>[];
     final workspaces = sortWorkspacesForDisplay([
@@ -316,6 +565,10 @@ class _WorkspaceManagementPageState
       for (final w in all)
         if (w.hidden) w,
     ]);
+    final invalidVisible = [
+      for (final w in workspaces)
+        if (_invalidIds.contains(w.id)) w,
+    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -356,133 +609,198 @@ class _WorkspaceManagementPageState
           const SizedBox(width: 4),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _SectionHeader(title: '工作区 (${workspaces.length})'),
-          if (workspaces.isEmpty)
-            _EmptyHint(theme: theme, onOpen: _addWorkspace)
-          else
+      body: RefreshIndicator(
+        onRefresh: _refreshHealth,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (invalidVisible.isNotEmpty) ...[
+              _InvalidBanner(
+                count: invalidVisible.length,
+                firstName: invalidVisible.first.name,
+                onFix: () => _reauthorize(invalidVisible.first),
+              ),
+              const SizedBox(height: 12),
+            ],
+            _SectionHeader(
+              title: '工作区 (${workspaces.length})',
+              trailing: _checking
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '检查中',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    )
+                  : null,
+            ),
+            if (workspaces.isEmpty)
+              _EmptyHint(theme: theme, onOpen: _addWorkspace)
+            else
+              _OutlinedCard(
+                child: Column(
+                  children: [
+                    for (var i = 0; i < workspaces.length; i++) ...[
+                      if (i > 0) Divider(height: 1, color: theme.dividerColor),
+                      _buildRow(
+                        workspaces[i],
+                        current: current,
+                        usage: usage,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            if (hiddenWorkspaces.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () =>
+                    setState(() => _hiddenExpanded = !_hiddenExpanded),
+                child: _SectionHeader(
+                  title: '已隐藏 (${hiddenWorkspaces.length})',
+                  trailing: Icon(
+                    _hiddenExpanded
+                        ? LucideIcons.chevronDown
+                        : LucideIcons.chevronRight,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (_hiddenExpanded)
+                _OutlinedCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                        child: Text(
+                          '不在「切换工作区」面板中显示。重新打开会自动取消隐藏。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      for (final w in hiddenWorkspaces) ...[
+                        Divider(height: 1, color: theme.dividerColor),
+                        _buildRow(w, current: current, usage: usage),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+            const SizedBox(height: 16),
+            const _SectionHeader(title: '偏好'),
             _OutlinedCard(
               child: Column(
                 children: [
-                  for (var i = 0; i < workspaces.length; i++) ...[
-                    if (i > 0) Divider(height: 1, color: theme.dividerColor),
-                    _WorkspaceRow(
-                      workspace: workspaces[i],
-                      isCurrent: workspaces[i].id == current?.id,
-                      isInvalid: _invalidIds.contains(workspaces[i].id),
-                      onOpen: () => _open(workspaces[i]),
-                      onRename: () => _rename(workspaces[i]),
-                      onReauthorize: () => _reauthorize(workspaces[i]),
-                      onTogglePin: () => _togglePin(workspaces[i]),
-                      onToggleHidden: () => _setHidden(workspaces[i], true),
-                      onRemove: () => _remove(workspaces[i]),
+                  ListTile(
+                    leading: Icon(
+                      LucideIcons.squareTerminal,
+                      color: theme.colorScheme.primary,
                     ),
-                  ],
+                    title: const Text('主终端'),
+                    subtitle: const Text('新建工作区时默认在这里浏览目录'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          primaryLabel ?? '未设置',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(LucideIcons.chevronRight, size: 18),
+                      ],
+                    ),
+                    onTap: _pickPrimaryTerminal,
+                  ),
+                  Divider(height: 1, color: theme.dividerColor),
+                  ListTile(
+                    title: const Text('进入时恢复上次会话'),
+                    subtitle: const Text('恢复上次的工作区和打开的文件标签'),
+                    leading: Icon(
+                      LucideIcons.history,
+                      color: theme.colorScheme.primary,
+                    ),
+                    trailing: CustomSwitch(
+                      value: _autoRestore ?? true,
+                      onChanged: _autoRestore == null ? null : _setAutoRestore,
+                    ),
+                    onTap: _autoRestore == null
+                        ? null
+                        : () => _setAutoRestore(!_autoRestore!),
+                  ),
                 ],
               ),
             ),
-          if (hiddenWorkspaces.isNotEmpty) ...[
             const SizedBox(height: 16),
-            _SectionHeader(title: '已隐藏 (${hiddenWorkspaces.length})'),
+            const _SectionHeader(title: '智能体'),
             _OutlinedCard(
               child: Column(
                 children: [
-                  for (var i = 0; i < hiddenWorkspaces.length; i++) ...[
-                    if (i > 0) Divider(height: 1, color: theme.dividerColor),
-                    _WorkspaceRow(
-                      workspace: hiddenWorkspaces[i],
-                      isCurrent: hiddenWorkspaces[i].id == current?.id,
-                      isInvalid: _invalidIds.contains(hiddenWorkspaces[i].id),
-                      onOpen: () => _open(hiddenWorkspaces[i]),
-                      onRename: () => _rename(hiddenWorkspaces[i]),
-                      onReauthorize: () => _reauthorize(hiddenWorkspaces[i]),
-                      onTogglePin: () => _togglePin(hiddenWorkspaces[i]),
-                      onToggleHidden: () =>
-                          _setHidden(hiddenWorkspaces[i], false),
-                      onRemove: () => _remove(hiddenWorkspaces[i]),
+                  ListTile(
+                    leading: Icon(
+                      LucideIcons.shieldCheck,
+                      color: theme.colorScheme.primary,
                     ),
-                  ],
+                    title: const Text('工具授权'),
+                    subtitle: const Text('AI 调用文件/终端工具时哪些免确认（白名单）'),
+                    trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                    onTap: () => showToolAuthSettingsPage(context),
+                  ),
+                  Divider(height: 1, color: theme.dividerColor),
+                  ListTile(
+                    leading: Icon(
+                      LucideIcons.listChecks,
+                      color: theme.colorScheme.primary,
+                    ),
+                    title: const Text('权限规则'),
+                    subtitle: const Text('审批时「总是允许 / 总是禁止」的持久规则'),
+                    trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                    onTap: () => showAgentPermissionRulesPage(context),
+                  ),
+                  Divider(height: 1, color: theme.dividerColor),
+                  ListTile(
+                    leading: Icon(
+                      LucideIcons.webhook,
+                      color: theme.colorScheme.primary,
+                    ),
+                    title: const Text('Hooks'),
+                    subtitle: const Text('工作区 hooks.json 的审阅与信任'),
+                    trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                    onTap: () => showAgentHooksPage(context),
+                  ),
                 ],
               ),
             ),
-          ],
-          const SizedBox(height: 16),
-          const _SectionHeader(title: '偏好'),
-          _OutlinedCard(
-            child: Column(
-              children: [
-                ListTile(
-                  title: const Text('进入工作区自动恢复上次会话'),
-                  subtitle: const Text('像 IDE 一样恢复上次打开的工作区与文件标签'),
-                  leading: Icon(
-                    LucideIcons.history,
-                    color: theme.colorScheme.primary,
+            if (all.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Center(
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
                   ),
-                  trailing: CustomSwitch(
-                    value: _autoRestore ?? true,
-                    onChanged: _autoRestore == null ? null : _setAutoRestore,
-                  ),
-                  onTap: _autoRestore == null
-                      ? null
-                      : () => _setAutoRestore(!_autoRestore!),
+                  onPressed: _clearAll,
+                  icon: const Icon(LucideIcons.trash2, size: 16),
+                  label: const Text('清空所有工作区记录'),
                 ),
-                Divider(height: 1, color: theme.dividerColor),
-                ListTile(
-                  leading: Icon(
-                    LucideIcons.shieldCheck,
-                    color: theme.colorScheme.primary,
-                  ),
-                  title: const Text('工具授权'),
-                  subtitle: const Text('AI 调用文件/终端工具时哪些免确认（白名单）'),
-                  trailing: const Icon(LucideIcons.chevronRight, size: 18),
-                  onTap: () => showToolAuthSettingsPage(context),
-                ),
-                Divider(height: 1, color: theme.dividerColor),
-                ListTile(
-                  leading: Icon(
-                    LucideIcons.listChecks,
-                    color: theme.colorScheme.primary,
-                  ),
-                  title: const Text('权限规则'),
-                  subtitle: const Text('智能体审批的「总是允许 / 总是禁止」持久规则'),
-                  trailing: const Icon(LucideIcons.chevronRight, size: 18),
-                  onTap: () => showAgentPermissionRulesPage(context),
-                ),
-                Divider(height: 1, color: theme.dividerColor),
-                ListTile(
-                  leading: Icon(
-                    LucideIcons.webhook,
-                    color: theme.colorScheme.primary,
-                  ),
-                  title: const Text('Hooks'),
-                  subtitle: const Text('工作区 hooks.json 的审阅与信任'),
-                  trailing: const Icon(LucideIcons.chevronRight, size: 18),
-                  onTap: () => showAgentHooksPage(context),
-                ),
-              ],
-            ),
-          ),
-          if (workspaces.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const _SectionHeader(title: '危险区'),
-            _OutlinedCard(
-              child: ListTile(
-                leading: Icon(
-                  LucideIcons.trash2,
-                  color: theme.colorScheme.error,
-                ),
-                title: Text(
-                  '清空所有工作区记录',
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
-                subtitle: const Text('仅清空记录,不删除磁盘文件'),
-                onTap: _clearAll,
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -493,129 +811,202 @@ class _WorkspaceRow extends StatelessWidget {
     required this.workspace,
     required this.isCurrent,
     required this.isInvalid,
-    required this.onOpen,
-    required this.onRename,
-    required this.onReauthorize,
-    required this.onTogglePin,
-    required this.onToggleHidden,
-    required this.onRemove,
+    required this.connectionLabel,
+    required this.agentCount,
+    required this.onTap,
+    required this.onMore,
   });
 
   final Workspace workspace;
   final bool isCurrent;
   final bool isInvalid;
-  final VoidCallback onOpen;
-  final VoidCallback onRename;
-  final VoidCallback onReauthorize;
 
-  /// 置顶/取消置顶（按当前 [Workspace.pinned] 取反）。
-  final VoidCallback onTogglePin;
+  /// SSH / Termux 引用的连接档案名；其他后端为 null。
+  final String? connectionLabel;
 
-  /// 隐藏或取消隐藏（行在哪个分组决定方向）。
-  final VoidCallback onToggleHidden;
-  final VoidCallback onRemove;
+  /// 绑定了该工作区的智能体档案数。
+  final int agentCount;
+  final VoidCallback onTap;
+  final VoidCallback onMore;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // 失效条目:点击直接走重新授权(直接打开必失败)。
-    return ListTile(
-      onTap: isInvalid ? onReauthorize : onOpen,
-      leading: Icon(
-        isInvalid ? LucideIcons.folderX : LucideIcons.folder,
-        color: isInvalid
-            ? theme.colorScheme.error
-            : isCurrent
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurfaceVariant,
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              workspace.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+    final w = workspace;
+    final isFull = w.scope == WorkspaceScope.full;
+    final color = isInvalid ? theme.colorScheme.error : _backendColor(w);
+
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onMore,
+      child: Container(
+        color: isInvalid ? theme.colorScheme.error.withValues(alpha: 0.04) : null,
+        padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: isInvalid ? 0.12 : 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                isInvalid ? LucideIcons.folderX : _backendIcon(w),
+                size: 18,
+                color: color,
+              ),
             ),
-          ),
-          if (workspace.pinned) ...[
-            const SizedBox(width: 6),
-            Icon(
-              LucideIcons.pin,
-              size: 13,
-              color: theme.colorScheme.onSurfaceVariant,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          w.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (w.pinned) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          LucideIcons.pin,
+                          size: 13,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                      if (isInvalid)
+                        _Badge(
+                          theme: theme,
+                          label: '授权失效',
+                          color: theme.colorScheme.error,
+                        )
+                      else if (isCurrent)
+                        _Badge(
+                          theme: theme,
+                          label: '当前',
+                          color: theme.colorScheme.primary,
+                        ),
+                      if (isFull)
+                        _Badge(
+                          theme: theme,
+                          label: '完整终端',
+                          color: _kFullScopeColor,
+                        ),
+                      if (w.isolatedHome)
+                        _Badge(
+                          theme: theme,
+                          label: '独立 HOME',
+                          color: _kIsolatedColor,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _subtitle(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: isInvalid
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (agentCount > 0)
+              Tooltip(
+                message: '$agentCount 个智能体绑定了这个工作区',
+                child: Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        LucideIcons.bot,
+                        size: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '$agentCount',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            IconButton(
+              icon: const Icon(LucideIcons.ellipsis, size: 18),
+              tooltip: '更多操作',
+              onPressed: onMore,
             ),
           ],
-          if (isInvalid) ...[
-            const SizedBox(width: 8),
-            _Badge(
-              theme: theme,
-              label: '授权已失效',
-              color: theme.colorScheme.error,
-            ),
-          ] else if (isCurrent) ...[
-            const SizedBox(width: 8),
-            _Badge(theme: theme, label: '当前', color: theme.colorScheme.primary),
-          ],
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            workspace.displayPath ?? workspace.root,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${_backendLabel(workspace.backendType)} · '
-            '${_relativeTime(workspace.lastOpenedAt)}打开',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-      trailing: PopupMenuButton<String>(
-        popUpAnimationStyle: AnimationStyle.noAnimation,
-        icon: const Icon(LucideIcons.ellipsisVertical, size: 18),
-        onSelected: (value) {
-          switch (value) {
-            case 'open':
-              onOpen();
-            case 'rename':
-              onRename();
-            case 'reauthorize':
-              onReauthorize();
-            case 'pin':
-              onTogglePin();
-            case 'hide':
-              onToggleHidden();
-            case 'remove':
-              onRemove();
-          }
-        },
-        itemBuilder: (context) => [
-          const PopupMenuItem(value: 'open', child: Text('打开')),
-          PopupMenuItem(
-            value: 'pin',
-            child: Text(workspace.pinned ? '取消置顶' : '置顶'),
-          ),
-          PopupMenuItem(
-            value: 'hide',
-            child: Text(workspace.hidden ? '取消隐藏' : '隐藏'),
-          ),
-          const PopupMenuItem(value: 'rename', child: Text('重命名')),
-          const PopupMenuItem(value: 'reauthorize', child: Text('重新授权')),
-          const PopupMenuItem(value: 'remove', child: Text('移除')),
-        ],
+        ),
       ),
     );
   }
 
+  // 单行副标题：后端 · 位置 · 时间。失效时直接给出修复指引。
+  String _subtitle() {
+    final w = workspace;
+    if (isInvalid) {
+      return switch (w.backendType) {
+        WorkspaceBackendType.localSaf => '本地文件夹 · 点按重新授权',
+        WorkspaceBackendType.ssh ||
+        WorkspaceBackendType.termux =>
+          '${_backendLabel(w.backendType)} · 连接不可用，点按编辑连接',
+        WorkspaceBackendType.prootLocal => '内置终端 · 环境不可用',
+      };
+    }
+    final time = _relativeTime(w.lastOpenedAt);
+    if (w.scope == WorkspaceScope.full) {
+      return '${_backendLabel(w.backendType)} · 整个环境，命令全部需确认 · $time';
+    }
+    final location = switch (w.backendType) {
+      // SAF 的 root 是 content:// URI，只能显示 displayPath。
+      WorkspaceBackendType.localSaf => w.displayPath ?? w.name,
+      // 内置终端的 displayPath 带「内置终端 ·」前缀，直接用 root 避免重复。
+      WorkspaceBackendType.prootLocal => w.root,
+      WorkspaceBackendType.ssh => connectionLabel == null
+          ? w.root
+          : '$connectionLabel · ${w.root}',
+      WorkspaceBackendType.termux => w.root,
+    };
+    return '${_backendLabel(w.backendType)} · $location · $time';
+  }
+
+  static Color _backendColor(Workspace w) => switch (w.backendType) {
+    WorkspaceBackendType.localSaf => _kLocalColor,
+    WorkspaceBackendType.prootLocal => _kProotColor,
+    WorkspaceBackendType.ssh => _kSshColor,
+    WorkspaceBackendType.termux => _kTermuxColor,
+  };
+
+  static IconData _backendIcon(Workspace w) => switch (w.backendType) {
+    WorkspaceBackendType.localSaf => LucideIcons.folder,
+    WorkspaceBackendType.prootLocal => LucideIcons.squareTerminal,
+    WorkspaceBackendType.ssh => LucideIcons.server,
+    WorkspaceBackendType.termux => LucideIcons.terminal,
+  };
+
   static String _backendLabel(WorkspaceBackendType type) => switch (type) {
-    WorkspaceBackendType.localSaf => '本地',
+    WorkspaceBackendType.localSaf => '本地文件夹',
     WorkspaceBackendType.termux => 'Termux',
     WorkspaceBackendType.ssh => 'SSH',
     WorkspaceBackendType.prootLocal => '内置终端',
@@ -624,11 +1015,60 @@ class _WorkspaceRow extends StatelessWidget {
   static String _relativeTime(DateTime t) {
     final diff = DateTime.now().difference(t);
     if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
-    if (diff.inDays < 1) return '${diff.inHours}小时前';
-    if (diff.inDays < 30) return '${diff.inDays}天前';
+    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
+    if (diff.inDays < 1) return '${diff.inHours} 小时前';
+    if (diff.inDays < 30) return '${diff.inDays} 天前';
     return '${t.year}-${t.month.toString().padLeft(2, '0')}-'
         '${t.day.toString().padLeft(2, '0')}';
+  }
+}
+
+/// 顶部失效汇总横幅：一个失效时直接修复它，多个时修复第一个（其余仍在行内标红）。
+class _InvalidBanner extends StatelessWidget {
+  const _InvalidBanner({
+    required this.count,
+    required this.firstName,
+    required this.onFix,
+  });
+
+  final int count;
+  final String firstName;
+  final VoidCallback onFix;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final error = theme.colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: error.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: error.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(LucideIcons.triangleAlert, size: 18, color: error),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              count == 1
+                  ? '「$firstName」的访问授权已失效'
+                  : '$count 个工作区的访问授权已失效',
+              style: theme.textTheme.bodyMedium?.copyWith(color: error),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: error,
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: onFix,
+            child: Text(count == 1 ? '修复' : '修复第一个'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -642,10 +1082,11 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      margin: const EdgeInsets.only(left: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         label,
@@ -659,21 +1100,29 @@ class _Badge extends StatelessWidget {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
+  const _SectionHeader({required this.title, this.trailing});
 
   final String title;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(
-        title,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
-        ),
+      padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
       ),
     );
   }
@@ -701,7 +1150,8 @@ class _EmptyHint extends StatelessWidget {
             Text('还没有任何工作区', style: theme.textTheme.bodyMedium),
             const SizedBox(height: 4),
             Text(
-              '打开本地目录,或连接 SSH / Termux 开始使用',
+              '在主终端里选一个目录,或打开本地文件夹 / 连接 SSH / Termux',
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
