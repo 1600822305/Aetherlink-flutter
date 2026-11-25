@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/world_book/application/world_book_io_service.dart';
 import 'package:aetherlink_flutter/features/world_book/application/world_books_controller.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_import.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/sheets/world_book_edit_sheet.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/sheets/world_book_group_sheets.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
@@ -142,17 +143,24 @@ Future<void> importWorldBook(BuildContext context, WidgetRef ref) async {
         final saved = await _controller(ref).importBook(result);
         if (!context.mounted) return;
         final count = saved.book.entries.length;
-        final pending = saved.pendingEntryCount;
-        if (pending > 0) {
+        // 按功能汇总「部分不生效」的条目数。
+        final features = <String, int>{};
+        for (final e in saved.book.entries) {
+          for (final f in worldBookPendingFeatures(e)) {
+            features[f] = (features[f] ?? 0) + 1;
+          }
+        }
+        if (features.isNotEmpty) {
           await showDialog<void>(
             context: context,
             builder: (ctx) => AlertDialog(
               title: const Text('导入完成'),
               content: Text(
                 '已导入「${saved.book.name}」，共 $count 个条目。\n\n'
-                '其中 $pending 条用到了暂未生效的 SillyTavern 功能'
-                '（如概率、包含组、递归、作者注释位置等）。这些设置已完整保存，'
-                '条目照常启用，相关功能上线后会自动生效。',
+                '下面这些设置来自 SillyTavern，本应用没有对应功能，'
+                '已原样保存（导出时不会丢），但不会起作用：\n'
+                '${[for (final MapEntry(:key, :value) in features.entries) '· $key：$value 条'].join('\n')}'
+                '\n\n其余设置都已生效，条目上标着「部分不生效」。',
               ),
               actions: [
                 FilledButton(

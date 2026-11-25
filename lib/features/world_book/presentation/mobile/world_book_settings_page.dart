@@ -123,7 +123,7 @@ class _WorldBookSettingsPageState extends ConsumerState<WorldBookSettingsPage> {
     final ok = await confirmWorldBookAction(
       context,
       title: '恢复默认设置',
-      message: '全局设置将恢复为 SillyTavern 的默认值。',
+      message: '全局设置将恢复为默认值。',
       confirmLabel: '恢复',
     );
     if (!ok) return;
@@ -175,6 +175,69 @@ class _WorldBookSettingsPageState extends ConsumerState<WorldBookSettingsPage> {
     onChanged: onChanged ?? _onNumbers,
   );
 
+  bool _moreOpen = false;
+
+  List<Widget> _moreChildren(WorldBookSettings s) => [
+    _switch(
+      '包含名字',
+      s.includeNames,
+      (v) => s.copyWith(includeNames: v),
+      subtitle: '每条消息前加「名字: 」，可以按说话人匹配',
+    ),
+    _divider(),
+    _switch(
+      '区分大小写',
+      s.caseSensitive,
+      (v) => s.copyWith(caseSensitive: v),
+    ),
+    _divider(),
+    _switch(
+      '全词匹配',
+      s.matchWholeWords,
+      (v) => s.copyWith(matchWholeWords: v),
+      subtitle: '按空格分词，中文世界书建议关闭',
+    ),
+    _divider(),
+    _switch(
+      '包含组按命中数评分',
+      s.useGroupScoring,
+      (v) => s.copyWith(useGroupScoring: v),
+      subtitle: '同组多条命中时只保留关键词命中最多的',
+    ),
+    if (s.recursive) ...[
+      _divider(),
+      _number(
+        _maxRecursion,
+        '最大扫描次数',
+        subtitle: '含首次扫描；0 = 不限',
+        min: 0,
+        max: 100,
+        onChanged: () => _onNumbers(recursionChanged: true),
+      ),
+    ],
+    _divider(),
+    _number(
+      _minActivations,
+      '最少激活数',
+      subtitle: '激活的条目不够时继续往更早的消息扫描；0 = 关闭',
+      min: 0,
+      max: 100,
+      onChanged: () => _onNumbers(minChanged: true),
+    ),
+    if (s.minActivations > 0) ...[
+      _divider(),
+      _number(
+        _minDepthMax,
+        '最大扫描深度',
+        subtitle: '往前扫到多少条消息为止；0 = 到聊天开头',
+        min: 0,
+        max: WorldBookEntry.kMaxScanDepth,
+      ),
+    ],
+    if (s.recursive)
+      const WorldBookInlineNote('「最少激活数」与「最大扫描次数」只能设一个，设置其中一个时另一个会清零。'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -204,123 +267,91 @@ class _WorldBookSettingsPageState extends ConsumerState<WorldBookSettingsPage> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           children: [
-            const WorldBookFormLabel('扫描'),
             _card([
               _number(
                 _scanDepth,
                 '扫描深度',
-                subtitle: '条目留空时在最近多少条消息里找关键词',
+                subtitle: '在最近多少条消息里找关键词（条目可单独设置）',
                 min: 0,
                 max: WorldBookEntry.kMaxScanDepth,
               ),
               _divider(),
-              _switch(
-                '包含名字',
-                s.includeNames,
-                (v) => s.copyWith(includeNames: v),
-                subtitle: '每条消息前加「名字: 」，可以按说话人匹配',
+              _number(
+                _budgetCap,
+                '注入上限（token）',
+                subtitle: '每次最多注入多少 token；0 = 不限',
+                min: 0,
+                max: 1000000,
               ),
+              if (s.budgetCap == 0)
+                const WorldBookInlineNote(
+                  '不限时，命中的条目会全部注入。条目多的世界书建议设一个上限，例如 2000。',
+                ),
               _divider(),
-              _switch(
-                '区分大小写',
-                s.caseSensitive,
-                (v) => s.copyWith(caseSensitive: v),
-                subtitle: '条目选「跟随全局」时使用',
-              ),
-              _divider(),
-              _switch(
-                '全词匹配',
-                s.matchWholeWords,
-                (v) => s.copyWith(matchWholeWords: v),
-                subtitle: '按空格分词，中文世界书建议关闭',
-              ),
-            ]),
-            const WorldBookFormLabel('递归'),
-            _card([
               _switch(
                 '递归扫描',
                 s.recursive,
                 (v) => s.copyWith(recursive: v),
                 subtitle: '被激活条目的内容会继续触发其他条目',
               ),
-              if (s.recursive) ...[
-                _divider(),
-                _number(
-                  _maxRecursion,
-                  '最大扫描次数',
-                  subtitle: '含首次扫描；0 = 只受预算限制',
-                  min: 0,
-                  max: 100,
-                  onChanged: () => _onNumbers(recursionChanged: true),
-                ),
-              ],
             ]),
-            const WorldBookFormLabel('最少激活数'),
-            _card([
-              _number(
-                _minActivations,
-                '最少激活数',
-                subtitle: '激活的条目不够时继续往更早的消息扫描；0 = 关闭',
-                min: 0,
-                max: 100,
-                onChanged: () => _onNumbers(minChanged: true),
-              ),
-              if (s.minActivations > 0) ...[
-                _divider(),
-                _number(
-                  _minDepthMax,
-                  '最大扫描深度',
-                  subtitle: '往前扫到多少条消息为止；0 = 到聊天开头',
-                  min: 0,
-                  max: WorldBookEntry.kMaxScanDepth,
-                ),
-              ],
-              const WorldBookInlineNote('与「最大扫描次数」互斥：设置其中一个，另一个会自动清零。'),
-            ]),
-            const WorldBookFormLabel('预算'),
-            _card([
-              _number(
-                _budgetCap,
-                '预算上限（token）',
-                subtitle: '世界书最多注入多少 token；0 = 不限',
-                min: 0,
-                max: 1000000,
-              ),
-              _divider(),
-              _number(
-                _budgetPercent,
-                '上下文百分比',
-                subtitle: '预算 = 上下文长度 × 百分比',
-                min: 1,
-                max: 100,
-              ),
-              const WorldBookInlineNote(
-                '模型的上下文长度暂时拿不到，目前只按「预算上限」限制；超出部分不再注入，'
-                '勾了「不计入预算」的条目照常注入。',
-              ),
-              _divider(),
-              Row(
+            const SizedBox(height: 12),
+            WorldBookOutlinedCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: _switch(
-                      '超出预算时提示',
-                      s.overflowAlert,
-                      (v) => s.copyWith(overflowAlert: v),
+                  InkWell(
+                    onTap: () => setState(() => _moreOpen = !_moreOpen),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '高级',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '匹配方式、扫描次数、最少激活数、包含组评分',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontSize: 12,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            _moreOpen
+                                ? LucideIcons.chevronUp
+                                : LucideIcons.chevronDown,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const WorldBookBadge('暂不生效'),
+                  if (_moreOpen) ...[
+                    _divider(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _moreChildren(s),
+                      ),
+                    ),
+                  ],
                 ],
               ),
-            ]),
-            const WorldBookFormLabel('包含组'),
-            _card([
-              _switch(
-                '按命中数评分',
-                s.useGroupScoring,
-                (v) => s.copyWith(useGroupScoring: v),
-                subtitle: '同组多条命中时只保留关键词命中最多的；条目可单独设置',
-              ),
-            ]),
+            ),
           ],
         ),
       ),

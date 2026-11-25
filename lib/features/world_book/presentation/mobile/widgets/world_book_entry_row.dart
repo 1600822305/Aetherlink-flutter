@@ -5,9 +5,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_import.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_timed_selection.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
 
-enum WorldBookEntryAction { moveUp, moveDown, delete }
+enum WorldBookEntryAction { moveUp, moveDown, duplicate, moveToBook, delete }
 
 /// 注入位置的中文标签（列表与编辑页共用），对应 ST 的 8 个位置。
 String worldBookPositionLabel(WorldBookInjectionPosition position) =>
@@ -36,7 +38,11 @@ class WorldBookEntryRow extends StatelessWidget {
     required this.onOpen,
     required this.onToggle,
     required this.onAction,
+    this.canMoveToBook = true,
   });
+
+  /// 有其他世界书时才显示「移到其他世界书」。
+  final bool canMoveToBook;
 
   final WorldBookEntry entry;
   final VoidCallback onOpen;
@@ -55,8 +61,11 @@ class WorldBookEntryRow extends StatelessWidget {
     _ => worldBookPositionLabel(entry.position),
   };
 
+  /// 行尾的小字：大约多少 token。
+  String _size() => '约 ${worldBookRoughTokens(entry.content)} tokens';
+
   Widget _summary(ThemeData theme) {
-    final position = '${_position()} · 顺序 ${entry.order}';
+    final position = '${_position()} · ${_size()}';
     final prefix = entry.enabled ? '' : '已关闭 · ';
     if (entry.constant) return Text('$prefix$position');
     if (entry.keywords.isEmpty) return Text('$prefix无关键词 · $position');
@@ -91,7 +100,15 @@ class WorldBookEntryRow extends StatelessWidget {
       titleBadges: [
         if (entry.constant)
           const WorldBookBadge('常驻', color: Color(0xFF10B981)),
-        if (!entry.position.isImplemented) const WorldBookBadge('暂不生效'),
+        if (entry.useProbability && entry.probability < 100)
+          WorldBookBadge('${entry.probability}%'),
+        if ((entry.sticky ?? 0) > 0 ||
+            (entry.cooldown ?? 0) > 0 ||
+            (entry.delay ?? 0) > 0)
+          const WorldBookBadge('计时'),
+        if (entry.groups.isNotEmpty) WorldBookBadge('组·${entry.groups.first}'),
+        if (worldBookPendingFeatures(entry).isNotEmpty)
+          const WorldBookBadge('部分不生效', color: Color(0xFFF59E0B)),
       ],
       subtitle: _summary(theme),
       trailing: Row(
@@ -101,16 +118,25 @@ class WorldBookEntryRow extends StatelessWidget {
           const SizedBox(width: 4),
           WorldBookMoreMenu<WorldBookEntryAction>(
             onSelected: onAction,
-            items: const [
-              PopupMenuItem(
+            items: [
+              const PopupMenuItem(
                 value: WorldBookEntryAction.moveUp,
                 child: Text('上移'),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: WorldBookEntryAction.moveDown,
                 child: Text('下移'),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
+                value: WorldBookEntryAction.duplicate,
+                child: Text('复制'),
+              ),
+              if (canMoveToBook)
+                const PopupMenuItem(
+                  value: WorldBookEntryAction.moveToBook,
+                  child: Text('移到其他世界书'),
+                ),
+              const PopupMenuItem(
                 value: WorldBookEntryAction.delete,
                 child: Text('删除'),
               ),

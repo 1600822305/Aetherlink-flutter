@@ -132,7 +132,7 @@ WorldBookTimedResult selectTimedWorldBookEntries({
   WorldBookScanSources sources = WorldBookScanSources.none,
 }) {
   final rnd = random ?? Random();
-  final tokens = countTokens ?? _roughTokens;
+  final tokens = countTokens ?? worldBookRoughTokens;
   final texts = [
     for (final text in scanTexts)
       if (text.trim().isNotEmpty) text.trim(),
@@ -569,8 +569,9 @@ String _keywordReason(
   };
 }
 
-/// 粗略 token 估算（约 4 个 ASCII 字符或 1 个汉字算 1 个 token）。
-int _roughTokens(String text) {
+/// 粗略 token 估算（约 4 个 ASCII 字符或 1 个汉字算 1 个 token），编辑页显示
+/// 条目大小也用它。
+int worldBookRoughTokens(String text) {
   var ascii = 0;
   var other = 0;
   for (final r in text.runes) {

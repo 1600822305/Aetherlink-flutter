@@ -16,6 +16,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/world_book_access.dart';
 
 import 'package:aetherlink_flutter/features/world_book/application/world_books_controller.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_import.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_timed_selection.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_settings.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
@@ -139,6 +141,8 @@ class _WorldBookEntryEditPageState
   }
 
   late bool _advancedOpen = _hasAdvanced(_base);
+  late bool _compatOpen = _hasCompat(_base);
+  late bool _matchDetailOpen = _hasMatchDetail(_base);
   bool _saving = false;
 
   bool get _isNew => widget.entry == null;
@@ -158,7 +162,10 @@ class _WorldBookEntryEditPageState
       (e.sticky ?? 0) > 0 ||
       (e.cooldown ?? 0) > 0 ||
       (e.delay ?? 0) > 0 ||
-      e.ignoreBudget ||
+      e.ignoreBudget;
+
+  /// 「SillyTavern 兼容」区里有非默认值时默认展开。
+  static bool _hasCompat(WorldBookEntry e) =>
       e.vectorized ||
       e.matchPersonaDescription ||
       e.matchCharacterDescription ||
@@ -169,6 +176,10 @@ class _WorldBookEntryEditPageState
       e.triggers.isNotEmpty ||
       e.characterFilter != null ||
       e.automationId.isNotEmpty;
+
+  /// 匹配细节（大小写 / 全词 / 扫描深度）不是默认值时默认展开。
+  static bool _hasMatchDetail(WorldBookEntry e) =>
+      e.caseSensitive != null || e.matchWholeWords != null || e.scanDepth != null;
 
   List<TextEditingController> get _controllers => [
     _name,
@@ -446,7 +457,8 @@ class _WorldBookEntryEditPageState
     Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Text(
-        '${_content.text.characters.length} 字',
+        '${_content.text.characters.length} 字 · '
+        '约 ${worldBookRoughTokens(_content.text)} tokens',
         textAlign: TextAlign.right,
         style: theme.textTheme.bodySmall?.copyWith(
           fontSize: 11.5,
@@ -501,6 +513,30 @@ class _WorldBookEntryEditPageState
       ],
       const SizedBox(height: 6),
       _divider(),
+      _foldHeader(
+        '匹配细节',
+        _matchDetailSummary(),
+        _matchDetailOpen,
+        () => setState(() => _matchDetailOpen = !_matchDetailOpen),
+      ),
+      if (_matchDetailOpen) ..._matchDetailChildren(),
+    ],
+  ]);
+
+  String _matchDetailSummary() {
+    String tri(String name, bool? v) =>
+        v == null ? '' : '$name${v ? '开' : '关'}';
+    final parts = [
+      tri('大小写', _caseSensitive),
+      tri('全词', _matchWholeWords),
+      if (!_followScanDepth) '扫描 ${_scanDepth.text.trim()} 条',
+    ].where((p) => p.isNotEmpty).toList();
+    return parts.isEmpty
+        ? '跟随全局 · 扫描最近 ${_settings.scanDepth} 条消息'
+        : parts.join(' · ');
+  }
+
+  List<Widget> _matchDetailChildren() => [
       _triState('区分大小写', _caseSensitive, (v) => _caseSensitive = v),
       _divider(),
       _triState('全词匹配', _matchWholeWords, (v) => _matchWholeWords = v),
@@ -521,8 +557,54 @@ class _WorldBookEntryEditPageState
           min: 0,
           max: WorldBookEntry.kMaxScanDepth,
         ),
-    ],
-  ]);
+  ];
+
+  /// 卡片内可折叠小节的标题行。
+  Widget _foldHeader(
+    String title,
+    String summary,
+    bool open,
+    VoidCallback onTap,
+  ) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                summary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 12,
+                  color: muted,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              open ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+              size: 16,
+              color: muted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _injectionCard() => _card([
     WorldBookPositionSelector(
@@ -569,15 +651,23 @@ class _WorldBookEntryEditPageState
     ),
   ]);
 
-  Widget _advancedCard(ThemeData theme) {
+  /// 整张可折叠的卡片（高级 / SillyTavern 兼容）。
+  Widget _foldCard({
+    required String title,
+    required String summary,
+    required bool open,
+    required VoidCallback onToggle,
+    required List<Widget> children,
+    bool warn = false,
+  }) {
+    final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
-    final pendingCount = worldBookPendingCount();
     return WorldBookOutlinedCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
-            onTap: () => setState(() => _advancedOpen = !_advancedOpen),
+            onTap: onToggle,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
               child: Row(
@@ -587,7 +677,7 @@ class _WorldBookEntryEditPageState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '概率、包含组、递归、计时器等',
+                          title,
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -595,21 +685,19 @@ class _WorldBookEntryEditPageState
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          pendingCount == 0
-                              ? '默认'
-                              : '已设置 $pendingCount 项暂不生效的功能',
+                          summary,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
                             fontSize: 12,
-                            color: muted,
+                            color: warn ? const Color(0xFFD97706) : muted,
                           ),
                         ),
                       ],
                     ),
                   ),
                   Icon(
-                    _advancedOpen
-                        ? LucideIcons.chevronUp
-                        : LucideIcons.chevronDown,
+                    open ? LucideIcons.chevronUp : LucideIcons.chevronDown,
                     size: 16,
                     color: muted,
                   ),
@@ -617,13 +705,13 @@ class _WorldBookEntryEditPageState
               ),
             ),
           ),
-          if (_advancedOpen) ...[
+          if (open) ...[
             _divider(),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _advancedChildren(),
+                children: children,
               ),
             ),
           ],
@@ -632,16 +720,45 @@ class _WorldBookEntryEditPageState
     );
   }
 
-  /// 高级区里设置了、但引擎暂未实现的功能数（用于折叠时的摘要）。
-  int worldBookPendingCount() {
+  /// 高级区折叠时的摘要：列出改过的设置。
+  String _advancedSummary() {
     final e = _collect();
-    return [
-      e.vectorized,
-      e.matchPersonaDescription ||
+    final parts = [
+      if (!e.useProbability) '不判定概率'
+      else if (e.probability != 100) '概率 ${e.probability}%',
+      if (e.groups.isNotEmpty) '组「${e.groups.join('、')}」',
+      if ((e.sticky ?? 0) > 0) '持续 ${e.sticky}',
+      if ((e.cooldown ?? 0) > 0) '冷却 ${e.cooldown}',
+      if ((e.delay ?? 0) > 0) '延迟 ${e.delay}',
+      if (e.excludeRecursion || e.preventRecursion || e.delayUntilRecursion > 0)
+        '递归设置',
+      if (e.ignoreBudget) '不计入预算',
+    ];
+    return parts.isEmpty ? '概率、包含组、计时器、递归、预算 · 全部默认' : parts.join(' · ');
+  }
+
+  /// 兼容区折叠时的摘要；用到本应用没有的功能时提示。
+  (String, bool) _compatSummary() {
+    final e = _collect();
+    final pending = worldBookPendingFeatures(e);
+    final parts = [
+      if (e.matchCharacterDescription ||
+          e.matchCharacterPersonality ||
+          e.matchScenario ||
+          e.matchPersonaDescription ||
           e.matchCharacterDepthPrompt ||
-          e.matchCreatorNotes,
-      e.automationId.isNotEmpty,
-    ].where((v) => v).length;
+          e.matchCreatorNotes)
+        '额外匹配源',
+      if (e.triggers.isNotEmpty) '生成类型',
+      if (_filterNames.isNotEmpty || _filterTags.isNotEmpty) '助手筛选',
+    ];
+    if (pending.isNotEmpty) {
+      return ('有 ${pending.length} 项设置在本应用不起作用：${pending.join('、')}', true);
+    }
+    return (
+      parts.isEmpty ? '从 SillyTavern 导入的书才会用到，一般不用管' : '已设置：${parts.join('、')}',
+      false,
+    );
   }
 
   List<Widget> _advancedChildren() => [
@@ -723,6 +840,11 @@ class _WorldBookEntryEditPageState
       (v) => _ignoreBudget = v,
       subtitle: '超出 token 预算时也照常注入',
     ),
+  ];
+
+  /// 「SillyTavern 兼容」区：额外匹配源、生成类型、助手筛选，以及本应用没有
+  /// 对应功能、只保存的设置。
+  List<Widget> _compatChildren() => [
     _subhead('额外匹配源'),
     const WorldBookInlineNote('除了聊天记录，再在这些内容里找关键词。'),
     _switch(
@@ -783,8 +905,8 @@ class _WorldBookEntryEditPageState
           ),
       ],
     ),
-    _subhead('角色筛选'),
-    const WorldBookInlineNote('「角色」指当前助手：名字可填助手名或 id，标签对应助手标签。'),
+    _subhead('助手筛选'),
+    const WorldBookInlineNote('只对指定的助手生效（或排除它们）。名字可填助手名或 id。'),
     _switch(
       '排除模式',
       _filterExclude,
@@ -803,14 +925,17 @@ class _WorldBookEntryEditPageState
       hint: '留空 = 不按标签筛选',
       onChanged: (v) => setState(() => _filterTags = v),
     ),
-    _subhead('其他', pending: true),
-    _switch(
-      '向量匹配',
-      _vectorized,
-      (v) => _vectorized = v,
-      subtitle: '按语义相似度激活',
-    ),
-    _textField(_automationId, '自动化 ID', hint: 'SillyTavern 快速回复联动'),
+    if (_vectorized || _automationId.text.trim().isNotEmpty) ...[
+      _subhead('仅保存', pending: true),
+      const WorldBookInlineNote('导入时带过来的设置，本应用不使用，导出时会原样写回。'),
+      _switch(
+        '向量匹配',
+        _vectorized,
+        (v) => _vectorized = v,
+        subtitle: '按语义相似度激活',
+      ),
+      _textField(_automationId, '自动化 ID', hint: 'SillyTavern 快速回复联动'),
+    ],
   ];
 
   @override
@@ -858,8 +983,28 @@ class _WorldBookEntryEditPageState
               _triggerCard(),
               const WorldBookFormLabel('注入到哪里'),
               _injectionCard(),
-              const WorldBookFormLabel('高级'),
-              _advancedCard(theme),
+              const WorldBookFormLabel('更多'),
+              _foldCard(
+                title: '高级',
+                summary: _advancedSummary(),
+                open: _advancedOpen,
+                onToggle: () => setState(() => _advancedOpen = !_advancedOpen),
+                children: _advancedChildren(),
+              ),
+              const SizedBox(height: 12),
+              Builder(
+                builder: (_) {
+                  final (summary, warn) = _compatSummary();
+                  return _foldCard(
+                    title: 'SillyTavern 兼容',
+                    summary: summary,
+                    warn: warn,
+                    open: _compatOpen,
+                    onToggle: () => setState(() => _compatOpen = !_compatOpen),
+                    children: _compatChildren(),
+                  );
+                },
+              ),
               if (!_isNew) ...[
                 const SizedBox(height: 20),
                 Center(
