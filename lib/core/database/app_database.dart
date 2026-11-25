@@ -48,6 +48,11 @@ import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/models/data/datasources/local/model_provider_converters.dart';
 import 'package:aetherlink_flutter/features/models/data/datasources/local/provider_dao.dart';
 import 'package:aetherlink_flutter/features/models/data/datasources/local/providers_table.dart';
+import 'package:aetherlink_flutter/features/world_book/data/datasources/local/world_book_converters.dart';
+import 'package:aetherlink_flutter/features/world_book/data/datasources/local/world_book_dao.dart';
+import 'package:aetherlink_flutter/features/world_book/data/datasources/local/world_book_tables.dart';
+// 世界书整本存 JSON blob（[WorldBookRows.data]），生成的 part 引用其值类型。
+import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
@@ -83,6 +88,7 @@ part 'app_database.g.dart';
     AgentProfileRows,
     AgentTaskRows,
     AgentEventRows,
+    WorldBookRows,
   ],
   daos: [
     TopicDao,
@@ -95,6 +101,7 @@ part 'app_database.g.dart';
     MemoryDao,
     KnowledgeDao,
     AgentDao,
+    WorldBookDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -105,7 +112,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 19;
+  int get schemaVersion => 20;
 
   // SQLite can't ALTER a table-level CHECK/FK onto an existing table, but a
   // partial UNIQUE index CAN be created on one. This enforces the single-root
@@ -280,6 +287,11 @@ class AppDatabase extends _$AppDatabase {
         // 智能体事件流 watch 优化：补行版本号列（rev），轻量投影据此
         // 判定原位更新（seq/createdAt 不变），存量行默认 0。
         await _addColumnIfAbsent(m, agentEventRows, agentEventRows.rev);
+      }
+      if (from < 20) {
+        // 世界书（docs/worldbook_porting_plan.md §2.1）：一本书一行，条目随书
+        // 存 JSON blob；sortOrder / groupName 独立成列便于排序与分组。
+        await m.createTable(worldBookRows);
       }
     },
   );

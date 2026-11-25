@@ -164,6 +164,12 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         route: AppRouter.knowledgeBasePath,
       ),
       SettingItemData(
+        icon: LucideIcons.bookMarked,
+        title: '世界书',
+        description: '关键词触发的设定注入，兼容 SillyTavern 世界书',
+        route: AppRouter.worldBookPath,
+      ),
+      SettingItemData(
         icon: LucideIcons.database,
         title: '记忆功能',
         description: '管理AI长期记忆，自动记住用户偏好',
