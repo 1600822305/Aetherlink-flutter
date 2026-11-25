@@ -654,23 +654,6 @@ class WorkspacePageLock extends Notifier<bool> {
   void toggle() => state = !state;
 }
 
-/// 终端选区激活期间为 true：workspace 三页横向 pager 据此临时禁滑，避免
-/// 长按拖选 / 拖选区手柄时被抢成翻页。由终端页按「当前可见终端」的选区
-/// 状态同步（见 TerminalSelectionPageLock），与编辑器手动锁相互独立。
-final workspaceTerminalSelectingProvider =
-    NotifierProvider<WorkspaceTerminalSelecting, bool>(
-      WorkspaceTerminalSelecting.new,
-    );
-
-class WorkspaceTerminalSelecting extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void set(bool v) {
-    if (state != v) state = v;
-  }
-}
-
 /// Immutable state of the middle-page tab strip: the open file tabs and which
 /// one is active.
 class WorkspaceTabsState {

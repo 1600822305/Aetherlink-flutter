@@ -5,15 +5,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:xterm3/xterm.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/shared/widgets/page_swipe_lock.dart';
 
 /// 复制当前选区（长按拖拽选中后点复制键）。
 Future<void> copyTerminalSelection(
@@ -46,34 +46,48 @@ Future<void> pasteClipboardToTerminal(
   terminal.paste(text);
 }
 
-/// 监听「当前可见终端」的选区状态，同步到 [workspaceTerminalSelectingProvider]
-/// 以临时锁死 workspace 外层横向翻页：选区存在期间，拖手柄 / 长按拖选不会
-/// 被外层 PageView 抢成左右翻页。透明包裹 child，不改变布局。
+/// 终端拖选期间临时锁住所在翻页容器的横滑（[PageSwipeLock]）。
 ///
-/// 只应包住可见终端的控制器——后台 tab 的残留选区不可交互，不该参与锁页。
-class TerminalSelectionPageLock extends ConsumerStatefulWidget {
+/// 只跟手指走、不存状态：有手指按着且（按下时已有选区 / 按着期间选区
+/// 变化）就持有锁，最后一根手指抬起或取消即释放；销毁时必释放。
+/// 选区之后留着不影响翻页。按下时已有选区也锁，是为了拖选区手柄时
+/// 不被翻页抢走（手柄画在 Overlay 里，所以用全局指针路由监听手指）。
+class TerminalSelectionPageLock extends StatefulWidget {
   const TerminalSelectionPageLock({
     super.key,
     required this.controller,
     required this.child,
   });
 
-  /// 当前可见终端的控制器；null 表示没有可交互终端（锁释放）。
   final TerminalController? controller;
   final Widget child;
 
   @override
-  ConsumerState<TerminalSelectionPageLock> createState() =>
+  State<TerminalSelectionPageLock> createState() =>
       _TerminalSelectionPageLockState();
 }
 
 class _TerminalSelectionPageLockState
-    extends ConsumerState<TerminalSelectionPageLock> {
+    extends State<TerminalSelectionPageLock> {
+  final Set<int> _pointers = {};
+  PageSwipeLock? _lock;
+  bool _holding = false;
+
   @override
   void initState() {
     super.initState();
     widget.controller?.addListener(_onSelection);
-    _syncDeferred();
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final lock = PageSwipeLock.maybeOf(context);
+    if (identical(lock, _lock)) return;
+    if (_holding) _lock?.release(this);
+    _lock = lock;
+    if (_holding) _lock?.acquire(this);
   }
 
   @override
@@ -82,34 +96,39 @@ class _TerminalSelectionPageLockState
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller?.removeListener(_onSelection);
       widget.controller?.addListener(_onSelection);
+      _setHolding(false);
     }
-    // 可见终端切换发生在 build 期间，provider 写入延到帧末。
-    _syncDeferred();
   }
 
   @override
   void dispose() {
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
     widget.controller?.removeListener(_onSelection);
-    // dispose 后不能再读 ref；锁的释放交给下一次同步或其他观看者。若整个
-    // workspace 页随之销毁，provider 状态也随之重置，无需强清。
+    _lock?.release(this);
     super.dispose();
   }
 
-  // 选区变化发生在手势回调里（非 build 阶段），可以直接写 provider——
-  // 必须赶在拖动继续之前落锁，不能等帧末。
-  void _onSelection() {
-    ref
-        .read(workspaceTerminalSelectingProvider.notifier)
-        .set(widget.controller?.selection != null);
+  bool get _hasSelection => widget.controller?.selection != null;
+
+  void _onPointer(PointerEvent event) {
+    if (event is PointerDownEvent) {
+      _pointers.add(event.pointer);
+      if (_hasSelection) _setHolding(true);
+    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _pointers.remove(event.pointer);
+      if (_pointers.isEmpty) _setHolding(false);
+    }
   }
 
-  void _syncDeferred() {
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref
-          .read(workspaceTerminalSelectingProvider.notifier)
-          .set(widget.controller?.selection != null);
-    });
+  void _onSelection() {
+    if (_pointers.isEmpty) return;
+    _setHolding(_hasSelection);
+  }
+
+  void _setHolding(bool value) {
+    if (value == _holding) return;
+    _holding = value;
+    value ? _lock?.acquire(this) : _lock?.release(this);
   }
 
   @override

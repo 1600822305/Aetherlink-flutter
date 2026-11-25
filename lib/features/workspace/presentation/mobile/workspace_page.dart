@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/worksp
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_viewer.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_terminal_page.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/shared/widgets/page_swipe_lock.dart';
 
 class WorkspacePage extends ConsumerStatefulWidget {
   const WorkspacePage({super.key});
@@ -31,6 +32,8 @@ class WorkspacePage extends ConsumerStatefulWidget {
 }
 
 class _WorkspacePageState extends ConsumerState<WorkspacePage> {
+  /// 终端拖选等子组件临时禁滑用（见 PageSwipeLock）。
+  final PageSwipeLock _swipeLock = PageSwipeLock();
   // Land on the middle page (多文件编辑器).
   static const int _initialPage = 1;
   static const int _pageCount = 3;
@@ -105,6 +108,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   @override
   void dispose() {
     _controller.dispose();
+    _swipeLock.dispose();
     super.dispose();
   }
 
@@ -121,10 +125,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     });
 
     // 页面锁开启时禁用横向翻页,避免编辑器内捏合缩放/拖动误触翻页。
-    // 终端选区激活（拖手柄/长按拖选）期间同样禁滑,否则会被抢成翻页。
-    final locked =
-        ref.watch(workspacePageLockProvider) ||
-        ref.watch(workspaceTerminalSelectingProvider);
+    final manualLock = ref.watch(workspacePageLockProvider);
 
     // Edge-to-edge: 页面铺满整屏(延伸到状态栏/导航栏后面)。每页头部行各自留安全区。
     return PopScope(
@@ -133,10 +134,17 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
         if (!didPop) _onBack();
       },
       child: Scaffold(
-        body: PageView.builder(
+        body: PageSwipeLockScope(
+          lock: _swipeLock,
+          child: ListenableBuilder(
+            // 终端拖选期间同样禁滑（只在手指按着时，见 TerminalSelectionPageLock）。
+            listenable: _swipeLock,
+            builder: (context, _) => PageView.builder(
           controller: _controller,
           itemCount: _pageCount,
-          physics: locked ? const NeverScrollableScrollPhysics() : null,
+          physics: manualLock || _swipeLock.locked
+              ? const NeverScrollableScrollPhysics()
+              : null,
           onPageChanged: (i) => setState(() => _page = i),
           itemBuilder: (context, i) {
             switch (i) {
@@ -157,6 +165,8 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
                 );
             }
           },
+        ),
+          ),
         ),
       ),
     );

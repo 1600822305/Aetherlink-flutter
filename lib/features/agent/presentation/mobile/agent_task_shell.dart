@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/event_stream_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_page.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
+import 'package:aetherlink_flutter/shared/widgets/page_swipe_lock.dart';
 
 /// 任务工作台两页横滑壳（已拍板 2 页，工作区页同款 `PageView` 交互）：
 /// 左页=事件流（主视图，默认落这）、右页=工作台（UI 稿 §四）。
@@ -24,6 +23,9 @@ class AgentTaskShell extends StatefulWidget {
 
 class _AgentTaskShellState extends State<AgentTaskShell> {
   final PageController _controller = PageController();
+
+  /// 终端拖选等子组件临时禁滑用（见 PageSwipeLock）。
+  final PageSwipeLock _swipeLock = PageSwipeLock();
   int _page = 0;
 
   @override
@@ -58,6 +60,7 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
   @override
   void dispose() {
     _controller.dispose();
+    _swipeLock.dispose();
     super.dispose();
   }
 
@@ -67,13 +70,15 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
     return Column(
       children: [
         Expanded(
-          // 终端选区激活（拖手柄/长按拖选）期间禁滑，否则会被抢成翻页。
-          child: Consumer(
-            builder: (context, ref, _) {
-              final selecting = ref.watch(workspaceTerminalSelectingProvider);
+          // 终端拖选期间禁滑（只在手指按着时，见 TerminalSelectionPageLock）。
+          child: PageSwipeLockScope(
+            lock: _swipeLock,
+            child: ListenableBuilder(
+            listenable: _swipeLock,
+            builder: (context, _) {
               return PageView(
                 controller: _controller,
-                physics: selecting
+                physics: _swipeLock.locked
                     ? const NeverScrollableScrollPhysics()
                     : null,
                 onPageChanged: (i) => setState(() => _page = i),
@@ -88,6 +93,7 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
                 ],
               );
             },
+          ),
           ),
         ),
         // 页指示器（工作区页同款的两点样式）。
