@@ -506,6 +506,11 @@ class AgentEngine {
             contextTokensRound: turn.contextTokens > 0
                 ? current.rounds
                 : current.contextTokensRound,
+            contextHistory: appendContextSample(
+              current.contextHistory,
+              current.rounds,
+              turn.contextTokens,
+            ),
             updatedAt: DateTime.now(),
             lastEventSummary: turn.text.isNotEmpty
                 ? turn.text

@@ -245,6 +245,7 @@ Future<AgentContextBreakdown> agentContextBreakdown(
     toolDefinitions: definitions,
     messages: _replayMessages(events, contextTokens: task.contextTokens),
     apiContextTokens: task.contextTokens,
+    manuallyClearedIds: manuallyClearedToolIds(events),
   );
 }
 

@@ -51,6 +51,7 @@ class AgentTask {
     this.tokenCount = 0,
     this.contextTokens = 0,
     this.contextTokensRound = 0,
+    this.contextHistory = const [],
     this.elapsed = Duration.zero,
     this.lastEventSummary = '',
     this.parentTaskId = '',
@@ -88,6 +89,10 @@ class AgentTask {
   /// [contextTokens] 测得时的轮次：供应商不回 usage 时沿用旧值，
   /// 记住测量轮次才能在 UI 上提示可能滞后（0 = 未知）。
   final int contextTokensRound;
+
+  /// 每轮 API 实测的上下文占用（按轮次升序，最多 [kContextHistoryMax] 条），
+  /// 供工作台「上下文」tab 画增长曲线。供应商不回 usage 的轮次不记录。
+  final List<ContextSample> contextHistory;
   final Duration elapsed;
 
   /// 侧栏话题卡上的最近事件摘要。
@@ -122,6 +127,7 @@ class AgentTask {
     int? tokenCount,
     int? contextTokens,
     int? contextTokensRound,
+    List<ContextSample>? contextHistory,
     Duration? elapsed,
     String? lastEventSummary,
     bool? pinned,
@@ -142,10 +148,45 @@ class AgentTask {
       tokenCount: tokenCount ?? this.tokenCount,
       contextTokens: contextTokens ?? this.contextTokens,
       contextTokensRound: contextTokensRound ?? this.contextTokensRound,
+      contextHistory: contextHistory ?? this.contextHistory,
       elapsed: elapsed ?? this.elapsed,
       lastEventSummary: lastEventSummary ?? this.lastEventSummary,
       parentTaskId: parentTaskId,
       pinned: pinned ?? this.pinned,
     );
   }
+}
+
+/// 上下文历史最多保留的采样数（超出丢最旧的）。
+const int kContextHistoryMax = 300;
+
+/// 一轮的上下文占用采样。
+class ContextSample {
+  const ContextSample({required this.round, required this.tokens});
+
+  final int round;
+  final int tokens;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ContextSample && other.round == round && other.tokens == tokens;
+
+  @override
+  int get hashCode => Object.hash(round, tokens);
+}
+
+/// 追加一条采样：同一轮重复测得时覆盖，超上限丢最旧。
+List<ContextSample> appendContextSample(
+  List<ContextSample> history,
+  int round,
+  int tokens,
+) {
+  if (tokens <= 0) return history;
+  final next = [
+    ...history.where((s) => s.round != round),
+    ContextSample(round: round, tokens: tokens),
+  ];
+  return next.length > kContextHistoryMax
+      ? next.sublist(next.length - kContextHistoryMax)
+      : next;
 }

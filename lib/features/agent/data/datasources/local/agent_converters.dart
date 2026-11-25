@@ -84,6 +84,11 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
       tokenCount: json['tokenCount'] as int? ?? 0,
       contextTokens: json['contextTokens'] as int? ?? 0,
       contextTokensRound: json['contextTokensRound'] as int? ?? 0,
+      contextHistory: [
+        for (final e in (json['contextHistory'] as List<dynamic>? ?? const []))
+          if (e is List && e.length == 2)
+            ContextSample(round: e[0] as int, tokens: e[1] as int),
+      ],
       elapsed: Duration(milliseconds: json['elapsedMs'] as int? ?? 0),
       lastEventSummary: json['lastEventSummary'] as String? ?? '',
       parentTaskId: json['parentTaskId'] as String? ?? '',
@@ -108,6 +113,10 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
     'tokenCount': value.tokenCount,
     'contextTokens': value.contextTokens,
     'contextTokensRound': value.contextTokensRound,
+    if (value.contextHistory.isNotEmpty)
+      'contextHistory': [
+        for (final s in value.contextHistory) [s.round, s.tokens],
+      ],
     'elapsedMs': value.elapsed.inMilliseconds,
     'lastEventSummary': value.lastEventSummary,
     'parentTaskId': value.parentTaskId,

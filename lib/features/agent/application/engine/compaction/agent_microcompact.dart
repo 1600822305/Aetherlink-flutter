@@ -222,7 +222,7 @@ int effectiveMicroCompactTriggerChars({
   );
 }
 
-/// 上下文视图单一入口：折叠已压缩事件 → 同参数重复读去重 →
+/// 上下文视图单一入口：折叠已压缩事件 → 用户手动清理 → 同参数重复读去重 →
 /// microcompact（token 化触发）→ 工具结果总预算（头尾摘录）。
 /// 引擎请求、重放侧消息构建、压缩触发核算、上下文明细都走这一个
 /// 函数，保证四侧视图一致；确定性纯函数，事件流本体永不改写。
@@ -233,7 +233,10 @@ List<AgentEvent> buildContextView(
   int contextTokens = 0,
   int contextLimitTokens = 0,
 }) {
-  final deduped = dedupeRepeatedReads(foldCompactedEvents(events));
+  var base = foldCompactedEvents(events);
+  final cleared = manuallyClearedToolIds(events);
+  if (cleared.isNotEmpty) base = applyManualClears(base, cleared);
+  final deduped = dedupeRepeatedReads(base);
   if (!microCompactEnabled) return applyToolResultBudget(deduped);
   final trigger = effectiveMicroCompactTriggerChars(
     contextTokens: contextTokens,
@@ -244,6 +247,80 @@ List<AgentEvent> buildContextView(
   return applyToolResultBudget(
     microCompactEntries(deduped, triggerChars: trigger),
   );
+}
+
+// ── 用户手动清理（工作台「上下文」tab）──
+//
+// 清理记录以状态行事件落进事件流：首行是给人看的说明，末行是机器标记
+// `<!--ctx-clear:id1,id2-->` / `<!--ctx-restore:id1,id2-->`。状态行不进
+// 模型上下文；[buildContextView] 从事件流里按顺序回放标记得到「当前被
+// 清理的工具调用 id」，引擎 / 重放 / 压缩核算 / 上下文明细四侧自动一致，
+// 续跑、重启后也不丢。事件流里的工具结果原文永不改写，可随时恢复。
+
+/// 被用户手动清除的工具输出在上下文里的占位文本。
+const String kManualClearedPlaceholder = '[工具输出已由用户手动清除，需要时请重新调用工具获取]';
+
+const String _kClearTag = '<!--ctx-clear:';
+const String _kRestoreTag = '<!--ctx-restore:';
+const String _kTagEnd = '-->';
+
+/// 清理标记行。
+String manualClearMarker(Iterable<String> ids) =>
+    '$_kClearTag${ids.join(',')}$_kTagEnd';
+
+/// 恢复标记行。
+String manualRestoreMarker(Iterable<String> ids) =>
+    '$_kRestoreTag${ids.join(',')}$_kTagEnd';
+
+/// 状态行里给人看的部分（去掉机器标记行）。
+String visibleStatusText(String description) {
+  if (!description.contains('<!--ctx-')) return description;
+  return description
+      .split('\n')
+      .where((line) => !line.trimLeft().startsWith('<!--ctx-'))
+      .join('\n')
+      .trim();
+}
+
+/// 按事件顺序回放清理/恢复标记，得到当前被手动清理的工具调用 id。
+Set<String> manuallyClearedToolIds(List<AgentEvent> events) {
+  final ids = <String>{};
+  for (final event in events) {
+    if (event is! StatusChangeEvent) continue;
+    final text = event.description;
+    if (!text.contains('<!--ctx-')) continue;
+    for (final raw in text.split('\n')) {
+      final line = raw.trim();
+      final clear = line.startsWith(_kClearTag);
+      final restore = line.startsWith(_kRestoreTag);
+      if ((!clear && !restore) || !line.endsWith(_kTagEnd)) continue;
+      final body = line.substring(
+        (clear ? _kClearTag : _kRestoreTag).length,
+        line.length - _kTagEnd.length,
+      );
+      final parsed = body.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty);
+      if (clear) {
+        ids.addAll(parsed);
+      } else {
+        ids.removeAll(parsed);
+      }
+    }
+  }
+  return ids;
+}
+
+/// 把 [ids] 对应工具调用的输出在视图里替换为手动清理占位符。
+List<AgentEvent> applyManualClears(List<AgentEvent> entries, Set<String> ids) {
+  List<AgentEvent>? result;
+  for (var i = 0; i < entries.length; i++) {
+    final event = entries[i];
+    if (event is! ToolCallEvent || !ids.contains(event.id)) continue;
+    final detail = event.resultDetail;
+    if (detail == null || detail == kManualClearedPlaceholder) continue;
+    result ??= List.of(entries);
+    result[i] = _withClearedResult(event, placeholder: kManualClearedPlaceholder);
+  }
+  return result ?? entries;
 }
 
 ToolCallEvent _withClearedResult(

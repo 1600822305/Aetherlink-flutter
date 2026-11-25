@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 
@@ -17,7 +18,7 @@ class StatusChangeTile extends StatelessWidget {
     return EventRail(
       node: Icon(LucideIcons.diamond, size: 12, color: muted),
       child: Text(
-        event.description,
+        visibleStatusText(event.description),
         style: theme.textTheme.labelSmall?.copyWith(color: muted),
       ),
     );

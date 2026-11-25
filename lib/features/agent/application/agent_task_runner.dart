@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_cance
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
@@ -381,6 +382,34 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   Future<void> revokeCompaction(String taskId, CompactionEvent event) =>
       _manualCompact.revokeCompaction(taskId, event);
+
+  /// 手动清理指定工具调用的输出（只影响进模型的上下文视图，事件流原文
+  /// 保留）：落一条带机器标记的状态行，下一轮请求起生效。
+  Future<void> clearToolOutputs(
+    String taskId,
+    List<String> toolCallIds, {
+    int freedTokens = 0,
+  }) async {
+    if (toolCallIds.isEmpty) return;
+    final freed = freedTokens > 0
+        ? '，约释放 ${(freedTokens / 1000).toStringAsFixed(1)}K tokens'
+        : '';
+    await _store().appendStatusChange(
+      taskId,
+      '已手动清理 ${toolCallIds.length} 条工具输出$freed\n'
+      '${manualClearMarker(toolCallIds)}',
+    );
+  }
+
+  /// 恢复手动清理过的工具输出。
+  Future<void> restoreToolOutputs(String taskId, List<String> toolCallIds) async {
+    if (toolCallIds.isEmpty) return;
+    await _store().appendStatusChange(
+      taskId,
+      '已恢复 ${toolCallIds.length} 条手动清理的工具输出\n'
+      '${manualRestoreMarker(toolCallIds)}',
+    );
+  }
 
   void forceStop(String taskId) => _tokens[taskId]?.requestCancel();
 
