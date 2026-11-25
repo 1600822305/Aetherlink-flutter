@@ -4,7 +4,7 @@ import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_chunking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
@@ -105,6 +106,7 @@ class BackupService {
         groups: data.groups.length,
         settings: data.settings.length,
         knowledge: data.knowledge.length,
+        worldBooks: data.worldBooks.length,
       ),
       options: BackupOptions(
         includeMessages: includeMessages,
@@ -135,9 +137,10 @@ class BackupService {
       final groupsJson = jsonEncode(data.groups);
       final settingsJson = jsonEncode(data.settings);
       final knowledgeJson = jsonEncode(data.knowledge);
+      final worldBooksJson = jsonEncode(data.worldBooks);
 
       final allBytes = utf8.encode(
-        '$topicsJson$messagesJson$blocksJson$assistantsJson$providersJson$groupsJson$settingsJson$knowledgeJson',
+        '$topicsJson$messagesJson$blocksJson$assistantsJson$providersJson$groupsJson$settingsJson$knowledgeJson$worldBooksJson',
       );
       final checksumHex = sha256.convert(allBytes).toString();
       final manifestWithChecksum = BackupManifest(
@@ -163,6 +166,7 @@ class BackupService {
         groupsJson: groupsJson,
         settingsJson: settingsJson,
         knowledgeJson: knowledgeJson,
+        worldBooksJson: worldBooksJson,
       );
     });
 
@@ -331,6 +335,7 @@ class BackupService {
         BackupCategory.groups: s.groups,
         BackupCategory.settings: s.settings,
         BackupCategory.knowledge: s.knowledge,
+        BackupCategory.worldBooks: s.worldBooks,
       },
     );
   }
@@ -1377,6 +1382,22 @@ class BackupService {
           },
       ];
 
+      // 世界书：一本书一行，条目已在 blob 里；sortOrder / groupName 是独立列，
+      // 一并导出以保留用户排序与分组。
+      final worldBookRows = await (db.select(db.worldBookRows)
+            ..orderBy([(t) => OrderingTerm(expression: t.sortOrder)]))
+          .get();
+      final worldBooksJson = <Map<String, dynamic>>[
+        for (final row in worldBookRows)
+          {
+            ...row.data.toJson(),
+            'id': row.id,
+            'sortOrder': row.sortOrder,
+            'groupName': row.groupName,
+            'updatedAt': row.updatedAt,
+          },
+      ];
+
       return _RawBackupData(
         topics: topicsJson,
         messages: messagesJson,
@@ -1386,6 +1407,7 @@ class BackupService {
         groups: groupsJson,
         settings: settingsJson,
         knowledge: knowledgeJson,
+        worldBooks: worldBooksJson,
       );
     });
   }
@@ -1405,6 +1427,7 @@ class BackupService {
     required String groupsJson,
     required String settingsJson,
     required String knowledgeJson,
+    required String worldBooksJson,
   }) {
     final archive = Archive();
 
@@ -1422,6 +1445,7 @@ class BackupService {
     addJson('groups.json', groupsJson);
     addJson('settings.json', settingsJson);
     addJson('knowledge.json', knowledgeJson);
+    addJson('world_books.json', worldBooksJson);
 
     final zipData = ZipEncoder().encode(archive);
     if (zipData != null) {
@@ -1490,6 +1514,8 @@ class BackupService {
       'groups.json',
       'settings.json',
       'knowledge.json',
+      // 旧备份没有这个文件：缺失即跳过，与其写入时的拼接顺序一致，校验仍通过。
+      'world_books.json',
     ];
 
     final buffer = StringBuffer();
@@ -1529,6 +1555,7 @@ class BackupService {
       groups: await readJsonList('groups.json'),
       settings: await readJsonList('settings.json'),
       knowledge: await readJsonList('knowledge.json'),
+      worldBooks: await readJsonList('world_books.json'),
     );
   }
 
@@ -1584,6 +1611,9 @@ class BackupService {
           await db.delete(db.knowledgeContentRows).go();
           await db.delete(db.knowledgeItemRows).go();
           await db.delete(db.knowledgeBaseRows).go();
+        }
+        if (selected(BackupCategory.worldBooks)) {
+          await db.delete(db.worldBookRows).go();
         }
       }
 
@@ -1691,6 +1721,16 @@ class BackupService {
         // 重建完成后回收不再被任何切块引用的孤儿嵌入（设计文档 §11.1）。
         await db.knowledgeDao.gcOrphanEmbeddings();
       }
+      if (selected(BackupCategory.worldBooks)) {
+        stats[BackupCategory.worldBooks] = await _restoreList(
+          BackupCategory.worldBooks,
+          data.worldBooks,
+          mode,
+          exists: (id) async => await db.worldBookDao.getBook(id) != null,
+          insert: _rawInsertWorldBook,
+          onProgress: onProgress,
+        );
+      }
     });
 
     int succeeded = 0;
@@ -1721,6 +1761,7 @@ class BackupService {
         BackupCategory.settings => data.settings.isNotEmpty,
         BackupCategory.memories => data.memories.isNotEmpty,
         BackupCategory.knowledge => data.knowledge.isNotEmpty,
+        BackupCategory.worldBooks => data.worldBooks.isNotEmpty,
       };
 
   /// Writes one category's records with conflict handling, reconciliation
@@ -1879,6 +1920,31 @@ class BackupService {
         embedding: (embeddingList?.isEmpty ?? true) ? null : embeddingList,
       );
       await db.memoryDao.upsert(item);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 恢复一本世界书：整本（含条目）写回 blob，保留备份里的排序位与分组。用原始
+  /// upsert 而非 DAO 的 `upsertBook`，否则新书会被追加到末尾、打乱原排序。
+  Future<bool> _rawInsertWorldBook(Map<String, dynamic> json) async {
+    try {
+      final book = WorldBook.fromJson(json);
+      if (book.id.isEmpty) return false;
+      final group = json['groupName'];
+      await db.into(db.worldBookRows).insertOnConflictUpdate(
+        WorldBookRowsCompanion.insert(
+          id: book.id,
+          sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+          groupName: Value(
+            group is String && group.trim().isNotEmpty ? group.trim() : null,
+          ),
+          data: book,
+          updatedAt: (json['updatedAt'] as num?)?.toInt() ??
+              DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       return true;
     } catch (_) {
       return false;
@@ -2107,6 +2173,10 @@ class _RawBackupData {
   /// 切块/向量不进备份，恢复时从正文重建。旧备份没有这一段时为空。
   final List<Map<String, dynamic>> knowledge;
 
+  /// 世界书（一本书一条记录，含条目与 sortOrder / groupName）。旧备份没有
+  /// `world_books.json` 时为空。
+  final List<Map<String, dynamic>> worldBooks;
+
   const _RawBackupData({
     required this.topics,
     required this.messages,
@@ -2117,5 +2187,6 @@ class _RawBackupData {
     required this.settings,
     this.memories = const [],
     this.knowledge = const [],
+    this.worldBooks = const [],
   });
 }

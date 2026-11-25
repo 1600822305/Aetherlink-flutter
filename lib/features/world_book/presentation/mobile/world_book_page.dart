@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/world_book/application/world_books_c
 import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/world_book_actions.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
+import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_global_default_card.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_list.dart';
 
 class WorldBookPage extends ConsumerWidget {
@@ -106,6 +107,8 @@ class WorldBookPage extends ConsumerWidget {
         data: (_) => ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            WorldBookGlobalDefaultCard(books: books),
+            const SizedBox(height: 16),
             WorldBookSectionHeader(title: '世界书 (${books.length})'),
             if (books.isEmpty)
               WorldBooksEmptyHint(

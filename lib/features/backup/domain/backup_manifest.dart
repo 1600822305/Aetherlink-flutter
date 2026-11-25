@@ -92,6 +92,10 @@ class BackupStats {
   /// 知识库个数（一个库连同其条目/正文作为一条记录导出，见 knowledge.json）。
   final int knowledge;
 
+  /// 世界书本数（一本书连同其条目作为一条记录，见 world_books.json）。旧备份无此
+  /// 字段时为 0。
+  final int worldBooks;
+
   const BackupStats({
     this.topics = 0,
     this.messages = 0,
@@ -101,6 +105,7 @@ class BackupStats {
     this.groups = 0,
     this.settings = 0,
     this.knowledge = 0,
+    this.worldBooks = 0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -112,6 +117,7 @@ class BackupStats {
     'groups': groups,
     'settings': settings,
     'knowledge': knowledge,
+    'worldBooks': worldBooks,
   };
 
   factory BackupStats.fromJson(Map<String, dynamic> json) {
@@ -124,6 +130,7 @@ class BackupStats {
       groups: json['groups'] as int? ?? 0,
       settings: json['settings'] as int? ?? 0,
       knowledge: json['knowledge'] as int? ?? 0,
+      worldBooks: json['worldBooks'] as int? ?? 0,
     );
   }
 }

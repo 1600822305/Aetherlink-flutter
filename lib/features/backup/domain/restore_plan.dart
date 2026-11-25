@@ -16,6 +16,7 @@ enum BackupCategory {
   settings,
   memories,
   knowledge,
+  worldBooks,
 }
 
 extension BackupCategoryX on BackupCategory {
@@ -24,6 +25,13 @@ extension BackupCategoryX on BackupCategory {
   /// exists (orphan), so the checklist keeps these linked.
   ///
   /// Chain: messageBlocks → messages → topics.
+  ///
+  /// [BackupCategory.worldBooks] is deliberately independent: assistants /
+  /// topics only hold 世界书 *id references* (`worldBookIds`), and binding
+  /// resolution already drops ids with no matching book, so restoring
+  /// assistants without world books (or vice versa) leaves dangling ids that
+  /// are ignored — never an orphan row. Linking them would force-tick 世界书
+  /// whenever 助手 is restored and change every existing restore checklist.
   Set<BackupCategory> get directDependencies {
     switch (this) {
       case BackupCategory.messages:
@@ -37,6 +45,7 @@ extension BackupCategoryX on BackupCategory {
       case BackupCategory.settings:
       case BackupCategory.memories:
       case BackupCategory.knowledge:
+      case BackupCategory.worldBooks:
         return const {};
     }
   }
@@ -78,6 +87,8 @@ extension BackupCategoryX on BackupCategory {
         return '记忆';
       case BackupCategory.knowledge:
         return '知识库';
+      case BackupCategory.worldBooks:
+        return '世界书';
     }
   }
 }

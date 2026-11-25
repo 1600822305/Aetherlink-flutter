@@ -13,6 +13,7 @@ const _kDataFileStatKeys = {
   'groups.json': 'groups',
   'settings.json': 'settings',
   'knowledge.json': 'knowledge',
+  'world_books.json': 'worldBooks',
 };
 
 /// 手工拼一个 Flutter ZIP 备份（跳过 createBackup 对 path_provider 的依赖）。

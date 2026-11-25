@@ -54,7 +54,8 @@ class WorldBookTab extends ConsumerWidget {
               const SizedBox(height: 6),
               Text(
                 '对话中出现条目关键词时，把设定注入发给模型的上下文；'
-                '单个话题可在聊天页「扩展 → 世界书」中覆盖',
+                '一本都不绑定时使用「世界书 → 全局默认」；'
+                '单个话题可在聊天页「扩展 → 世界书」中覆盖或关闭',
                 style: TextStyle(
                   fontSize: 12,
                   color: theme.colorScheme.onSurfaceVariant,

@@ -19,5 +19,12 @@ WorldBookMenuStatus worldBookMenuStatus(Ref ref) {
   final assistant = ref.watch(currentAssistantProvider);
   final books =
       ref.watch(worldBookLibraryProvider).value ?? const <WorldBook>[];
-  return worldBookMenuStatusOf(assistant, topic, books);
+  final globalBookIds =
+      ref.watch(worldBookGlobalDefaultProvider).value ?? const <String>[];
+  return worldBookMenuStatusOf(
+    assistant,
+    topic,
+    books,
+    globalBookIds: globalBookIds,
+  );
 }

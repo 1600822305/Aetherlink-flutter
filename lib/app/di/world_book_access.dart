@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/core/database/database_provider.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message_segment.dart';
@@ -32,12 +33,54 @@ WorldBookRepository worldBookRepository(Ref ref) =>
 Future<List<WorldBook>> worldBookLibrary(Ref ref) =>
     ref.watch(worldBookRepositoryProvider).getAll();
 
-/// Resolves [assistant] / [topic]'s effective 世界书 binding.
-WorldBookBinding worldBookBindingFor(Assistant? assistant, Topic? topic) =>
-    resolveWorldBookBinding(
-      assistantBookIds: assistant?.worldBookIds ?? const <String>[],
-      topicBookIds: topic?.worldBookIds,
-    );
+/// The 全局默认 world book ids (settings key [kWorldBookGlobalDefaultKey]),
+/// the third binding level below topic and assistant. Hydrates from the KV
+/// store on first build; [setIds] writes through.
+@Riverpod(keepAlive: true)
+class WorldBookGlobalDefault extends _$WorldBookGlobalDefault {
+  @override
+  Future<List<String>> build() async => decodeWorldBookGlobalDefault(
+    await ref.read(appSettingsStoreProvider).getSetting(
+      kWorldBookGlobalDefaultKey,
+    ),
+  );
+
+  Future<void> setIds(List<String> ids) async {
+    final clean = [
+      for (final id in ids.toSet())
+        if (id.trim().isNotEmpty) id.trim(),
+    ];
+    await ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(
+          kWorldBookGlobalDefaultKey,
+          encodeWorldBookGlobalDefault(clean),
+        );
+    state = AsyncData(List<String>.unmodifiable(clean));
+  }
+}
+
+/// Resolves [assistant] / [topic]'s effective 世界书 binding — the single
+/// resolver every injection path and the 扩展 menu go through.
+/// [globalBookIds] is the 全局默认 level (see [resolveWorldBookBinding]).
+WorldBookBinding worldBookBindingFor(
+  Assistant? assistant,
+  Topic? topic, {
+  List<String> globalBookIds = const <String>[],
+}) => resolveWorldBookBinding(
+  assistantBookIds: assistant?.worldBookIds ?? const <String>[],
+  topicBookIds: topic?.worldBookIds,
+  globalBookIds: globalBookIds,
+);
+
+/// Reads the 全局默认 ids for a request (awaits hydration; never throws).
+Future<List<String>> readWorldBookGlobalDefault(Ref ref) async {
+  try {
+    return await ref.read(worldBookGlobalDefaultProvider.future);
+  } on Object {
+    return const <String>[];
+  }
+}
 
 /// The entries one request triggers, with sticky / cooldown / delay applied
 /// (P3). [scanTexts] are the request's user / assistant view texts, oldest
@@ -50,8 +93,13 @@ Future<WorldBookTurn> collectWorldBookTurn(
   required Topic? topic,
   required List<String> scanTexts,
   WorldBookClock? clock,
+  List<String> globalBookIds = const <String>[],
 }) async {
-  final binding = worldBookBindingFor(assistant, topic);
+  final binding = worldBookBindingFor(
+    assistant,
+    topic,
+    globalBookIds: globalBookIds,
+  );
   if (binding.ids.isEmpty) return WorldBookTurn.none;
   final books = activeWorldBooks(
     binding,
@@ -121,9 +169,13 @@ typedef WorldBookMenuStatus = ({bool isOn, int bookCount, int entryCount});
 WorldBookMenuStatus worldBookMenuStatusOf(
   Assistant? assistant,
   Topic? topic,
-  List<WorldBook> books,
-) {
-  final active = activeWorldBooks(worldBookBindingFor(assistant, topic), books);
+  List<WorldBook> books, {
+  List<String> globalBookIds = const <String>[],
+}) {
+  final active = activeWorldBooks(
+    worldBookBindingFor(assistant, topic, globalBookIds: globalBookIds),
+    books,
+  );
   var entries = 0;
   for (final book in active) {
     entries += book.enabledEntryCount;
