@@ -8,8 +8,8 @@ import 'package:aetherlink_flutter/core/network/network_proxy_config.dart';
 import 'package:aetherlink_flutter/features/settings/application/network_proxy_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/network_proxy_settings.dart';
-import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
+/// 网络代理设置页 —— iOS 风格分组列表（V1）。
 class NetworkProxySettingsPage extends ConsumerStatefulWidget {
   const NetworkProxySettingsPage({super.key});
 
@@ -30,6 +30,7 @@ class _NetworkProxySettingsPageState
   bool _testing = false;
   bool? _testSucceeded;
   String? _testError;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
@@ -65,106 +66,160 @@ class _NetworkProxySettingsPageState
     _syncController(_passwordController, settings.password);
     _syncController(_bypassController, settings.bypassRules);
 
+    final enabled = settings.enabled;
+
     return Scaffold(
+      backgroundColor: _GroupedColors.background(context),
       appBar: const ModelSettingsAppBar(title: '网络代理'),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
+          8,
           16,
-          16,
-          16 + MediaQuery.paddingOf(context).bottom,
+          24 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
-          ModelSettingsCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const ModelSectionTitle('代理设置'),
-                const SizedBox(height: 16),
-                _SwitchRow(
-                  title: '启用网络代理',
-                  description: '开启后，模型请求、自动获取模型和远程 MCP 连接将使用此代理',
-                  value: settings.enabled,
+          _Group(
+            children: [
+              _Row(
+                label: '启用网络代理',
+                labelWidth: null,
+                trailing: CustomSwitch(
+                  value: enabled,
                   onChanged: controller.setEnabled,
                 ),
-                const SizedBox(height: 16),
-                _ProxyTypeField(
-                  value: settings.type,
-                  onChanged: controller.setType,
-                ),
-                const SizedBox(height: 16),
-                ModelFormField(
-                  label: '服务器地址',
-                  hint: '127.0.0.1',
-                  controller: _hostController,
-                  onChanged: controller.setHost,
-                ),
-                const SizedBox(height: 16),
-                ModelFormField(
-                  label: '端口',
-                  hint: '8080',
-                  controller: _portController,
-                  onChanged: controller.setPort,
-                ),
-                const SizedBox(height: 16),
-                ModelFormField(
-                  label: '用户名',
-                  hint: '可选',
-                  controller: _usernameController,
-                  onChanged: controller.setUsername,
-                ),
-                const SizedBox(height: 16),
-                ModelFormField(
-                  label: '密码',
-                  hint: '可选',
-                  controller: _passwordController,
-                  obscureText: true,
-                  onChanged: controller.setPassword,
-                ),
-                const SizedBox(height: 16),
-                ModelFormField(
-                  label: '绕过规则',
-                  hint: kDefaultNetworkProxyBypassRules,
-                  helper: '用逗号、分号或空格分隔；支持 *、*.example.com 和 IPv4 CIDR',
-                  controller: _bypassController,
-                  maxLines: 3,
-                  onChanged: controller.setBypassRules,
-                ),
-                const SizedBox(height: 8),
-                const _Note(
-                  text: '模型服务商自己的代理设置尚未接入时，全局代理作为默认网络出口；本地地址和内网地址会按绕过规则直连。',
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          ModelSettingsCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const ModelSectionTitle('连接测试'),
-                const SizedBox(height: 16),
-                ModelFormField(
-                  label: '测试地址',
-                  hint: 'https://www.google.com',
-                  controller: _testUrlController,
-                ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: ModelTonalButton(
-                    label: _testing ? '测试中...' : '测试连接',
-                    icon: LucideIcons.testTube2,
-                    onPressed: _testing ? null : () => _testProxy(settings),
+          const _Footer('开启后，模型请求、自动获取模型和远程 MCP 连接将使用此代理。'),
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: enabled ? 1 : 0.4,
+            child: IgnorePointer(
+              ignoring: !enabled,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _Header('服务器'),
+                  _Group(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: _Segmented<NetworkProxyType>(
+                          value: settings.type,
+                          options: const [
+                            (NetworkProxyType.http, 'HTTP'),
+                            (NetworkProxyType.https, 'HTTPS'),
+                            (NetworkProxyType.socks5, 'SOCKS5'),
+                          ],
+                          onChanged: controller.setType,
+                        ),
+                      ),
+                      _InputRow(
+                        label: '地址',
+                        hint: '127.0.0.1',
+                        controller: _hostController,
+                        keyboardType: TextInputType.url,
+                        onChanged: controller.setHost,
+                      ),
+                      _InputRow(
+                        label: '端口',
+                        hint: '8080',
+                        controller: _portController,
+                        keyboardType: TextInputType.number,
+                        onChanged: controller.setPort,
+                      ),
+                    ],
                   ),
-                ),
-                if (_testSucceeded != null) ...[
-                  const SizedBox(height: 12),
-                  _TestResult(success: _testSucceeded!, message: _testError),
+                  const _Header('认证（可选）'),
+                  _Group(
+                    children: [
+                      _InputRow(
+                        label: '用户名',
+                        hint: '未设置',
+                        controller: _usernameController,
+                        onChanged: controller.setUsername,
+                      ),
+                      _InputRow(
+                        label: '密码',
+                        hint: '未设置',
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        onChanged: controller.setPassword,
+                        suffix: GestureDetector(
+                          onTap: () => setState(
+                            () => _obscurePassword = !_obscurePassword,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Icon(
+                              _obscurePassword
+                                  ? LucideIcons.eyeOff
+                                  : LucideIcons.eye,
+                              size: 16,
+                              color: _GroupedColors.secondary(context),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const _Header('绕过规则'),
+                  _Group(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        child: TextField(
+                          controller: _bypassController,
+                          onChanged: controller.setBypassRules,
+                          minLines: 2,
+                          maxLines: 4,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            height: 1.4,
+                            fontFamily: 'monospace',
+                            color: _GroupedColors.value(context),
+                          ),
+                          decoration: _bareDecoration(
+                            context,
+                            kDefaultNetworkProxyBypassRules,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const _Footer(
+                    '用逗号、分号或空格分隔；支持 *、*.example.com 和 IPv4 CIDR。'
+                    '模型服务商未配置独立代理时，全局代理作为默认网络出口；本地与内网地址按绕过规则直连。',
+                  ),
                 ],
-              ],
+              ),
             ),
           ),
+          const _Header('连接测试'),
+          _Group(
+            children: [
+              _InputRow(
+                label: '地址',
+                hint: 'https://www.google.com',
+                controller: _testUrlController,
+                keyboardType: TextInputType.url,
+              ),
+              _ActionRow(
+                label: _testing ? '测试中…' : '测试连接',
+                loading: _testing,
+                onTap: _testing ? null : () => _testProxy(settings),
+              ),
+            ],
+          ),
+          if (_testSucceeded != null)
+            _TestResult(success: _testSucceeded!, message: _testError),
         ],
       ),
     );
@@ -235,89 +290,311 @@ class _NetworkProxySettingsPageState
   }
 }
 
-class _ProxyTypeField extends StatelessWidget {
-  const _ProxyTypeField({required this.value, required this.onChanged});
+// ---------------------------------------------------------------------------
+// 分组列表基础组件
+// ---------------------------------------------------------------------------
 
-  final NetworkProxyType value;
-  final ValueChanged<NetworkProxyType> onChanged;
+abstract final class _GroupedColors {
+  static bool _dark(BuildContext c) =>
+      Theme.of(c).brightness == Brightness.dark;
 
-  @override
-  Widget build(BuildContext context) {
-    return AppSelectField<NetworkProxyType>(
-      label: '代理类型',
-      value: value,
-      options: const [
-        AppSelectOption(value: NetworkProxyType.http, label: 'HTTP'),
-        AppSelectOption(value: NetworkProxyType.https, label: 'HTTPS'),
-        AppSelectOption(value: NetworkProxyType.socks5, label: 'SOCKS5'),
-      ],
-      onChanged: onChanged,
-    );
-  }
+  static Color background(BuildContext c) =>
+      _dark(c) ? const Color(0xFF000000) : const Color(0xFFF2F2F7);
+
+  static Color group(BuildContext c) =>
+      _dark(c) ? const Color(0xFF1C1C1E) : Colors.white;
+
+  static Color divider(BuildContext c) =>
+      _dark(c) ? const Color(0xFF38383A) : const Color(0xFFE5E5EA);
+
+  static Color secondary(BuildContext c) =>
+      _dark(c) ? const Color(0xFF8E8E93) : const Color(0xFF6E6E73);
+
+  static Color value(BuildContext c) =>
+      _dark(c) ? const Color(0xFFEBEBF5) : const Color(0xFF3C3C43);
+
+  static Color segmentTrack(BuildContext c) =>
+      _dark(c) ? const Color(0xFF2C2C2E) : const Color(0xFFE9E9EB);
+
+  static Color segmentThumb(BuildContext c) =>
+      _dark(c) ? const Color(0xFF636366) : Colors.white;
 }
 
-class _SwitchRow extends StatelessWidget {
-  const _SwitchRow({
-    required this.title,
-    required this.description,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String title;
-  final String description;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        CustomSwitch(value: value, onChanged: onChanged),
-      ],
-    );
-  }
+InputDecoration _bareDecoration(BuildContext context, String hint) {
+  return InputDecoration(
+    isDense: true,
+    border: InputBorder.none,
+    enabledBorder: InputBorder.none,
+    focusedBorder: InputBorder.none,
+    filled: false,
+    contentPadding: EdgeInsets.zero,
+    hintText: hint,
+    hintStyle: TextStyle(
+      color: _GroupedColors.secondary(context).withValues(alpha: 0.6),
+    ),
+  );
 }
 
-class _Note extends StatelessWidget {
-  const _Note({required this.text});
-
+class _Header extends StatelessWidget {
+  const _Header(this.text);
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Text(
-      text,
-      style: theme.textTheme.bodySmall?.copyWith(
-        fontSize: 12,
-        height: 1.35,
-        color: theme.colorScheme.onSurfaceVariant,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 6),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12.5,
+          letterSpacing: 0.2,
+          color: _GroupedColors.secondary(context),
+        ),
+      ),
+    );
+  }
+}
+
+class _Footer extends StatelessWidget {
+  const _Footer(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.45,
+          color: _GroupedColors.secondary(context),
+        ),
+      ),
+    );
+  }
+}
+
+class _Group extends StatelessWidget {
+  const _Group({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final divider = _GroupedColors.divider(context);
+    final items = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      items.add(children[i]);
+      if (i != children.length - 1) {
+        items.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: Divider(height: 0.5, thickness: 0.5, color: divider),
+          ),
+        );
+      }
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: _GroupedColors.group(context),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: items,
+      ),
+    );
+  }
+}
+
+class _Row extends StatelessWidget {
+  const _Row({
+    required this.label,
+    required this.trailing,
+    this.labelWidth = 72,
+  });
+
+  final String label;
+  final Widget trailing;
+  final double? labelWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelText = Text(
+      label,
+      style: TextStyle(
+        fontSize: 15,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
+    );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Row(
+          children: [
+            if (labelWidth == null)
+              Expanded(child: labelText)
+            else
+              SizedBox(width: labelWidth, child: labelText),
+            if (labelWidth != null) const SizedBox(width: 8),
+            if (labelWidth != null) Expanded(child: trailing) else trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InputRow extends StatelessWidget {
+  const _InputRow({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    this.onChanged,
+    this.obscureText = false,
+    this.keyboardType,
+    this.suffix,
+  });
+
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final ValueChanged<String>? onChanged;
+  final bool obscureText;
+  final TextInputType? keyboardType;
+  final Widget? suffix;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Row(
+      label: label,
+      trailing: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              obscureText: obscureText,
+              keyboardType: keyboardType,
+              textAlign: TextAlign.right,
+              autocorrect: false,
+              enableSuggestions: false,
+              style: TextStyle(
+                fontSize: 15,
+                color: _GroupedColors.value(context),
+              ),
+              decoration: _bareDecoration(context, hint),
+            ),
+          ),
+          if (suffix != null) suffix!,
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({required this.label, required this.onTap, this.loading = false});
+
+  final String label;
+  final VoidCallback? onTap;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (loading) ...[
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: color),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: onTap == null ? color.withValues(alpha: 0.5) : color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Segmented<T> extends StatelessWidget {
+  const _Segmented({
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final T value;
+  final List<(T, String)> options;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: _GroupedColors.segmentTrack(context),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        children: [
+          for (final (optionValue, label) in options)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onChanged(optionValue),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: optionValue == value
+                        ? _GroupedColors.segmentThumb(context)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(7),
+                    boxShadow: optionValue == value
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x1F000000),
+                              blurRadius: 3,
+                              offset: Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: onSurface,
+                      fontWeight: optionValue == value
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -331,28 +608,28 @@ class _TestResult extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = success ? const Color(0xFF16A34A) : theme.colorScheme.error;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          success ? LucideIcons.circleCheck : LucideIcons.circleAlert,
-          size: 16,
-          color: color,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            success ? '连接成功' : '连接失败：${message ?? '未知错误'}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontSize: 12.5,
-              color: color,
-              fontWeight: FontWeight.w600,
+    final color = success
+        ? const Color(0xFF34C759)
+        : Theme.of(context).colorScheme.error;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            success ? LucideIcons.circleCheck : LucideIcons.circleAlert,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              success ? '连接成功' : '连接失败：${message ?? '未知错误'}',
+              style: TextStyle(fontSize: 12.5, height: 1.35, color: color),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
