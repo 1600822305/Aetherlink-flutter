@@ -51,7 +51,8 @@ class StorageMediaController extends Notifier<StorageMediaState> {
   Future<void> _load() async {
     if (!ref.mounted) return;
     final repo = ref.read(storageMediaRepositoryProvider);
-    if (repo is CachedStorageMediaSource) return _loadFast(repo);
+    // 两个接口互不继承，`is` 不会做类型提升：用模式匹配绑定新变量。
+    if (repo case final CachedStorageMediaSource fast) return _loadFast(fast);
     state = StorageMediaState(items: state.items, hasLoaded: state.hasLoaded,
       isLoading: !state.hasLoaded, isBusy: state.isBusy);
     try {

@@ -362,7 +362,7 @@ List<StorageMedia> loadStorageMedia(String documents, List<String> activeReferen
         .map((row) => Map<String, Object?>.from(row)).toList();
     return scanStorageMedia(documents, rows, activeReferences,
       isReferenced: (path) => isStorageMediaReferencedInDatabase(db, path));
-  } finally { db.dispose(); }
+  } finally { db.close(); }
 }
 
 StorageMediaDeletion deleteStorageMedia(
@@ -399,7 +399,7 @@ StorageMediaDeletion deleteStorageMedia(
       db.execute('ROLLBACK');
       rethrow;
     }
-  } finally { db.dispose(); }
+  } finally { db.close(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +456,7 @@ List<StorageMedia> quickScanStorageMedia(
             ? item.copyWith(isInUse: known[item.id] ?? true, usagePending: true)
             : item,
     ];
-  } finally { db.dispose(); }
+  } finally { db.close(); }
 }
 
 /// 一次遍历所有引用来源，把磁盘文件名（及其 URL 编码形式）当子串在引用
@@ -494,7 +494,7 @@ List<StorageMedia> resolveStorageMediaUsage(String documents, String cachePath,
       final value = cursor.current.values.first;
       scan(value is String ? value : value?.toString());
     }
-  } finally { db.dispose(); }
+  } finally { db.close(); }
 
   final resolved = [
     for (final item in items)
