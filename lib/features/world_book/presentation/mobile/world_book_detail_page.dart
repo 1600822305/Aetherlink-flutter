@@ -115,7 +115,7 @@ class _WorldBookDetailPageState extends ConsumerState<WorldBookDetailPage> {
     final ok = await confirmWorldBookAction(
       context,
       title: '删除条目',
-      message: '将删除「${entry.name.isEmpty ? '未命名条目' : entry.name}」。',
+      message: '将删除「${entry.displayTitle.isEmpty ? '未命名条目' : entry.displayTitle}」。',
       confirmLabel: '删除',
       destructive: true,
     );

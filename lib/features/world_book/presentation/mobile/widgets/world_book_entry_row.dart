@@ -96,7 +96,7 @@ class WorldBookEntryRow extends StatelessWidget {
         icon: entry.constant ? LucideIcons.pin : LucideIcons.fileText,
         active: entry.enabled,
       ),
-      title: entry.name.isEmpty ? '未命名条目' : entry.name,
+      title: entry.displayTitle.isEmpty ? '未命名条目' : entry.displayTitle,
       titleBadges: [
         if (entry.constant)
           const WorldBookBadge('常驻', color: Color(0xFF10B981)),

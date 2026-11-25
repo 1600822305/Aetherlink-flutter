@@ -361,6 +361,32 @@ abstract class WorldBookEntry with _$WorldBookEntry {
     );
   }
 
+  /// 列表、注入记录里显示的标题。[name]（ST `comment`）为空时依次用：内容里的
+  /// `<Name>…</Name>` / `<name>`、第一个主关键词、内容第一行（截到 30 字）；
+  /// 都没有时为空串。只用于显示，不写回 [name]。
+  String get displayTitle {
+    final own = name.trim();
+    if (own.isNotEmpty) return own;
+    final tag = RegExp(
+      r'<name>\s*([^<\n]{1,60}?)\s*</name>',
+      caseSensitive: false,
+    ).firstMatch(content);
+    if (tag != null) return tag.group(1)!.trim();
+    for (final k in keywords) {
+      if (k.trim().isNotEmpty) return k.trim();
+    }
+    for (final line in content.split('\n')) {
+      final t = line.trim();
+      if (t.isEmpty || t.startsWith('@@')) continue;
+      final runes = t.runes.toList();
+      return runes.length > 30 ? '${String.fromCharCodes(runes.take(30))}…' : t;
+    }
+    return '';
+  }
+
+  /// [name] 为空、[displayTitle] 是推断出来的。
+  bool get hasInferredTitle => name.trim().isEmpty && displayTitle.isNotEmpty;
+
   static String _str(Object? v) => v is String ? v : '';
 
   static bool _bool(Object? v, bool fallback) => v is bool ? v : fallback;

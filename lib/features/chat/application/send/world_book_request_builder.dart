@@ -188,7 +188,7 @@ class WorldBookRequestBuilder {
         count: turn.triggered.length,
         entries: [
           for (final e in turn.triggered)
-            e.name.trim().isEmpty ? '未命名条目' : e.name.trim(),
+            e.displayTitle.isEmpty ? '未命名条目' : e.displayTitle,
         ],
         estimatedTokens: estimateTokens(worldBookInjectedText(turn)),
         reasons: [

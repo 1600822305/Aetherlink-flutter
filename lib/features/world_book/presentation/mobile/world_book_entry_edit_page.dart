@@ -435,9 +435,11 @@ class _WorldBookEntryEditPageState
         fontSize: 15,
         fontWeight: FontWeight.w600,
       ),
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: '标题',
-        hintText: '如：外貌、王都、魔法规则（不参与匹配）',
+        hintText: _base.hasInferredTitle
+            ? '未填写，列表里显示为「${_base.displayTitle}」'
+            : '如：外貌、王都、魔法规则（不参与匹配）',
       ),
     ),
     const SizedBox(height: 12),
