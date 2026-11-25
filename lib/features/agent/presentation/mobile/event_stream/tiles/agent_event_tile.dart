@@ -45,7 +45,7 @@ class AgentEventTile extends StatelessWidget {
           when e.state == AgentToolCallState.waitingApproval =>
         ApprovalCard(event: e, taskId: taskId),
       final ToolCallEvent e when e.toolName == kToolAttemptCompletion =>
-        CompletionCard(event: e),
+        CompletionCard(key: ValueKey('completion_${e.id}'), event: e),
       final ToolCallEvent e when e.toolName == kToolSpawnSubagent =>
         SubagentTile(event: e),
       final ToolCallEvent e => ToolRow(event: e, taskId: taskId),

@@ -13,7 +13,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 class FinishResultStreamer {
   FinishResultStreamer(this._store, this._taskId, this._toolName);
 
-  static const Duration _kMinWriteInterval = Duration(milliseconds: 200);
+  static const Duration _kMinWriteInterval = Duration(milliseconds: 50);
 
   final AgentEventStore _store;
   final String _taskId;
