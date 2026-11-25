@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/event_stream_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_page.dart';
+import 'package:aetherlink_flutter/shared/widgets/keep_alive_page.dart';
 import 'package:aetherlink_flutter/shared/widgets/page_swipe_lock.dart';
 
 /// 任务工作台两页横滑壳（已拍板 2 页，工作区页同款 `PageView` 交互）：
@@ -26,7 +27,9 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
 
   /// 终端拖选等子组件临时禁滑用（见 PageSwipeLock）。
   final PageSwipeLock _swipeLock = PageSwipeLock();
-  int _page = 0;
+
+  /// 只驱动底部页指示器；不用 setState，避免翻页过半时整页重建两侧子树。
+  final ValueNotifier<int> _page = ValueNotifier(0);
 
   @override
   void didUpdateWidget(covariant AgentTaskShell oldWidget) {
@@ -43,7 +46,7 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
         );
-        if (_page != 0) setState(() => _page = 0);
+        _page.value = 0;
       });
     }
   }
@@ -61,6 +64,7 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
   void dispose() {
     _controller.dispose();
     _swipeLock.dispose();
+    _page.dispose();
     super.dispose();
   }
 
@@ -81,15 +85,24 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
                 physics: _swipeLock.locked
                     ? const NeverScrollableScrollPhysics()
                     : null,
-                onPageChanged: (i) => setState(() => _page = i),
+                onPageChanged: (i) => _page.value = i,
+                // 两页都保活：PageView 默认销毁滑出视口的页，下次滑入要在
+                // 拖动途中整页重建（事件流列表 / 终端挂接 / diff 加载）。
                 children: [
-                  Column(
-                    children: [
-                      if (widget.topBar != null) widget.topBar!,
-                      Expanded(child: EventStreamPage(task: widget.task)),
-                    ],
+                  KeepAlivePage(
+                    child: Column(
+                      children: [
+                        if (widget.topBar != null) widget.topBar!,
+                        Expanded(child: EventStreamPage(task: widget.task)),
+                      ],
+                    ),
                   ),
-                  WorkbenchPage(task: widget.task, onBackToChat: _backToChat),
+                  KeepAlivePage(
+                    child: WorkbenchPage(
+                      task: widget.task,
+                      onBackToChat: _backToChat,
+                    ),
+                  ),
                 ],
               );
             },
@@ -99,22 +112,25 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
         // 页指示器（工作区页同款的两点样式）。
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (var i = 0; i < 2; i++)
-                Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: i == _page
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurface.withValues(alpha: 0.2),
+          child: ValueListenableBuilder<int>(
+            valueListenable: _page,
+            builder: (context, page, _) => Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < 2; i++)
+                  Container(
+                    width: 6,
+                    height: 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: i == page
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
