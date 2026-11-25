@@ -60,7 +60,12 @@ class WorldBookRequestBuilder {
     final repo = _repoOf();
     final topic = topicId == null ? null : await repo.getTopic(topicId);
     final assistant = await repo.getAssistant(_assistantIdOf());
-    final binding = worldBookBindingFor(assistant, topic);
+    final globalBookIds = await readWorldBookGlobalDefault(_refOf());
+    final binding = worldBookBindingFor(
+      assistant,
+      topic,
+      globalBookIds: globalBookIds,
+    );
     if (binding.ids.isEmpty) return WorldBookTurn.none;
     final owner = userMessageId == null
         ? null
@@ -74,6 +79,7 @@ class WorldBookRequestBuilder {
       topic: topic,
       scanTexts: scanTextsOf(views, _history),
       clock: clock,
+      globalBookIds: globalBookIds,
     );
     if (owner != null) {
       final metadata = worldBookMetadataFor(owner.metadata, turn);

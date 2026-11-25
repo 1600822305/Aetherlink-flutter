@@ -70,14 +70,19 @@ class _WorldBookTopicSheetState extends ConsumerState<_WorldBookTopicSheet> {
     final binding = resolveWorldBookBinding(
       assistantBookIds: widget.assistantBookIds,
       topicBookIds: _ids,
+      globalBookIds: _globalIds,
     );
     final active = activeWorldBooks(binding, books).length;
     return switch (binding.source) {
       WorldBookBindingSource.assistant => '继承助手 · 生效 $active 本',
+      WorldBookBindingSource.globalDefault =>
+        '继承全局默认（助手未绑定）· 生效 $active 本',
       WorldBookBindingSource.topicOverride => '话题覆盖 · 生效 $active 本',
       WorldBookBindingSource.topicDisabled => '本话题已关闭世界书',
     };
   }
+
+  List<String> _globalIds = const <String>[];
 
   @override
   Widget build(BuildContext context) {
@@ -85,6 +90,8 @@ class _WorldBookTopicSheetState extends ConsumerState<_WorldBookTopicSheet> {
     final books =
         ref.watch(worldBookLibraryProvider).asData?.value ??
         const <WorldBook>[];
+    _globalIds =
+        ref.watch(worldBookGlobalDefaultProvider).value ?? const <String>[];
     // 覆盖模式下一本都不选等同关闭，确认按钮直接提交 [] 以免含义模糊。
     final ids = _mode == _Mode.override && _selected.isEmpty
         ? const <String>[]
@@ -170,7 +177,9 @@ class _WorldBookTopicSheetState extends ConsumerState<_WorldBookTopicSheet> {
     }
     final editable = _mode == _Mode.override;
     final shown = switch (_mode) {
-      _Mode.inherit => widget.assistantBookIds.toSet(),
+      _Mode.inherit =>
+        (widget.assistantBookIds.isEmpty ? _globalIds : widget.assistantBookIds)
+            .toSet(),
       _Mode.disabled => const <String>{},
       _Mode.override => _selected,
     };
