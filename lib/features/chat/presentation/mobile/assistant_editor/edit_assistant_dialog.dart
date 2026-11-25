@@ -1,7 +1,7 @@
 /// 编辑助手 dialog — the port of the web `EditAssistantDialog`
 /// (`src/components/TopicManagement/AssistantTab/EditAssistantDialog.tsx`):
-/// a full-screen sheet (mobile) / 80vh modal (desktop) with six tabs — 基础 /
-/// 提示词 / 参数 / 正则 / 记忆 / 技能.
+/// a full-screen sheet (mobile) / 80vh modal (desktop) with seven tabs — 基础 /
+/// 提示词 / 参数 / 正则 / 记忆 / 技能 / 世界书.
 ///
 /// The original nests each tab's body in its own scroll inside an 80vh paper;
 /// this port keeps the same tab set and instant-swap + horizontal-swipe tab
@@ -28,6 +28,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_e
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_editor/tabs/parameter_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_editor/tabs/prompt_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_editor/tabs/skills_tab.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_editor/tabs/world_book_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_preset_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/regex_rules_tab/regex_rules_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/agent_prompt_selector.dart';
@@ -75,7 +76,7 @@ class _EditAssistantDialog extends ConsumerStatefulWidget {
 class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController = TabController(
-    length: 6,
+    length: 7,
     vsync: this,
   )..addListener(_onTabChanged);
   int _index = 0;
@@ -105,6 +106,9 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
       );
   late List<String> _skillIds = List<String>.from(
     widget.assistant?.skillIds ?? const <String>[],
+  );
+  late List<String> _worldBookIds = List<String>.from(
+    widget.assistant?.worldBookIds ?? const <String>[],
   );
   late List<AssistantRegex> _regexRules = List<AssistantRegex>.from(
     widget.assistant?.regexRules ?? const <AssistantRegex>[],
@@ -270,7 +274,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
     // Only switch on a clearly horizontal swipe so vertical scrolling and the
     // 正则 tab's drag-to-reorder don't accidentally flip the tab.
     if (dx.abs() <= 60 || dx.abs() < dy.abs() * 1.5) return;
-    final next = (_tabController.index + (dx < 0 ? 1 : -1)).clamp(0, 5);
+    final next = (_tabController.index + (dx < 0 ? 1 : -1)).clamp(0, 6);
     if (next != _tabController.index) _tabController.animateTo(next);
   }
 
@@ -297,6 +301,14 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
       } else {
         _skillIds = [..._skillIds, id];
       }
+    });
+  }
+
+  void _toggleWorldBook(String id) {
+    setState(() {
+      _worldBookIds = _worldBookIds.contains(id)
+          ? _worldBookIds.where((b) => b != id).toList()
+          : [..._worldBookIds, id];
     });
   }
 
@@ -337,6 +349,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
                   ? null
                   : _chatBackground,
               regexRules: _regexRules,
+              worldBookIds: _worldBookIds,
             );
       } else {
         await ref
@@ -355,6 +368,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
                   ? null
                   : _chatBackground,
               regexRules: _regexRules,
+              worldBookIds: _worldBookIds,
             );
       }
       if (mounted) Navigator.of(context).pop();
@@ -435,6 +449,10 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
                   onChanged: (v) => setState(() => _memoryEnabled = v),
                 ),
                 SkillsTab(skillIds: _skillIds, onToggle: _toggleSkill),
+                WorldBookTab(
+                  worldBookIds: _worldBookIds,
+                  onToggle: _toggleWorldBook,
+                ),
               ],
             ),
           ),
@@ -554,6 +572,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
             _IconTab(icon: LucideIcons.wand2, label: '正则'),
             _IconTab(icon: LucideIcons.brain, label: '记忆'),
             _IconTab(icon: LucideIcons.zap, label: '技能'),
+            _IconTab(icon: LucideIcons.bookMarked, label: '世界书'),
           ],
         ),
       ),

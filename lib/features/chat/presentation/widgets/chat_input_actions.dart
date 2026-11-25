@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/kno
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_panel/mcp_quick_panel_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/multi_model_selector_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/quick_phrase_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/world_book_topic_sheet.dart';
 import 'package:aetherlink_flutter/features/debate/presentation/widgets/debate_start_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/reasoning_effort_picker.dart';
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
@@ -143,6 +144,8 @@ class ChatInputActions implements InputBoxActions {
         _openMultiModelSelector(context);
       case InputBoxAction.knowledge:
         _openKnowledgeMount(context);
+      case InputBoxAction.worldBook:
+        _openWorldBookOverride(context);
       case InputBoxAction.aiDebate:
         openDebateEntry(context, _ref);
     }
@@ -159,6 +162,28 @@ class ChatInputActions implements InputBoxActions {
     );
     if (chosen == null) return;
     notifier.set(chosen);
+  }
+
+  /// Opens the 话题级世界书覆盖 sheet for the current topic and persists the
+  /// choice (`null` 继承 / `[]` 关闭 / ids 覆盖). Needs a saved topic.
+  Future<void> _openWorldBookOverride(BuildContext context) async {
+    final topic = await _ref.read(currentTopicProvider.future);
+    if (!context.mounted) return;
+    if (topic == null) {
+      AppToast.info(context, '请先开始一个话题');
+      return;
+    }
+    final choice = await showWorldBookTopicSheet(
+      context,
+      assistantBookIds:
+          _ref.read(currentAssistantProvider)?.worldBookIds ??
+          const <String>[],
+      topicBookIds: topic.worldBookIds,
+    );
+    if (choice == null) return;
+    await _ref
+        .read(topicsProvider.notifier)
+        .setWorldBookIds(topic.id, choice.worldBookIds);
   }
 
   /// Opens the 挂载知识库 multi-select sheet and stages the chosen bases; every

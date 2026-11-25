@@ -65,6 +65,9 @@ abstract class Assistant with _$Assistant {
     bool? memoryEnabled,
     List<String>? skillIds,
     String? activeSkillId,
+    // 绑定的世界书 id（按绑定顺序）。整体存 JSON blob，无需 schema 迁移；旧数据
+    // 缺字段时取默认空列表。
+    @Default(<String>[]) List<String> worldBookIds,
   }) = _Assistant;
 
   factory Assistant.fromJson(Map<String, dynamic> json) =>

@@ -366,6 +366,11 @@ InputBoxMenuItemInfo inputBoxMenuItemInfo(InputBoxAction action) =>
         label: '知识库',
         color: _sky,
       ),
+      InputBoxAction.worldBook => const InputBoxMenuItemInfo(
+        label: '世界书',
+        subtitle: '本话题使用的世界书',
+        color: _amber,
+      ),
       InputBoxAction.webSearch => const InputBoxMenuItemInfo(
         label: '网络搜索',
         color: _blue,
@@ -440,6 +445,11 @@ Widget inputBoxMenuIcon(
   ),
   InputBoxAction.knowledge => Icon(
     LucideIcons.bookOpen,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.worldBook => Icon(
+    LucideIcons.bookMarked,
     size: size,
     color: color,
   ),
