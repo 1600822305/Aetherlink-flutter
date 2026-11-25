@@ -20,12 +20,12 @@ final _read = FutureProvider.autoDispose<WorldBookSettings>(
 );
 
 void main() {
-  test('默认值与 ST 一致', () {
+  test('默认值（包含名字默认关闭，其余与 ST 一致）', () {
     const d = WorldBookSettings.defaults;
     expect(d.scanDepth, 2);
     expect(d.budgetPercent, 25);
     expect(d.budgetCap, 0);
-    expect(d.includeNames, isTrue);
+    expect(d.includeNames, isFalse);
     expect(d.recursive, isFalse);
     expect(d.caseSensitive, isFalse);
     expect(d.matchWholeWords, isFalse);

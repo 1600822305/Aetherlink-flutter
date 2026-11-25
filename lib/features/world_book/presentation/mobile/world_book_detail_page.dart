@@ -1,5 +1,5 @@
 // 单本世界书详情页 (route /settings/world-book/:bookId)：条目列表 + 搜索 +
-// 增删改 + 复制 / 移到其他书 + 上下移动 + 导出。
+// 增删改 + 复制 / 移到其他书 + 长按拖动排序 + 导出。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,7 +45,7 @@ class _WorldBookDetailPageState extends ConsumerState<WorldBookDetailPage> {
   bool _hit(WorldBookEntry e) {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return true;
-    return e.name.toLowerCase().contains(q) ||
+    return e.displayTitle.toLowerCase().contains(q) ||
         e.content.toLowerCase().contains(q) ||
         e.keywords.any((k) => k.toLowerCase().contains(q)) ||
         e.secondaryKeywords.any((k) => k.toLowerCase().contains(q));
@@ -131,10 +131,6 @@ class _WorldBookDetailPageState extends ConsumerState<WorldBookDetailPage> {
     WorldBookEntryAction action,
   ) {
     switch (action) {
-      case WorldBookEntryAction.moveUp:
-        _controller(ref).moveEntry(bookId, entry.id, -1);
-      case WorldBookEntryAction.moveDown:
-        _controller(ref).moveEntry(bookId, entry.id, 1);
       case WorldBookEntryAction.duplicate:
         _duplicate(context, ref, entry);
       case WorldBookEntryAction.moveToBook:
@@ -242,30 +238,32 @@ class _WorldBookDetailPageState extends ConsumerState<WorldBookDetailPage> {
             ),
           )
         else
-          WorldBookOutlinedCard(
-            child: Column(
-              children: [
-                for (var i = 0; i < shown.length; i++) ...[
-                  if (i > 0) Divider(height: 1, color: theme.dividerColor),
-                  WorldBookEntryRow(
-                    entry: shown[i],
-                    canMoveToBook: hasOtherBooks,
-                    onOpen: () => showWorldBookEntryEditPage(
-                      context,
-                      bookId: bookId,
-                      entry: shown[i],
-                    ),
-                    onToggle: (v) => _controller(
-                      ref,
-                    ).setEntryEnabled(bookId, shown[i].id, v),
-                    onAction: (a) => _onEntryAction(context, ref, shown[i], a),
-                  ),
-                ],
-              ],
+          WorldBookReorderableCard(
+            itemCount: shown.length,
+            // 搜索时只显示部分条目，拖动位置和实际位置对不上，先不让拖。
+            enabled: !searching,
+            itemKey: (i) => ValueKey(shown[i].id),
+            onReorder: (oldIndex, newIndex) =>
+                _controller(ref).reorderEntry(bookId, oldIndex, newIndex),
+            itemBuilder: (_, i) => WorldBookEntryRow(
+              entry: shown[i],
+              canMoveToBook: hasOtherBooks,
+              onOpen: () => showWorldBookEntryEditPage(
+                context,
+                bookId: bookId,
+                entry: shown[i],
+              ),
+              onToggle: (v) =>
+                  _controller(ref).setEntryEnabled(bookId, shown[i].id, v),
+              onAction: (a) => _onEntryAction(context, ref, shown[i], a),
             ),
           ),
         if (book.entries.length > 1)
-          const WorldBookHint('注入先后由每个条目的「顺序」决定（小的在前、大的更靠近末尾），列表顺序只影响显示。'),
+          WorldBookHint(
+            searching
+                ? '搜索时不能拖动排序，清空搜索后长按条目即可拖动。'
+                : '长按条目可拖动排序（只影响显示）；注入先后由每个条目的「顺序」决定。',
+          ),
         if (!book.enabled) const WorldBookHint('这本世界书已关闭，条目不会被注入。'),
       ],
     );

@@ -8,7 +8,7 @@ import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
 
 /// 书行菜单动作。
-enum WorldBookRowAction { rename, moveUp, moveDown, group, export, delete }
+enum WorldBookRowAction { rename, group, export, delete }
 
 class WorldBookListCard extends StatelessWidget {
   const WorldBookListCard({
@@ -17,6 +17,7 @@ class WorldBookListCard extends StatelessWidget {
     required this.onOpen,
     required this.onToggle,
     required this.onAction,
+    required this.onReorder,
   });
 
   final List<WorldBook> books;
@@ -24,22 +25,24 @@ class WorldBookListCard extends StatelessWidget {
   final void Function(WorldBook book, bool enabled) onToggle;
   final void Function(WorldBook book, WorldBookRowAction action) onAction;
 
+  /// 长按拖动后这张卡片里书的新顺序（id）。
+  final ValueChanged<List<String>> onReorder;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return WorldBookOutlinedCard(
-      child: Column(
-        children: [
-          for (var i = 0; i < books.length; i++) ...[
-            if (i > 0) Divider(height: 1, color: theme.dividerColor),
-            WorldBookListRow(
-              book: books[i],
-              onOpen: () => onOpen(books[i]),
-              onToggle: (v) => onToggle(books[i], v),
-              onAction: (a) => onAction(books[i], a),
-            ),
-          ],
-        ],
+    return WorldBookReorderableCard(
+      itemCount: books.length,
+      itemKey: (i) => ValueKey(books[i].id),
+      onReorder: (oldIndex, newIndex) {
+        final ids = [for (final b in books) b.id];
+        ids.insert(newIndex, ids.removeAt(oldIndex));
+        onReorder(ids);
+      },
+      itemBuilder: (_, i) => WorldBookListRow(
+        book: books[i],
+        onOpen: () => onOpen(books[i]),
+        onToggle: (v) => onToggle(books[i], v),
+        onAction: (a) => onAction(books[i], a),
       ),
     );
   }
@@ -91,11 +94,6 @@ class WorldBookListRow extends StatelessWidget {
               PopupMenuItem(
                 value: WorldBookRowAction.rename,
                 child: Text('重命名'),
-              ),
-              PopupMenuItem(value: WorldBookRowAction.moveUp, child: Text('上移')),
-              PopupMenuItem(
-                value: WorldBookRowAction.moveDown,
-                child: Text('下移'),
               ),
               PopupMenuItem(
                 value: WorldBookRowAction.group,

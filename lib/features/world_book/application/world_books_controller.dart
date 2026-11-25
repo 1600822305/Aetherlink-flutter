@@ -85,6 +85,25 @@ class WorldBooksController extends _$WorldBooksController {
     await future;
   }
 
+  /// 拖动排序：[orderedIds] 是**某一组**书拖动后的新顺序。这些书在完整列表里
+  /// 原来占的位置保持不变，只是按新顺序重新填进去（其他分组不受影响）。
+  Future<void> reorderBooks(List<String> orderedIds) async {
+    final books = await future;
+    final ids = [for (final b in books) b.id];
+    final group = orderedIds.toSet();
+    final slots = [
+      for (var i = 0; i < ids.length; i++)
+        if (group.contains(ids[i])) i,
+    ];
+    if (slots.length != orderedIds.length) return;
+    for (var k = 0; k < slots.length; k++) {
+      ids[slots[k]] = orderedIds[k];
+    }
+    await ref.read(worldBookRepositoryProvider).reorder(ids);
+    ref.invalidateSelf();
+    await future;
+  }
+
   Future<void> setBookGroup(String id, String? groupName) async {
     await ref.read(worldBookRepositoryProvider).setGroup(id, groupName);
     ref.invalidateSelf();
@@ -147,6 +166,22 @@ class WorldBooksController extends _$WorldBooksController {
         final to = from + delta;
         if (from < 0 || to < 0 || to >= entries.length) return book;
         entries.insert(to, entries.removeAt(from));
+        return book.copyWith(entries: entries);
+      });
+
+  /// 拖动排序条目：把 [oldIndex] 的条目移到 [newIndex]（已校正的目标位置，
+  /// 与 `onReorderItem` 一致）。只改显示顺序，注入顺序仍由 `order` 决定。
+  Future<void> reorderEntry(String bookId, int oldIndex, int newIndex) =>
+      updateBook(bookId, (book) {
+        final entries = [...book.entries];
+        if (oldIndex < 0 ||
+            oldIndex >= entries.length ||
+            newIndex < 0 ||
+            newIndex >= entries.length ||
+            oldIndex == newIndex) {
+          return book;
+        }
+        entries.insert(newIndex, entries.removeAt(oldIndex));
         return book.copyWith(entries: entries);
       });
 

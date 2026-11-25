@@ -105,6 +105,9 @@ class _Candidate {
 /// - 冷却：没有持续的从 C 起算，`turn < C + cooldown` 期间不能激活；有持续的
 ///   在持续到期时（第 E 条）重新起算，`turn < E + cooldown` 期间不能激活。
 ///
+/// [outletNames]：提示词里引用到的 Outlet 名字（小写，见
+/// [worldBookOutletNamesIn]）；给出时没被引用的 Outlet 条目不参与。
+///
 /// 生成类型（[trigger]，ST `triggers`）与角色筛选（[character]，ST
 /// `characterFilter`）最先判断，不通过的条目不参与；勾选了「额外匹配源」的
 /// 条目把 [sources] 里对应的文本追加到扫描文本（在聊天记录之后、递归文本之前）。
@@ -130,6 +133,7 @@ WorldBookTimedResult selectTimedWorldBookEntries({
   String trigger = WorldBookTrigger.normal,
   WorldBookCharacter? character,
   WorldBookScanSources sources = WorldBookScanSources.none,
+  Set<String>? outletNames,
 }) {
   final rnd = random ?? Random();
   final tokens = countTokens ?? worldBookRoughTokens;
@@ -194,6 +198,16 @@ WorldBookTimedResult selectTimedWorldBookEntries({
         }
       }
       if (!entry.enabled || entry.content.trim().isEmpty) continue;
+      // 本应用没有对应位置（作者注释 / 示例消息）的条目不会被注入，也就不该
+      // 占预算、抢包含组名额、出现在「本轮注入」里。
+      if (!entry.position.isImplemented) continue;
+      // Outlet 条目只有在提示词里被 `{{outlet::名字}}` 引用时才会进请求；没被
+      // 引用的同样不参与（不占预算、不计入「本轮注入」）。null = 不检查。
+      if (outletNames != null &&
+          entry.position == WorldBookInjectionPosition.outlet &&
+          !outletNames.contains(entry.outletName.trim().toLowerCase())) {
+        continue;
+      }
       if (!worldBookTriggerAllows(entry, trigger)) continue;
       if (!worldBookCharacterAllows(entry, character)) continue;
       // 延迟优先于持续（ST：处于延迟的条目连持续也不看）。
@@ -580,7 +594,31 @@ int worldBookRoughTokens(String text) {
   return (ascii / 4).ceil() + other;
 }
 
-/// 决定计时效果的设置指纹；改了条目任何字段，正在进行的计时都会失效
-/// （ST 同样按整条目的哈希认条目）。
-String worldBookTimerSignature(WorldBookEntry entry) =>
-    sha256.convert(utf8.encode(jsonEncode(entry.toJson()))).toString();
+/// 决定计时效果的指纹：只有改了**关键词、内容或计时设置**，正在进行的持续 /
+/// 冷却才会重新开始；开关、顺序、位置、标题等改动不影响（ST 按整条目哈希，
+/// 改任何字段都会重置，本应用放宽了）。
+String worldBookTimerSignature(WorldBookEntry entry) => sha256
+    .convert(
+      utf8.encode(
+        jsonEncode([
+          entry.keywords,
+          entry.secondaryKeywords,
+          entry.content,
+          entry.sticky,
+          entry.cooldown,
+          entry.delay,
+        ]),
+      ),
+    )
+    .toString();
+
+/// [text] 里 `{{outlet::名字}}` 引用的名字（去空白、小写）。
+Set<String> worldBookOutletNamesIn(Iterable<String?> texts) => {
+  for (final t in texts)
+    if (t != null)
+      for (final m in RegExp(
+        r'\{\{outlet::([^}]*)\}\}',
+        caseSensitive: false,
+      ).allMatches(t))
+        if (m.group(1)!.trim().isNotEmpty) m.group(1)!.trim().toLowerCase(),
+};

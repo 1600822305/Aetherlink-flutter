@@ -410,3 +410,69 @@ Future<bool> confirmWorldBookAction(
   );
   return ok ?? false;
 }
+
+/// 可长按拖动排序的卡片列表（世界书列表 / 条目列表共用）。
+///
+/// 与项目里其他可排序列表（默认模型页的供应商列表、正则规则）一样基于
+/// [ReorderableListView.builder] + `onReorderItem`（拿到的 newIndex 已校正，直接
+/// `removeAt` / `insert` 即可）、`buildDefaultDragHandles: false`。区别是这里整行
+/// 用 [ReorderableDelayedDragStartListener] 包住：**长按行**即可拖动，不占用额外
+/// 的拖动手柄位置；点按照常打开。[enabled] 为 false 时（如搜索中）不能拖动。
+class WorldBookReorderableCard extends StatelessWidget {
+  const WorldBookReorderableCard({
+    super.key,
+    required this.itemCount,
+    required this.itemKey,
+    required this.itemBuilder,
+    required this.onReorder,
+    this.enabled = true,
+  });
+
+  final int itemCount;
+  final Key Function(int index) itemKey;
+  final Widget Function(BuildContext context, int index) itemBuilder;
+  final void Function(int oldIndex, int newIndex) onReorder;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return WorldBookOutlinedCard(
+      child: ReorderableListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        buildDefaultDragHandles: false,
+        itemCount: itemCount,
+        onReorderItem: onReorder,
+        // 拖起的行：卡片底色 + 浅阴影，看得出是「拿起来」的那一行。
+        proxyDecorator: (child, index, animation) => AnimatedBuilder(
+          animation: animation,
+          builder: (context, child) => Material(
+            color: theme.colorScheme.surface,
+            elevation: 6 * Curves.easeOut.transform(animation.value),
+            shadowColor: const Color(0x33000000),
+            borderRadius: BorderRadius.circular(12),
+            child: child,
+          ),
+          child: child,
+        ),
+        itemBuilder: (context, index) {
+          final row = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (index > 0) Divider(height: 1, color: theme.dividerColor),
+              itemBuilder(context, index),
+            ],
+          );
+          return KeyedSubtree(
+            key: itemKey(index),
+            child: enabled
+                ? ReorderableDelayedDragStartListener(index: index, child: row)
+                : row,
+          );
+        },
+      ),
+    );
+  }
+}

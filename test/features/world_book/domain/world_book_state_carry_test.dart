@@ -62,7 +62,7 @@ void main() {
       expect(_run(books, turn: 7, previous: cooling.state).entries, hasLength(1));
     });
 
-    test('持续中被关掉再打开：关掉会重置（改了条目），与 ST 一致', () {
+    test('持续中被关掉再打开：计时接着算（开关不算修改）', () {
       final entry = _e.copyWith(sticky: 9);
       final first = _run([WorldBook(id: 'b', entries: [entry])], turn: 1);
       final off = _run(
@@ -80,7 +80,23 @@ void main() {
         text: 'x',
         previous: off.state,
       );
-      expect(on.entries, isEmpty);
+      // 第 5 条：5 < 1 + 9，仍在持续里。
+      expect(on.entries, hasLength(1));
+    });
+
+    test('只有改关键词 / 内容 / 计时设置才重置计时', () {
+      final entry = _e.copyWith(sticky: 9);
+      final first = _run([WorldBook(id: 'b', entries: [entry])], turn: 1);
+      List<WorldBookEntry> at3(WorldBookEntry e) => _run(
+        [WorldBook(id: 'b', entries: [e])],
+        turn: 3,
+        text: 'x',
+        previous: first.state,
+      ).entries;
+      expect(at3(entry.copyWith(order: 5, name: '改名')), hasLength(1));
+      expect(at3(entry.copyWith(content: 'NEW')), isEmpty);
+      expect(at3(entry.copyWith(keywords: ['phoenix'])), isEmpty);
+      expect(at3(entry.copyWith(sticky: 8)), isEmpty);
     });
 
     test('这次没绑定的书，状态原样保留，换回来接着算', () {
@@ -189,5 +205,42 @@ void main() {
       expect(r.entries.map((e) => e.id), ['2', '1']);
       expect(r.reasons, ['常驻', '关键词「dragon」']);
     });
+  });
+
+  test('本应用没有对应位置的条目不参与激活（不占预算、不进「本轮注入」）', () {
+    final r = _run(
+      [
+        WorldBook(
+          id: 'b',
+          entries: [
+            _e.copyWith(id: '1', position: WorldBookInjectionPosition.authorNoteTop),
+            _e.copyWith(id: '2'),
+          ],
+        ),
+      ],
+      turn: 1,
+    );
+    expect(r.entries.map((e) => e.id), ['2']);
+  });
+
+  test('没被提示词引用的 Outlet 条目不参与', () {
+    final outlet = _e.copyWith(
+      id: '1',
+      constant: true,
+      position: WorldBookInjectionPosition.outlet,
+      outletName: 'Lore',
+    );
+    List<String> ids(Set<String>? names) => [
+      for (final e in selectTimedWorldBookEntries(
+        books: [WorldBook(id: 'b', entries: [outlet])],
+        scanTexts: const ['x'],
+        turn: 1,
+        outletNames: names,
+      ).entries)
+        e.id,
+    ];
+    expect(ids(null), ['1']);
+    expect(ids(const {}), isEmpty);
+    expect(ids(worldBookOutletNamesIn(['前 {{outlet:: LORE }} 后'])), ['1']);
   });
 }

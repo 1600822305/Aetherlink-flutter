@@ -112,6 +112,34 @@ void main() {
     expect(repo.books.map((e) => e.id), [b.id, a.id]);
   });
 
+  test('reorderEntry moves by drag indices and ignores bad ones', () async {
+    await container.read(worldBooksControllerProvider.future);
+    final a = await controller().createBook('A');
+    for (final id in ['x', 'y', 'z']) {
+      await controller().saveEntry(a.id, WorldBookEntry(id: id));
+    }
+    await controller().reorderEntry(a.id, 0, 2);
+    expect(repo.books.single.entries.map((e) => e.id), ['y', 'z', 'x']);
+    await controller().reorderEntry(a.id, 2, 0);
+    expect(repo.books.single.entries.map((e) => e.id), ['x', 'y', 'z']);
+    await controller().reorderEntry(a.id, 0, 9);
+    expect(repo.books.single.entries.map((e) => e.id), ['x', 'y', 'z']);
+  });
+
+  test('reorderBooks reorders one group in place, others untouched', () async {
+    await container.read(worldBooksControllerProvider.future);
+    // 完整顺序 a(组1) b(未分组) c(组1) d(未分组)；只在组 1 内拖动 c 到 a 前面。
+    final a = await controller().createBook('a');
+    final b = await controller().createBook('b');
+    final c = await controller().createBook('c');
+    final d = await controller().createBook('d');
+    await controller().reorderBooks([c.id, a.id]);
+    expect(repo.books.map((e) => e.id), [c.id, b.id, a.id, d.id]);
+    // 传入的 id 不全在列表里时不动。
+    await controller().reorderBooks([a.id, 'missing']);
+    expect(repo.books.map((e) => e.id), [c.id, b.id, a.id, d.id]);
+  });
+
   test('importBook regenerates a colliding id and keeps the count', () async {
     await repo.save(const WorldBook(id: 'dup'));
     await container.read(worldBooksControllerProvider.future);

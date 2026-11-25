@@ -13,7 +13,7 @@ class WorldBookSettings {
     this.minActivationsDepthMax = 0,
     this.budgetPercent = 25,
     this.budgetCap = 0,
-    this.includeNames = true,
+    this.includeNames = false,
     this.recursive = false,
     this.maxRecursionSteps = 0,
     this.caseSensitive = false,
@@ -40,7 +40,8 @@ class WorldBookSettings {
   /// `world_info_budget_cap`：预算上限（token）；0 = 不限。
   final int budgetCap;
 
-  /// `world_info_include_names`：扫描文本里带「名字:」前缀。
+  /// `world_info_include_names`：扫描文本里带「名字:」前缀。本应用默认关闭（ST
+  /// 默认开）：助手名常常就是角色名，开着时以助手名为关键词的条目每轮都会触发。
   final bool includeNames;
 
   /// `world_info_recursive`：递归扫描。
@@ -111,7 +112,7 @@ class WorldBookSettings {
       minActivationsDepthMax: n('world_info_min_activations_depth_max', 0),
       budgetPercent: n('world_info_budget', 25),
       budgetCap: n('world_info_budget_cap', 0),
-      includeNames: b('world_info_include_names', true),
+      includeNames: b('world_info_include_names', false),
       recursive: b('world_info_recursive', false),
       maxRecursionSteps: n('world_info_max_recursion_steps', 0),
       caseSensitive: b('world_info_case_sensitive', false),

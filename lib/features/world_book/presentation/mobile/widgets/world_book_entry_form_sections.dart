@@ -205,6 +205,7 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
   }
 
   void _onFocus() {
+    if (!mounted) return;
     if (!_focus.hasFocus && _input.text.trim().isNotEmpty) _add();
   }
 

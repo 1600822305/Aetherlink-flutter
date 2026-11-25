@@ -9,7 +9,7 @@ import 'package:aetherlink_flutter/features/world_book/domain/world_book_import.
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_timed_selection.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
 
-enum WorldBookEntryAction { moveUp, moveDown, duplicate, moveToBook, delete }
+enum WorldBookEntryAction { duplicate, moveToBook, delete }
 
 /// 注入位置的中文标签（列表与编辑页共用），对应 ST 的 8 个位置。
 String worldBookPositionLabel(WorldBookInjectionPosition position) =>
@@ -119,14 +119,6 @@ class WorldBookEntryRow extends StatelessWidget {
           WorldBookMoreMenu<WorldBookEntryAction>(
             onSelected: onAction,
             items: [
-              const PopupMenuItem(
-                value: WorldBookEntryAction.moveUp,
-                child: Text('上移'),
-              ),
-              const PopupMenuItem(
-                value: WorldBookEntryAction.moveDown,
-                child: Text('下移'),
-              ),
               const PopupMenuItem(
                 value: WorldBookEntryAction.duplicate,
                 child: Text('复制'),

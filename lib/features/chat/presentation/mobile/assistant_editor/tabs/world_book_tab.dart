@@ -83,7 +83,8 @@ class WorldBookTab extends ConsumerWidget {
         const SizedBox(height: 8),
         Center(
           child: Text(
-            '已绑定 ${worldBookIds.length} 本世界书',
+            // 只数还存在的书（删掉的书不会注入，也不该算进来）。
+            '已绑定 ${books.where((b) => worldBookIds.contains(b.id)).length} 本世界书',
             style: TextStyle(
               fontSize: 12,
               color: theme.colorScheme.onSurfaceVariant,

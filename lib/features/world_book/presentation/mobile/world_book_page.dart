@@ -27,14 +27,9 @@ class WorldBookPage extends ConsumerWidget {
     WorldBookRowAction action,
     List<String> groups,
   ) {
-    final controller = ref.read(worldBooksControllerProvider.notifier);
     switch (action) {
       case WorldBookRowAction.rename:
         renameWorldBook(context, ref, book);
-      case WorldBookRowAction.moveUp:
-        controller.moveBook(book.id, -1);
-      case WorldBookRowAction.moveDown:
-        controller.moveBook(book.id, 1);
       case WorldBookRowAction.group:
         pickWorldBookGroup(context, ref, book, groups);
       case WorldBookRowAction.export:
@@ -62,6 +57,8 @@ class WorldBookPage extends ConsumerWidget {
           .read(worldBooksControllerProvider.notifier)
           .setBookEnabled(b.id, enabled),
       onAction: (b, action) => _onAction(context, ref, b, action, groups),
+      onReorder: (ids) =>
+          ref.read(worldBooksControllerProvider.notifier).reorderBooks(ids),
     );
   }
 
@@ -137,7 +134,7 @@ class WorldBookPage extends ConsumerWidget {
               ],
               const WorldBookHint(
                 '关闭的世界书对所有助手和话题都不注入；列表顺序即注入顺序，'
-                '可在「⋯」里上移 / 下移。',
+                '长按拖动可调整。',
               ),
             ],
           ],

@@ -175,6 +175,8 @@ Future<WorldBookTurn> collectWorldBookTurn(
             names: [assistant.name, assistant.id],
             tags: assistant.tags,
           ),
+    // Outlet 只在助手 / 话题提示词里展开，没被引用的不参与。
+    outletNames: worldBookOutletNamesIn([assistant?.systemPrompt, topic?.prompt]),
     sources: WorldBookScanSources(
       characterDescription: assistant?.systemPrompt ?? '',
       characterPersonality: assistant?.description ?? '',
@@ -219,9 +221,13 @@ String worldBookInjectedText(WorldBookTurn turn) => [
 /// [WorldBookInjector.injectSystem] for chat, which may not import the
 /// world_book application layer directly.
 ///
-/// 没有触发任何条目时也会把 `{{outlet::…}}` 替换为空（同 ST）。
+/// 没有绑定任何世界书（[WorldBookTurn.none]，`state` 为 null）时原样返回，
+/// 不用世界书的用户提示词里即使写了 `{{outlet::…}}` 也不会被改动；绑定了但
+/// 本轮没触发条目时，`{{outlet::…}}` 替换为空（同 ST）。
 String? applyWorldBookSystem(String? system, WorldBookTurn turn) =>
-    WorldBookInjector.injectSystem(system, turn.triggered);
+    turn.state == null && turn.isEmpty
+    ? system
+    : WorldBookInjector.injectSystem(system, turn.triggered);
 
 /// [WorldBookInjector.injectMessages]; an empty [turn] just flattens. Adjacent
 /// plain user turns are merged per [kWorldBookMergeAdjacentUser].

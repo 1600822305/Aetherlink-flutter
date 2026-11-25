@@ -194,6 +194,8 @@ class _WorldBookEntryEditPageState
 
   @override
   void setState(VoidCallback fn) {
+    // 关键词框失焦时会回调到这里，可能发生在页面关闭的过程中。
+    if (!mounted) return;
     super.setState(fn);
     _tick.value++;
   }
