@@ -127,7 +127,9 @@ class _DevToolsFloatingButtonState extends State<DevToolsFloatingButton> {
         onTap: widget.onPressed,
         child: Material(
           type: MaterialType.transparency,
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
             width: _size,
             height: _size,
             decoration: BoxDecoration(
@@ -142,7 +144,16 @@ class _DevToolsFloatingButtonState extends State<DevToolsFloatingButton> {
                 ),
               ],
             ),
-            child: const Icon(Icons.terminal, size: 24, color: Colors.white),
+            // 打开时换成「返回」图标，提示再点一下会回到之前的页面。
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Icon(
+                widget.active ? Icons.arrow_back : Icons.terminal,
+                key: ValueKey(widget.active),
+                size: 24,
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
       ),

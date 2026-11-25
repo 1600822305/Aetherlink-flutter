@@ -58,6 +58,51 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
   /// (mirrors the web's `previousPageRef`). Defaults to the chat home.
   String _lastNonDevToolsPath = AppRouter.chatPath;
 
+  /// 悬浮按钮的导航正在进行（防止连点时重复 push / pop）。
+  bool _devToolsNavigating = false;
+
+  /// 当前最上层页面的地址（含 push 上来的页面）。`routeInformationProvider`
+  /// 只在 go / 浏览器地址变化时更新，push 的页面不一定反映出来，所以用
+  /// `router.state`（最上层路由的状态）。
+  Uri _topUri(GoRouter router) {
+    try {
+      return router.state.uri;
+    } on Object {
+      return router.routeInformationProvider.value.uri;
+    }
+  }
+
+  bool _isDevTools(Uri uri) => uri.path == AppRouter.devToolsPath;
+
+  /// 悬浮按钮：不在开发者工具 → 打开；在开发者工具 → 回到打开前的页面。
+  Future<void> _toggleDevTools(GoRouter router) async {
+    if (_devToolsNavigating) return;
+    _devToolsNavigating = true;
+    try {
+      // 收起键盘，关掉当前页面上的弹窗 / 底部面板 / 菜单（它们不是路由页面，
+      // 留着会挡在开发者工具上面，或者被下面的 pop 误关）。
+      FocusManager.instance.primaryFocus?.unfocus();
+      router.routerDelegate.navigatorKey.currentState?.popUntil(
+        (route) => route is! PopupRoute,
+      );
+      if (_isDevTools(_topUri(router))) {
+        if (router.canPop()) {
+          router.pop();
+        } else {
+          // 直接从地址 / 冷启动进到开发者工具，下面没有页面：回到记下的页面。
+          router.go(_lastNonDevToolsPath);
+        }
+      } else {
+        _lastNonDevToolsPath = _topUri(router).toString();
+        unawaited(router.push(AppRouter.devToolsPath));
+      }
+    } finally {
+      // 等这一帧的页面切换开始后再允许下一次点击。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      _devToolsNavigating = false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -245,15 +290,17 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
               data: MediaQuery.of(
                 context,
               ).copyWith(textScaler: TextScaler.linear(textScale)),
-              child: Builder(
-                builder: (context) {
-                  // Recomputed on every navigation (the router rebuilds this
-                  // subtree): drives the button's green "on DevTools" state and
-                  // remembers the page to return to.
-                  final currentPath =
-                      router.routeInformationProvider.value.uri.path;
-                  final onDevTools = currentPath == AppRouter.devToolsPath;
-                  if (!onDevTools) _lastNonDevToolsPath = currentPath;
+              // `MaterialApp.builder` 不会因为页面切换而重新执行，必须监听路由
+              // 委托，否则按钮颜色、宠物悬浮窗的显隐都停在旧页面的状态。
+              child: ListenableBuilder(
+                listenable: router.routerDelegate,
+                builder: (context, _) {
+                  final currentUri = _topUri(router);
+                  final currentPath = currentUri.path;
+                  final onDevTools = _isDevTools(currentUri);
+                  // 记下最近一个非开发者工具页面（含参数），直接从别处进到开发
+                  // 者工具、下面又没有页面可退时回到这里。
+                  if (!onDevTools) _lastNonDevToolsPath = currentUri.toString();
                   final buddyOverlayEnabled = ref
                       .watch(buddyOverlayControllerProvider)
                       .enabled;
@@ -269,21 +316,8 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
                       onPositionChanged: (pos) => ref
                           .read(devToolsButtonPositionProvider.notifier)
                           .set(pos),
-                      // Tap toggles: open DevTools, or return to the previous
-                      // page when already there (no route stacking on repeat
-                      // taps).
-                      onPressed: () {
-                        if (router.routeInformationProvider.value.uri.path ==
-                            AppRouter.devToolsPath) {
-                          if (router.canPop()) {
-                            router.pop();
-                          } else {
-                            router.go(_lastNonDevToolsPath);
-                          }
-                        } else {
-                          router.push(AppRouter.devToolsPath);
-                        }
-                      },
+                      // 点一下打开开发者工具，再点一下回到打开前的页面。
+                      onPressed: () => unawaited(_toggleDevTools(router)),
                       child: PerfOverlayHost(
                         enabled: perfEnabled,
                         child: child ?? const SizedBox.shrink(),
