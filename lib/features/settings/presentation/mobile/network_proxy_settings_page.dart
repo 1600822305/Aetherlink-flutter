@@ -30,6 +30,7 @@ class _NetworkProxySettingsPageState
   bool _testing = false;
   bool? _testSucceeded;
   String? _testError;
+  String? _testDetail;
   bool _obscurePassword = true;
 
   @override
@@ -91,7 +92,7 @@ class _NetworkProxySettingsPageState
               ),
             ],
           ),
-          const _Footer('开启后，模型请求、自动获取模型和远程 MCP 连接将使用此代理。'),
+          const _Footer('开启后，模型请求、获取模型和远程 MCP 将走此代理'),
           AnimatedOpacity(
             duration: const Duration(milliseconds: 200),
             opacity: enabled ? 1 : 0.4,
@@ -195,8 +196,8 @@ class _NetworkProxySettingsPageState
                     ],
                   ),
                   const _Footer(
-                    '用逗号、分号或空格分隔；支持 *、*.example.com 和 IPv4 CIDR。'
-                    '模型服务商未配置独立代理时，全局代理作为默认网络出口；本地与内网地址按绕过规则直连。',
+                    '用逗号、分号或空格分隔，支持 *、*.example.com 和 CIDR。'
+                    '匹配的地址将直连，不走代理。',
                   ),
                 ],
               ),
@@ -219,7 +220,7 @@ class _NetworkProxySettingsPageState
             ],
           ),
           if (_testSucceeded != null)
-            _TestResult(success: _testSucceeded!, message: _testError),
+            _TestResult(success: _testSucceeded!, message: _testError, detail: _testDetail),
         ],
       ),
     );
@@ -257,6 +258,7 @@ class _NetworkProxySettingsPageState
       _testing = true;
       _testSucceeded = null;
       _testError = null;
+      _testDetail = null;
     });
 
     final dio = buildAppDio(
@@ -279,7 +281,8 @@ class _NetworkProxySettingsPageState
       if (!mounted) return;
       setState(() {
         _testSucceeded = false;
-        _testError = error.toString();
+        _testError = _friendlyError(error);
+        _testDetail = error.toString();
       });
     } finally {
       dio.close(force: true);
@@ -295,29 +298,26 @@ class _NetworkProxySettingsPageState
 // ---------------------------------------------------------------------------
 
 abstract final class _GroupedColors {
-  static bool _dark(BuildContext c) =>
-      Theme.of(c).brightness == Brightness.dark;
+  // 全部取自项目主题 token，与其它设置页保持一致，不写死颜色。
+  static ColorScheme _cs(BuildContext c) => Theme.of(c).colorScheme;
 
   static Color background(BuildContext c) =>
-      _dark(c) ? const Color(0xFF000000) : const Color(0xFFF2F2F7);
+      Theme.of(c).scaffoldBackgroundColor;
 
-  static Color group(BuildContext c) =>
-      _dark(c) ? const Color(0xFF1C1C1E) : Colors.white;
+  static Color group(BuildContext c) => _cs(c).surface;
 
-  static Color divider(BuildContext c) =>
-      _dark(c) ? const Color(0xFF38383A) : const Color(0xFFE5E5EA);
+  static Color border(BuildContext c) => Theme.of(c).dividerColor;
 
-  static Color secondary(BuildContext c) =>
-      _dark(c) ? const Color(0xFF8E8E93) : const Color(0xFF6E6E73);
+  static Color divider(BuildContext c) => Theme.of(c).dividerColor;
 
-  static Color value(BuildContext c) =>
-      _dark(c) ? const Color(0xFFEBEBF5) : const Color(0xFF3C3C43);
+  static Color secondary(BuildContext c) => _cs(c).onSurfaceVariant;
+
+  static Color value(BuildContext c) => _cs(c).onSurface;
 
   static Color segmentTrack(BuildContext c) =>
-      _dark(c) ? const Color(0xFF2C2C2E) : const Color(0xFFE9E9EB);
+      _cs(c).onSurface.withValues(alpha: 0.06);
 
-  static Color segmentThumb(BuildContext c) =>
-      _dark(c) ? const Color(0xFF636366) : Colors.white;
+  static Color segmentThumb(BuildContext c) => _cs(c).surface;
 }
 
 InputDecoration _bareDecoration(BuildContext context, String hint) {
@@ -397,7 +397,8 @@ class _Group extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: _GroupedColors.group(context),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _GroupedColors.border(context)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -600,34 +601,126 @@ class _Segmented<T> extends StatelessWidget {
   }
 }
 
-class _TestResult extends StatelessWidget {
-  const _TestResult({required this.success, this.message});
+/// 把 Dio / Socket 异常翻译成简短的中文原因。
+String _friendlyError(Object error) {
+  if (error is DioException) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+        return '连接代理超时，请检查地址、端口是否可达';
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.sendTimeout:
+        return '已连上代理，但目标网站响应超时';
+      case DioExceptionType.badCertificate:
+        return '目标网站证书校验失败';
+      case DioExceptionType.cancel:
+        return '请求已取消';
+      case DioExceptionType.badResponse:
+        return '服务器返回错误 HTTP ${error.response?.statusCode ?? ''}';
+      case DioExceptionType.connectionError:
+      case DioExceptionType.unknown:
+        break;
+    }
+    final inner = error.error;
+    if (inner != null) return _friendlyError(inner);
+  }
+  final text = error.toString().toLowerCase();
+  if (text.contains('auth') || text.contains('407') || text.contains('credential')) {
+    return '代理认证失败，请检查用户名和密码';
+  }
+  if (text.contains('refused')) return '代理拒绝连接，请确认端口已开放';
+  if (text.contains('unreachable') || text.contains('no route')) {
+    return '网络不可达，无法连接到代理服务器';
+  }
+  if (text.contains('failed host lookup') || text.contains('nodename')) {
+    return '无法解析地址，请检查服务器地址或测试地址';
+  }
+  if (text.contains('reset') || text.contains('closed') || text.contains('handshake')) {
+    return '连接被中断，可能代理协议类型不匹配';
+  }
+  if (text.contains('timed out') || text.contains('timeout')) {
+    return '连接超时，请检查代理是否可用';
+  }
+  return '未知错误';
+}
+
+class _TestResult extends StatefulWidget {
+  const _TestResult({required this.success, this.message, this.detail});
 
   final bool success;
   final String? message;
+  final String? detail;
+
+  @override
+  State<_TestResult> createState() => _TestResultState();
+}
+
+class _TestResultState extends State<_TestResult> {
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(covariant _TestResult oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.detail != widget.detail) _expanded = false;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final color = success
-        ? const Color(0xFF34C759)
-        : Theme.of(context).colorScheme.error;
+    final theme = Theme.of(context);
+    final color = widget.success
+        ? const Color(0xFF16A34A)
+        : theme.colorScheme.error;
+    final hasDetail = !widget.success && (widget.detail?.isNotEmpty ?? false);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            success ? LucideIcons.circleCheck : LucideIcons.circleAlert,
-            size: 14,
-            color: color,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              success ? '连接成功' : '连接失败：${message ?? '未知错误'}',
-              style: TextStyle(fontSize: 12.5, height: 1.35, color: color),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: hasDetail ? () => setState(() => _expanded = !_expanded) : null,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(
+                    widget.success ? LucideIcons.circleCheck : LucideIcons.circleAlert,
+                    size: 14,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    widget.success
+                        ? '连接成功'
+                        : '连接失败：${widget.message ?? '未知错误'}',
+                    style: TextStyle(fontSize: 12.5, height: 1.35, color: color),
+                  ),
+                ),
+                if (hasDetail)
+                  Text(
+                    _expanded ? '收起' : '详情',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
           ),
+          if (hasDetail && _expanded) ...[
+            const SizedBox(height: 6),
+            SelectableText(
+              widget.detail!,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                fontFamily: 'monospace',
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
       ),
     );
