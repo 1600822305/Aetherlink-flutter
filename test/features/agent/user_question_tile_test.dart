@@ -121,4 +121,56 @@ void main() {
     expect(find.byType(OutlinedButton), findsNothing);
     expect(find.text('选择发布环境'), findsNothing);
   });
+
+  testWidgets('建议答案面板：超长问题时封顶高度、内部滚动，不挤掉上方列表', (tester) async {
+    final at = DateTime(2026, 7, 14);
+    final task = _task(at);
+    final question = UserQuestionEvent(
+      id: 'question-1',
+      seq: 1,
+      at: at,
+      toolCallId: 'call-1',
+      question: List.filled(400, '很长的问题').join(),
+      suggestions: const ['测试', '生产'],
+    );
+
+    await tester.pumpWidget(_scope(
+      task,
+      [question],
+      Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              key: const ValueKey('list'),
+              itemCount: 50,
+              itemBuilder: (context, i) =>
+                  SizedBox(height: 40, child: Text('item $i')),
+            ),
+          ),
+          AgentFollowupPanel(task: task),
+        ],
+      ),
+    ));
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final screenHeight = tester.view.physicalSize.height /
+        tester.view.devicePixelRatio;
+    expect(
+      tester.getSize(find.byType(AgentFollowupPanel)).height,
+      lessThanOrEqualTo(screenHeight * 0.4),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('list'))).height,
+      greaterThan(0),
+    );
+
+    await tester.drag(
+      find.byKey(const ValueKey('list')),
+      const Offset(0, -300),
+    );
+    await tester.pump();
+    expect(find.text('item 0'), findsNothing);
+  });
 }

@@ -8,6 +8,10 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
+// 面板是事件流页 Column 里的非弹性子项，内容不封顶会挤掉上方的
+// Expanded 列表，长问题时列表被压到 0 高、无法滑动。
+const double _kMaxHeightFactor = 0.4;
+
 /// ask_user 建议答案面板（RooCode ask_followup_question 风格）：任务
 /// 等待回答时浮在输入框上方，问题 + 整行建议答案按钮，点选即提交；
 /// 自定义回答走输入框。无待答提问时不占位。
@@ -53,96 +57,105 @@ class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * _kMaxHeightFactor,
+        ),
         decoration: BoxDecoration(
           color: cs.surface,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: cs.primary.withValues(alpha: 0.4)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+        child: Scrollbar(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  LucideIcons.messageCircleQuestion,
-                  size: 14,
-                  color: cs.primary,
+                Row(
+                  children: [
+                    Icon(
+                      LucideIcons.messageCircleQuestion,
+                      size: 14,
+                      color: cs.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        question.question,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (_submitting)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Expanded(
+                for (final (index, suggestion) in question.suggestions.indexed)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: OutlinedButton(
+                      onPressed: _submitting
+                          ? null
+                          : () => _submit(question, suggestion),
+                      style: OutlinedButton.styleFrom(
+                        alignment: Alignment.centerLeft,
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        side: BorderSide(
+                          color: cs.primary.withValues(alpha: 0.35),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        textStyle: theme.textTheme.bodySmall,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 18,
+                            height: 18,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: cs.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              String.fromCharCode(0x41 + index),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(suggestion, textAlign: TextAlign.left),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    question.question,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    '或在下方输入框输入自定义回答',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
                     ),
                   ),
                 ),
-                if (_submitting)
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
               ],
             ),
-            for (final (index, suggestion) in question.suggestions.indexed)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: OutlinedButton(
-                  onPressed: _submitting
-                      ? null
-                      : () => _submit(question, suggestion),
-                  style: OutlinedButton.styleFrom(
-                    alignment: Alignment.centerLeft,
-                    minimumSize: Size.zero,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 7,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                    side: BorderSide(color: cs.primary.withValues(alpha: 0.35)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    textStyle: theme.textTheme.bodySmall,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 18,
-                        height: 18,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: cs.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          String.fromCharCode(0x41 + index),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: cs.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(suggestion, textAlign: TextAlign.left),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                '或在下方输入框输入自定义回答',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
