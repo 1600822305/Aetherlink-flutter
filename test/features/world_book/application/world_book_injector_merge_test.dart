@@ -33,7 +33,7 @@ WorldBookEntry at(
   id: content,
   content: content,
   position: position,
-  injectDepth: depth,
+  depth: depth,
   role: role,
 );
 
@@ -44,7 +44,7 @@ void main() {
     seg(MessageRole.user, 'u2'),
   ];
 
-  test('merge is off by default (P2 behaviour unchanged)', () {
+  test('merge is off by default', () {
     final out = WorldBookInjector.injectMessages(history, [at('D')]);
     expect(out, hasLength(4));
   });
@@ -57,34 +57,32 @@ void main() {
     final out = WorldBookInjector.injectMessages(history, [
       at('D'),
     ], mergeAdjacentUser: true);
-    expect([for (final m in out) m.content], [
-      'u1',
-      'a1',
-      '<system>\nD\n</system>\n\nu2',
-    ]);
+    expect([for (final m in out) m.content], ['u1', 'a1', 'D\n\nu2']);
   });
 
   test('depth 0 folds into the preceding user turn', () {
     final out = WorldBookInjector.injectMessages(history, [
       at('Z', depth: 0),
     ], mergeAdjacentUser: true);
-    expect(out.last.content, 'u2\n\n<system>\nZ\n</system>');
+    expect(out.last.content, 'u2\n\nZ');
     expect(out, hasLength(3));
   });
 
-  test('never merges into tool results; assistant injections stay apart', () {
+  test('never merges into tool results', () {
     final segments = [seg(MessageRole.user, 'u1'), _toolRound];
     final out = WorldBookInjector.injectMessages(segments, [
       at('Z', depth: 0),
       at('A', role: WorldBookInjectionRole.assistant, depth: 0),
     ], mergeAdjacentUser: true);
-    // depth 0 forces user role for both → one standalone user message after
-    // the tool round (its previous segment is a tool round, not plain user).
+    // 前一段是工具回合、不是普通用户消息：两条注入都独立放在最后。
     expect(out[1].toolCalls, isNotEmpty);
     expect(out[2].toolCallId, 'c1');
-    expect(out.last.role, MessageRole.user);
-    expect(out.last.toolCallId, isNull);
-    expect(out.last.content, contains('Z'));
+    final tail = out.sublist(3);
+    expect([for (final m in tail) m.content], ['Z', '<system>\nA\n</system>']);
+    for (final m in tail) {
+      expect(m.role, MessageRole.user);
+      expect(m.toolCallId, isNull);
+    }
   });
 
   test('assistant-role injection before a user turn keeps its order', () {
@@ -92,11 +90,17 @@ void main() {
       at('X', role: WorldBookInjectionRole.assistant),
       at('Y'),
     ], mergeAdjacentUser: true);
-    expect([for (final m in out) m.content], [
-      'u1',
-      'a1',
-      'X',
-      '<system>\nY\n</system>\n\nu2',
-    ]);
+    expect([for (final m in out) m.content], ['u1', 'a1', 'X', 'Y\n\nu2']);
+  });
+
+  test('native system messages stay standalone; user ones still fold', () {
+    final out = WorldBookInjector.injectMessages(
+      history,
+      [at('S', role: WorldBookInjectionRole.system), at('Y')],
+      mergeAdjacentUser: true,
+      nativeSystem: true,
+    );
+    expect([for (final m in out) m.content], ['u1', 'a1', 'S', 'Y\n\nu2']);
+    expect(out[2].role, MessageRole.system);
   });
 }

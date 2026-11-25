@@ -9,15 +9,25 @@ import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widge
 
 enum WorldBookEntryAction { moveUp, moveDown, delete }
 
-/// 注入位置的中文标签（列表与编辑页共用）。
+/// 注入位置的中文标签（列表与编辑页共用），对应 ST 的 8 个位置。
 String worldBookPositionLabel(WorldBookInjectionPosition position) =>
     switch (position) {
       WorldBookInjectionPosition.beforeSystemPrompt => '系统提示词之前',
       WorldBookInjectionPosition.afterSystemPrompt => '系统提示词之后',
-      WorldBookInjectionPosition.topOfChat => '聊天顶部',
-      WorldBookInjectionPosition.bottomOfChat => '聊天底部',
+      WorldBookInjectionPosition.authorNoteTop => '作者注释顶部',
+      WorldBookInjectionPosition.authorNoteBottom => '作者注释底部',
       WorldBookInjectionPosition.atDepth => '指定深度',
+      WorldBookInjectionPosition.examplesBefore => '示例消息之前',
+      WorldBookInjectionPosition.examplesAfter => '示例消息之后',
+      WorldBookInjectionPosition.outlet => 'Outlet',
     };
+
+/// 指定深度的角色标签。
+String worldBookRoleLabel(WorldBookInjectionRole role) => switch (role) {
+  WorldBookInjectionRole.system => '系统',
+  WorldBookInjectionRole.user => '用户',
+  WorldBookInjectionRole.assistant => '助手',
+};
 
 class WorldBookEntryRow extends StatelessWidget {
   const WorldBookEntryRow({
@@ -36,14 +46,19 @@ class WorldBookEntryRow extends StatelessWidget {
   /// 最多展示的关键词标签数，其余折成「+N」。
   static const int _maxKeywordChips = 3;
 
-  String _position() => entry.position == WorldBookInjectionPosition.atDepth
-      ? '深度 ${entry.injectDepth}'
-      : worldBookPositionLabel(entry.position);
+  String _position() => switch (entry.position) {
+    WorldBookInjectionPosition.atDepth =>
+      '深度 ${entry.depth} · ${worldBookRoleLabel(entry.role)}',
+    WorldBookInjectionPosition.outlet =>
+      'Outlet ${entry.outletName.isEmpty ? '' : '「${entry.outletName}」'}'
+          .trim(),
+    _ => worldBookPositionLabel(entry.position),
+  };
 
   Widget _summary(ThemeData theme) {
-    final position = _position();
+    final position = '${_position()} · 顺序 ${entry.order}';
     final prefix = entry.enabled ? '' : '已关闭 · ';
-    if (entry.constantActive) return Text('$prefix$position');
+    if (entry.constant) return Text('$prefix$position');
     if (entry.keywords.isEmpty) return Text('$prefix无关键词 · $position');
     final shown = entry.keywords.take(_maxKeywordChips).toList();
     final rest = entry.keywords.length - shown.length;
@@ -69,13 +84,14 @@ class WorldBookEntryRow extends StatelessWidget {
       onTap: onOpen,
       dimmed: !entry.enabled,
       leading: WorldBookIconTile(
-        icon: entry.constantActive ? LucideIcons.pin : LucideIcons.fileText,
+        icon: entry.constant ? LucideIcons.pin : LucideIcons.fileText,
         active: entry.enabled,
       ),
       title: entry.name.isEmpty ? '未命名条目' : entry.name,
       titleBadges: [
-        if (entry.constantActive)
+        if (entry.constant)
           const WorldBookBadge('常驻', color: Color(0xFF10B981)),
+        if (!entry.position.isImplemented) const WorldBookBadge('暂不生效'),
       ],
       subtitle: _summary(theme),
       trailing: Row(

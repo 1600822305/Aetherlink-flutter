@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/world_book/application/world_books_controller.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/world_book_actions.dart';
+import 'package:aetherlink_flutter/features/world_book/presentation/mobile/world_book_settings_page.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_global_default_card.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_list.dart';
@@ -87,6 +88,12 @@ class WorldBookPage extends ConsumerWidget {
             ? context.pop()
             : context.go(AppRouter.settingsPath),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.settings, size: 20),
+            color: Theme.of(context).colorScheme.primary,
+            tooltip: '全局设置',
+            onPressed: () => showWorldBookSettingsPage(context),
+          ),
           IconButton(
             icon: const Icon(LucideIcons.plus, size: 22),
             color: Theme.of(context).colorScheme.primary,

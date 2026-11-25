@@ -76,7 +76,8 @@ const _modelB = CurrentModel(
 const _assistantId = 'default-assistant';
 final _ts = DateTime.utc(2026, 11, 1);
 
-/// One book: a sticky (2) keyword entry injected before the system prompt,
+/// One book: a sticky (5 messages ≈ two more generations) keyword entry
+/// injected before the system prompt,
 /// with a placeholder to prove substitution happens inside the builder.
 const _book = WorldBook(
   id: 'wb',
@@ -88,7 +89,7 @@ const _book = WorldBook(
       content: 'DRAGON-LORE for {model_name}',
       keywords: ['dragon'],
       scanDepth: 1,
-      sticky: 2,
+      sticky: 5,
       position: WorldBookInjectionPosition.beforeSystemPrompt,
     ),
   ],
@@ -170,7 +171,8 @@ void main() {
     expect(gateway.requests.last.system, isNot(contains('DRAGON-LORE')));
 
     final states = await _userStates(repo);
-    expect([for (final s in states) s.turn], [1, 2, 3, 4]);
+    // 消息序号（ST chat.length）：每次生成前新增一条用户消息，一来一回 +2。
+    expect([for (final s in states) s.turn], [1, 3, 5, 7]);
     expect(states.first.effects, hasLength(1));
 
     final assistant = container

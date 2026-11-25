@@ -1,346 +1,245 @@
-import 'dart:convert';
+// 关键词匹配（world_book_activation.dart），对照 SillyTavern `matchKeys` 与
+// `checkWorldInfo` 的次级关键词判定；以及按 order 排列注入顺序。
 
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_activation.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_macros.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_settings.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_timed_selection.dart';
+
+const _e = WorldBookEntry(id: '0', content: 'LORE', keywords: ['dragon']);
+
+bool hit(WorldBookEntry e, String text, [WorldBookSettings? s]) =>
+    WorldBookActivation.matches(
+      e,
+      text,
+      settings: s ?? WorldBookSettings.defaults,
+    );
 
 void main() {
-  const entry = WorldBookEntry(
-    id: 'entry',
-    content: 'LORE',
-    keywords: ['dragon'],
-    scanDepth: 1,
-  );
-
-  test('sticky, cooldown and delay survive JSON and copyWith', () {
-    final book = WorldBook(
-      id: 'book',
-      entries: [entry.copyWith(sticky: 3, cooldown: 2, delay: 2)],
-    );
-    final decoded = WorldBook.fromJson(
-      jsonDecode(jsonEncode(book.toJson())) as Map<String, dynamic>,
-    );
-    expect(decoded.entries.single.copyWith(name: 'renamed').toJson(), {
-      ...book.entries.single.toJson(),
-      'name': 'renamed',
+  group('普通关键词', () {
+    test('默认不区分大小写的子串匹配', () {
+      expect(hit(_e, 'A DRAGONFLY'), isTrue);
+      expect(hit(_e, 'no match'), isFalse);
     });
-    expect(WorldBookEntry.fromJson({'id': 'default'}).sticky, 0);
-    expect(WorldBookEntry.fromJson({'id': 'negative', 'delay': -10}).delay, 0);
+
+    test('区分大小写：条目设置优先，null 跟随全局', () {
+      final cs = _e.copyWith(caseSensitive: true);
+      expect(hit(cs, 'A DRAGON'), isFalse);
+      expect(hit(cs, 'a dragon'), isTrue);
+      const globalCs = WorldBookSettings(caseSensitive: true);
+      expect(hit(_e, 'A DRAGON', globalCs), isFalse);
+      expect(hit(_e.copyWith(caseSensitive: false), 'A DRAGON', globalCs), isTrue);
+    });
+
+    test('全词匹配只对单个词生效，含空格的关键词仍是子串', () {
+      final whole = _e.copyWith(matchWholeWords: true);
+      expect(hit(whole, 'a dragonfly'), isFalse);
+      expect(hit(whole, 'a dragon, flying'), isTrue);
+      expect(hit(whole, 'dragon'), isTrue);
+      final phrase = whole.copyWith(keywords: ['red dragon']);
+      expect(hit(phrase, 'the red dragonfly'), isTrue);
+      const globalWhole = WorldBookSettings(matchWholeWords: true);
+      expect(hit(_e, 'a dragonfly', globalWhole), isFalse);
+    });
+
+    test('空白关键词被忽略；没有主关键词的非常驻条目不激活', () {
+      expect(hit(_e.copyWith(keywords: ['  ']), 'anything'), isFalse);
+      expect(hit(_e.copyWith(keywords: const []), 'dragon'), isFalse);
+    });
   });
 
-  test(
-    'sticky expires into cooldown without refreshing on repeated matches',
-    () {
-      final timed = entry.copyWith(sticky: 3, cooldown: 2, delay: 2);
-      final history = <Map<String, dynamic>>[];
-      var state = <String, dynamic>{};
-      final active = <bool>[];
-      for (var i = 0; i < 8; i++) {
-        history.add({
-          'role': i.isEven ? 'user' : 'assistant',
-          'content': 'dragon',
-        });
-        final result = WorldBookActivation.evaluate(
-          books: [
-            WorldBook(id: 'book', entries: [timed]),
-          ],
-          scanMessages: history,
-          history: history,
-          previous: state,
-        );
-        active.add(result.entries.isNotEmpty);
-        state = Map<String, dynamic>.from(
-          jsonDecode(jsonEncode(result.state)) as Map<dynamic, dynamic>,
-        );
-        final retry = WorldBookActivation.evaluate(
-          books: [
-            WorldBook(id: 'book', entries: [timed]),
-          ],
-          scanMessages: history,
-          history: history,
-          previous: state,
-        );
-        expect(
-          retry.entries.isNotEmpty,
-          active.last,
-          reason: 'retry at message ${i + 1}',
-        );
-        expect(retry.state, state);
+  group('正则关键词 /pattern/flags', () {
+    test('按 flags 决定大小写，不受条目「区分大小写」影响', () {
+      final re = _e.copyWith(keywords: [r'/dra\w+n/']);
+      expect(hit(re, 'a dragon'), isTrue);
+      expect(hit(re, 'A DRAGON'), isFalse);
+      expect(hit(re.copyWith(keywords: [r'/dra\w+n/i']), 'A DRAGON'), isTrue);
+      expect(
+        hit(re.copyWith(keywords: [r'/dra\w+n/i'], caseSensitive: true), 'A DRAGON'),
+        isTrue,
+      );
+    });
+
+    test('正则与普通关键词可以混写', () {
+      final mixed = _e.copyWith(keywords: ['knight', r'/^\d+$/']);
+      expect(hit(mixed, 'a KNIGHT'), isTrue);
+      expect(hit(mixed, '42'), isTrue);
+      expect(hit(mixed, 'nothing'), isFalse);
+    });
+
+    test('写法不合法时当作普通文本', () {
+      expect(WorldBookActivation.parseRegex('/(/'), isNull);
+      expect(hit(_e.copyWith(keywords: ['/(/']), 'literal /(/ here'), isTrue);
+      expect(WorldBookActivation.parseRegex('/a/ii'), isNull);
+      expect(WorldBookActivation.parseRegex('/a/b/'), isNull);
+      expect(WorldBookActivation.parseRegex(r'/a\/b/'), isNotNull);
+      expect(WorldBookActivation.parseRegex('plain'), isNull);
+    });
+
+    test('looksLikeRegex 用于编辑器提示', () {
+      expect(WorldBookActivation.looksLikeRegex('/(/'), isTrue);
+      expect(WorldBookActivation.looksLikeRegex('/ok/gi'), isTrue);
+      expect(WorldBookActivation.looksLikeRegex('dragon'), isFalse);
+    });
+  });
+
+  group('次级关键词', () {
+    final base = _e.copyWith(secondaryKeywords: ['wing', 'fire']);
+    WorldBookEntry withLogic(WorldBookSecondaryLogic l) =>
+        base.copyWith(secondaryLogic: l);
+
+    test('主关键词没命中时不激活', () {
+      for (final l in WorldBookSecondaryLogic.values) {
+        expect(hit(withLogic(l), 'wing fire'), isFalse, reason: '$l');
       }
-      expect(active, [false, true, true, true, true, false, false, true]);
-    },
-  );
+    });
 
-  test('sticky remains active after the keyword leaves the scan window', () {
-    final timed = entry.copyWith(sticky: 2);
-    final history = <Map<String, dynamic>>[
-      {'role': 'user', 'content': 'dragon'},
+    test('四种逻辑', () {
+      const none = 'dragon';
+      const one = 'dragon wing';
+      const both = 'dragon wing fire';
+      final cases = {
+        WorldBookSecondaryLogic.andAny: [false, true, true],
+        WorldBookSecondaryLogic.andAll: [false, false, true],
+        WorldBookSecondaryLogic.notAny: [true, false, false],
+        WorldBookSecondaryLogic.notAll: [true, true, false],
+      };
+      for (final MapEntry(key: logic, value: want) in cases.entries) {
+        expect(
+          [for (final t in [none, one, both]) hit(withLogic(logic), t)],
+          want,
+          reason: '$logic',
+        );
+      }
+    });
+
+    test('关闭 selective 或次级列表为空时只看主关键词', () {
+      expect(hit(base.copyWith(selective: false), 'dragon'), isTrue);
+      expect(
+        hit(withLogic(WorldBookSecondaryLogic.andAll).copyWith(secondaryKeywords: const []), 'dragon'),
+        isTrue,
+      );
+    });
+  });
+
+  test('常驻总是激活，关闭的条目从不激活', () {
+    expect(hit(_e.copyWith(constant: true, keywords: const []), ''), isTrue);
+    expect(hit(_e.copyWith(constant: true, enabled: false), 'dragon'), isFalse);
+  });
+
+  group('selectTimedWorldBookEntries', () {
+    List<String> ids(List<WorldBook> books, {List<String> texts = const ['dragon']}) => [
+      for (final e
+          in selectTimedWorldBookEntries(books: books, scanTexts: texts, turn: 1).entries)
+        e.id,
     ];
-    var state = WorldBookActivation.evaluate(
-      books: [
-        WorldBook(id: 'book', entries: [timed]),
-      ],
-      scanMessages: history,
-      history: history,
-    ).state;
-    for (var i = 1; i <= 3; i++) {
-      history.add({
-        'role': i.isOdd ? 'assistant' : 'user',
-        'content': 'unrelated',
-      });
-      final result = WorldBookActivation.evaluate(
-        books: [
-          WorldBook(id: 'book', entries: [timed]),
+
+    test('按 order 从小到大注入；同 order 时书序优先，书内 uid 大的在前', () {
+      final b1 = WorldBook(
+        id: 'b1',
+        entries: [
+          _e.copyWith(id: '0', order: 100),
+          _e.copyWith(id: '1', order: 100),
+          _e.copyWith(id: '2', order: 50),
+          _e.copyWith(id: '3', order: 300),
         ],
-        scanMessages: history,
-        history: history,
-        previous: state,
       );
-      expect(result.entries.isNotEmpty, i <= 2);
-      state = result.state;
-    }
-  });
+      final b2 = WorldBook(id: 'b2', entries: [_e.copyWith(id: '9', order: 100)]);
+      expect(ids([b1, b2]), ['2', '1', '0', '9', '3']);
+    });
 
-  test('cooldown alone allows the triggering request and its retry', () {
-    final timed = entry.copyWith(cooldown: 2);
-    final history = <Map<String, dynamic>>[];
-    var state = <String, dynamic>{};
-    for (var i = 0; i < 4; i++) {
-      history.add({'role': 'user', 'content': 'dragon'});
-      final result = WorldBookActivation.evaluate(
-        books: [
-          WorldBook(id: 'book', entries: [timed]),
+    test('扫描深度 null 跟随全局（默认最近 2 条）', () {
+      final books = [WorldBook(id: 'b', entries: [_e])];
+      expect(ids(books, texts: ['dragon', 'a', 'b']), isEmpty);
+      expect(ids(books, texts: ['a', 'dragon', 'b']), ['0']);
+      final deep = [WorldBook(id: 'b', entries: [_e.copyWith(scanDepth: 3)])];
+      expect(ids(deep, texts: ['dragon', 'a', 'b']), ['0']);
+      final zero = [WorldBook(id: 'b', entries: [_e.copyWith(scanDepth: 0)])];
+      expect(ids(zero, texts: ['dragon']), isEmpty);
+    });
+
+    test('扫描文本：最近的在前，\x01 开头、\n\x01 分隔（可按消息锚定正则）', () {
+      // 只匹配「某条消息以 hello 开头」。
+      final anchored = WorldBook(
+        id: 'b',
+        entries: [_e.copyWith(keywords: [r'/\x01hello/'], scanDepth: 5)],
+      );
+      expect(ids([anchored], texts: ['say hello', 'x']), isEmpty);
+      expect(ids([anchored], texts: ['x', 'hello there']), ['0']);
+      // 最近的在前：跨两条消息的「b\n\x01a」只在 a 早于 b 时出现。
+      final order = WorldBook(
+        id: 'b',
+        entries: [_e.copyWith(keywords: [r'/b\n\x01a/'], scanDepth: 5)],
+      );
+      expect(ids([order], texts: ['a', 'b']), ['0']);
+      expect(ids([order], texts: ['b', 'a']), isEmpty);
+    });
+
+    test('名字前缀由调用方加好后可以按说话人匹配', () {
+      final byUser = WorldBook(
+        id: 'b',
+        entries: [_e.copyWith(keywords: [r'/\x01小明:[^\x01]*hello/'], scanDepth: 5)],
+      );
+      final texts = [
+        worldBookScanLine('hello', name: '莉娜'),
+        worldBookScanLine('hi', name: '小明'),
+      ];
+      expect(ids([byUser], texts: texts), isEmpty);
+      expect(
+        ids([byUser], texts: [...texts, worldBookScanLine('well hello', name: '小明')]),
+        ['0'],
+      );
+    });
+
+    test('宏：关键词匹配前替换，触发条目的内容返回前替换', () {
+      const macros = WorldBookMacroContext(user: '小明', char: '莉娜');
+      final book = WorldBook(
+        id: 'b',
+        entries: [
+          _e.copyWith(keywords: ['{{char}}'], content: '{{user}} 认识 {{char}}'),
         ],
-        scanMessages: history,
-        history: history,
-        previous: state,
       );
-      expect(result.entries.isNotEmpty, i == 0 || i == 3);
-      state = result.state;
-    }
-  });
+      final hit = selectTimedWorldBookEntries(
+        books: [book],
+        scanTexts: const ['我是莉娜'],
+        turn: 1,
+        macros: macros,
+      );
+      expect(hit.entries.single.content, '小明 认识 莉娜');
+      final miss = selectTimedWorldBookEntries(
+        books: [book],
+        scanTexts: const ['{{char}}'],
+        turn: 1,
+        macros: macros,
+      );
+      expect(miss.entries, isEmpty);
+      // 不给 macros 时原样匹配、原样返回。
+      final raw = selectTimedWorldBookEntries(
+        books: [book],
+        scanTexts: const ['{{char}}'],
+        turn: 1,
+      );
+      expect(raw.entries.single.content, '{{user}} 认识 {{char}}');
+    });
 
-  test(
-    'history edits, rewinds and entry edits invalidate existing effects',
-    () {
-      final timed = entry.copyWith(sticky: 5);
-      final books = [
-        WorldBook(id: 'book', entries: [timed]),
-      ];
-      final history = <Map<String, dynamic>>[
-        {'role': 'user', 'content': 'dragon'},
-      ];
-      final initial = WorldBookActivation.evaluate(
-        books: books,
-        scanMessages: history,
-        history: history,
-      );
-      final progressed = [
-        ...history,
-        {'role': 'assistant', 'content': 'away'},
-      ];
-      final active = WorldBookActivation.evaluate(
-        books: books,
-        scanMessages: progressed,
-        history: progressed,
-        previous: initial.state,
-      );
-      expect(active.entries, hasLength(1));
-      final changed = [
-        {'role': 'user', 'content': 'away'},
-        progressed.last,
-      ];
+    test('关闭的书、关闭或空内容的条目不参与', () {
       expect(
-        WorldBookActivation.evaluate(
-          books: books,
-          scanMessages: changed,
-          history: changed,
-          previous: active.state,
-        ).entries,
+        ids([
+          WorldBook(id: 'off', enabled: false, entries: [_e]),
+          WorldBook(
+            id: 'b',
+            entries: [
+              _e.copyWith(id: '1', enabled: false),
+              _e.copyWith(id: '2', content: '  ', constant: true),
+            ],
+          ),
+        ]),
         isEmpty,
       );
-      expect(
-        WorldBookActivation.evaluate(
-          books: books,
-          scanMessages: changed.take(1).toList(),
-          history: changed.take(1).toList(),
-          previous: active.state,
-        ).entries,
-        isEmpty,
-      );
-      expect(
-        WorldBookActivation.evaluate(
-          books: [
-            WorldBook(
-              id: 'book',
-              entries: [timed.copyWith(content: 'edited')],
-            ),
-          ],
-          scanMessages: progressed,
-          history: progressed,
-          previous: active.state,
-        ).entries,
-        isEmpty,
-      );
-      expect(
-        WorldBookActivation.evaluate(
-          books: [],
-          scanMessages: progressed,
-          history: progressed,
-          previous: active.state,
-        ).state['effects'],
-        isEmpty,
-      );
-    },
-  );
-
-  test(
-    'timed effects are isolated by book and the conversation state supplied',
-    () {
-      final books = [
-        WorldBook(id: 'a', entries: [entry.copyWith(sticky: 3)]),
-        WorldBook(
-          id: 'b',
-          entries: [
-            entry.copyWith(content: 'other', keywords: ['castle']),
-          ],
-        ),
-      ];
-      final history = [
-        {'role': 'user', 'content': 'dragon'},
-      ];
-      final activated = WorldBookActivation.evaluate(
-        books: books,
-        scanMessages: history,
-        history: history,
-      );
-      final next = [
-        ...history,
-        {'role': 'assistant', 'content': 'away'},
-      ];
-      expect(
-        WorldBookActivation.evaluate(
-          books: books,
-          scanMessages: next,
-          history: next,
-          previous: activated.state,
-        ).entries.map((e) => e.content),
-        ['LORE'],
-      );
-      expect(
-        WorldBookActivation.evaluate(
-          books: books,
-          scanMessages: next,
-          history: next,
-        ).entries,
-        isEmpty,
-      );
-    },
-  );
-
-  test('default matching and priority ordering remain stable', () {
-    final items = [
-      entry.copyWith(id: 'low', constantActive: true),
-      entry.copyWith(
-        id: 'first',
-        priority: 10,
-        keywords: ['[', 'DRAGON'],
-        useRegex: true,
-      ),
-      entry.copyWith(id: 'second', priority: 10),
-      entry.copyWith(id: 'disabled', constantActive: true, enabled: false),
-      entry.copyWith(id: 'empty', content: '', constantActive: true),
-      entry.copyWith(id: 'case', caseSensitive: true, keywords: ['DRAGON']),
-    ];
-    final messages = [
-      {'role': 'user', 'content': 'dragon'},
-    ];
-    expect(
-      WorldBookActivation.evaluate(
-        books: [WorldBook(id: 'book', entries: items)],
-        scanMessages: messages,
-        history: messages,
-      ).entries.map((e) => e.id),
-      ['first', 'second', 'low'],
-    );
-  });
-  test('scanDepth limits the scanned window to the newest messages', () {
-    final messages = [
-      {'role': 'user', 'content': 'dragon'},
-      {'role': 'assistant', 'content': 'unrelated'},
-      {'role': 'user', 'content': 'still unrelated'},
-    ];
-    List<String> triggered(int depth) => WorldBookActivation.evaluate(
-      books: [
-        WorldBook(id: 'book', entries: [entry.copyWith(scanDepth: depth)]),
-      ],
-      scanMessages: messages,
-      history: messages,
-    ).entries.map((e) => e.id).toList();
-    expect(triggered(1), isEmpty);
-    expect(triggered(2), isEmpty);
-    expect(triggered(3), ['entry']);
-  });
-
-  test('scan ignores non chat roles and blank messages', () {
-    final messages = [
-      {'role': 'user', 'content': 'dragon'},
-      {'role': 'system', 'content': 'castle'},
-      {'role': 'assistant', 'content': '   '},
-    ];
-    final result = WorldBookActivation.evaluate(
-      books: [
-        WorldBook(id: 'book', entries: [entry.copyWith(scanDepth: 1)]),
-      ],
-      scanMessages: messages,
-      history: messages,
-    );
-    expect(result.entries.map((e) => e.id), ['entry']);
-  });
-
-  test('regex keywords honour case sensitivity and tolerate invalid ones', () {
-    final regex = entry.copyWith(useRegex: true, keywords: ['(', r'dra\w+n']);
-    expect(WorldBookActivation.matches(regex, 'A DRAGON'), isTrue);
-    expect(
-      WorldBookActivation.matches(regex.copyWith(caseSensitive: true), 'A DRAGON'),
-      isFalse,
-    );
-    expect(WorldBookActivation.matches(regex, 'no match'), isFalse);
-  });
-
-  test('disabled books never trigger, even constant entries', () {
-    final result = WorldBookActivation.evaluate(
-      books: [
-        WorldBook(
-          id: 'book',
-          enabled: false,
-          entries: [entry.copyWith(constantActive: true)],
-        ),
-      ],
-      scanMessages: const [],
-      history: const [],
-    );
-    expect(result.entries, isEmpty);
-    expect(result.state['effects'], isEmpty);
-  });
-
-  test('delay holds activation until enough messages exist', () {
-    final delayed = entry.copyWith(delay: 2, scanDepth: 5);
-    final history = <Map<String, dynamic>>[];
-    final active = <bool>[];
-    for (var i = 0; i < 3; i++) {
-      history.add({'role': 'user', 'content': 'dragon'});
-      active.add(
-        WorldBookActivation.evaluate(
-          books: [
-            WorldBook(id: 'book', entries: [delayed]),
-          ],
-          scanMessages: history,
-          history: history,
-        ).entries.isNotEmpty,
-      );
-    }
-    expect(active, [false, true, true]);
+    });
   });
 }

@@ -59,7 +59,7 @@ class WorldBookDetailPage extends ConsumerWidget {
 
   Widget _body(BuildContext context, WidgetRef ref, WorldBook book) {
     final theme = Theme.of(context);
-    final constantCount = book.entries.where((e) => e.constantActive).length;
+    final constantCount = book.entries.where((e) => e.constant).length;
     final keywordCount = book.entries.length - constantCount;
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -133,7 +133,7 @@ class WorldBookDetailPage extends ConsumerWidget {
             ),
           ),
         if (book.entries.length > 1)
-          const WorldBookHint('同优先级的条目按列表顺序注入，可在「⋯」里上移 / 下移。'),
+          const WorldBookHint('注入先后由每个条目的「顺序」决定（小的在前、大的更靠近末尾），列表顺序只影响显示。'),
         if (!book.enabled) const WorldBookHint('这本世界书已关闭，条目不会被注入。'),
       ],
     );

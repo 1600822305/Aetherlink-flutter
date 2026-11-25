@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_activation.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_entry_row.dart';
 
@@ -172,19 +173,20 @@ class WorldBookSegmented<T> extends StatelessWidget {
   }
 }
 
-/// 关键词输入框：标签与输入框在同一个描边框内，回车 / 逗号 / 点「添加」追加，
-/// 退格删除最后一个；正则模式下无效表达式标红。
+/// 关键词输入框：标签与输入框在同一个描边框内，回车或逗号追加（与 ST 一致，
+/// 普通关键词不能含逗号）。写成 `/pattern/flags` 的按正则匹配，正则里可以有
+/// 逗号；看起来是正则但表达式无效的标红（ST 会把它当普通文本）。
 class WorldBookKeywordsField extends StatefulWidget {
   const WorldBookKeywordsField({
     super.key,
     required this.keywords,
     required this.onChanged,
-    required this.useRegex,
+    this.hint = '输入关键词，回车或逗号添加；/正则/i 按正则匹配',
   });
 
   final List<String> keywords;
   final ValueChanged<List<String>> onChanged;
-  final bool useRegex;
+  final String hint;
 
   @override
   State<WorldBookKeywordsField> createState() => _WorldBookKeywordsFieldState();
@@ -202,10 +204,14 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
   }
 
   void _add([String? raw]) {
-    final parts = (raw ?? _input.text)
-        .split(RegExp(r'[,，\n]'))
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty);
+    final text = (raw ?? _input.text).trim();
+    // 正则整体作为一个关键词，不按逗号切分。
+    final parts = text.startsWith('/')
+        ? [text]
+        : text
+              .split(RegExp(r'[,，\n]'))
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty);
     final next = [...widget.keywords];
     for (final p in parts) {
       if (!next.contains(p)) next.add(p);
@@ -215,19 +221,15 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
   }
 
   void _onChanged(String v) {
-    // 输入逗号即切分成标签（粘贴「a, b, c」也一次拆开）。
-    if (v.contains(',') || v.contains('，')) _add(v);
-  }
-
-  bool _invalid(String keyword) {
-    if (!widget.useRegex) return false;
-    try {
-      RegExp(keyword);
-      return false;
-    } on FormatException {
-      return true;
+    // 输入逗号即切分成标签（粘贴「a, b, c」也一次拆开）；正则不切分。
+    if (!v.trimLeft().startsWith('/') && (v.contains(',') || v.contains('，'))) {
+      _add(v);
     }
   }
+
+  bool _invalid(String keyword) =>
+      WorldBookActivation.looksLikeRegex(keyword) &&
+      WorldBookActivation.parseRegex(keyword) == null;
 
   @override
   Widget build(BuildContext context) {
@@ -252,7 +254,7 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
               children: [
                 for (final k in widget.keywords) _chip(theme, k),
                 SizedBox(
-                  width: widget.keywords.isEmpty ? 220 : 120,
+                  width: widget.keywords.isEmpty ? 260 : 120,
                   child: TextField(
                         controller: _input,
                         focusNode: _focus,
@@ -275,7 +277,7 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
                             vertical: 6,
                           ),
                           hintText: widget.keywords.isEmpty
-                              ? (widget.useRegex ? '输入正则，回车添加' : '输入关键词，回车或逗号添加')
+                              ? widget.hint
                               : '添加',
                           hintStyle: theme.textTheme.bodyMedium?.copyWith(
                             fontSize: 13,
@@ -290,7 +292,10 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
           ),
         ),
         if (invalidCount > 0)
-          WorldBookInlineNote('$invalidCount 个正则表达式无效，匹配时会被跳过', warning: true),
+          WorldBookInlineNote(
+            '$invalidCount 个正则写法无效，会被当成普通文字匹配',
+            warning: true,
+          ),
       ],
     );
   }
@@ -550,13 +555,17 @@ class WorldBookPositionSelector extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Text(
-                worldBookPositionLabel(p),
+                p.isImplemented
+                    ? worldBookPositionLabel(p)
+                    : '${worldBookPositionLabel(p)}（暂不生效）',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontSize: 12.5,
                   fontWeight: p == value ? FontWeight.w600 : FontWeight.w400,
                   color: p == value
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface,
+                      : p.isImplemented
+                      ? theme.colorScheme.onSurface
+                      : theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -568,9 +577,24 @@ class WorldBookPositionSelector extends StatelessWidget {
 
 /// 每个注入位置的一句话说明（位置 chips 下方显示）。
 String worldBookPositionHint(WorldBookInjectionPosition p) => switch (p) {
-  WorldBookInjectionPosition.beforeSystemPrompt => '拼在系统提示词前面',
-  WorldBookInjectionPosition.afterSystemPrompt => '拼在系统提示词后面（最常用）',
-  WorldBookInjectionPosition.topOfChat => '作为一条消息插在聊天记录最前面',
-  WorldBookInjectionPosition.bottomOfChat => '作为一条消息插在聊天记录最后面',
+  WorldBookInjectionPosition.beforeSystemPrompt =>
+    '拼在系统提示词前面（ST：角色定义之前）',
+  WorldBookInjectionPosition.afterSystemPrompt =>
+    '拼在系统提示词后面（ST：角色定义之后）',
   WorldBookInjectionPosition.atDepth => '作为一条消息插在倒数第 N 条消息处',
+  WorldBookInjectionPosition.authorNoteTop ||
+  WorldBookInjectionPosition.authorNoteBottom =>
+    '插在作者注释的前 / 后。本应用暂无作者注释，设置会保存但暂不注入',
+  WorldBookInjectionPosition.examplesBefore ||
+  WorldBookInjectionPosition.examplesAfter =>
+    '作为示例对话插入。本应用暂无示例消息，设置会保存但暂不注入',
+  WorldBookInjectionPosition.outlet =>
+    '不自动注入，在助手的系统提示词里写 {{outlet::名字}}，激活时替换成这段内容',
+};
+
+/// 三态开关的标签：null = 跟随全局。
+String worldBookTriStateLabel(bool? v) => switch (v) {
+  null => '跟随全局',
+  true => '开',
+  false => '关',
 };

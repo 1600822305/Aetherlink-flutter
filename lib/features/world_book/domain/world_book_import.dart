@@ -3,238 +3,76 @@ import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
 
 class WorldBookImportResult {
-  const WorldBookImportResult(this.book, {this.unsupportedEntryCount = 0});
+  const WorldBookImportResult(this.book, {this.pendingEntryCount = 0});
 
   final WorldBook book;
-  final int unsupportedEntryCount;
+
+  /// 用到了「已保存、但引擎暂未实现」的 ST 功能的条目数（见
+  /// [worldBookPendingFeatures]）。这些条目**照常启用**，只是部分设置暂不生效。
+  final int pendingEntryCount;
 }
 
-/// 读取 kelivo / RikkaHub 导出与 SillyTavern 独立 World Info JSON（移植自 kelivo
-/// `world_book_import.dart`）。不受支持的 ST 规则不能悄悄放宽激活条件：这类条目
-/// 保留内容但置为禁用，并计入 [WorldBookImportResult.unsupportedEntryCount]。
-/// Format: https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js
+/// 读取世界书文件。支持：
+/// - SillyTavern 原生 World Info（`entries` 为以 uid 为键的对象）——也就是
+///   本应用自己的导出格式；
+/// - 外面包一层 `{ "data": {...} }` 的文件（RikkaHub 等）；
+/// - kelivo / RikkaHub 旧格式（`entries` 为数组）。
+///
+/// 所有字段原样读入、条目保持原来的开关状态，不再因为「不支持」而禁用。
+/// 书名为空时用文件名。无法识别时返回 null。
 WorldBookImportResult? parseWorldBookImport(
   Object? decoded, {
   required String fileName,
 }) {
-  try {
-    if (decoded is! Map<dynamic, dynamic>) return null;
-    var json = decoded.cast<String, dynamic>();
-    if (json['data'] is Map<dynamic, dynamic>) {
-      json = (json['data'] as Map<dynamic, dynamic>).cast<String, dynamic>();
-    }
-    final entries = json['entries'];
-    if (entries is List<dynamic>) {
-      if (entries.any((entry) => entry is! Map<dynamic, dynamic>)) return null;
-      return WorldBookImportResult(WorldBook.fromJson(json));
-    }
-    if (entries is! Map<dynamic, dynamic>) return null;
-
-    // ST enumerates integer object keys first, then reverses equal-order entries
-    // when assembling the prompt. displayIndex only controls its editor list.
-    final sourceKeys = entries.keys.cast<String>().toList();
-    final sourceOrder = {
-      for (var i = 0; i < sourceKeys.length; i++) sourceKeys[i]: i,
-    };
-    sourceKeys.sort((a, b) {
-      final aIndex = _arrayIndex(a);
-      final bIndex = _arrayIndex(b);
-      if (aIndex != null && bIndex != null) return aIndex.compareTo(bIndex);
-      if (aIndex != null) return -1;
-      if (bIndex != null) return 1;
-      return sourceOrder[a]!.compareTo(sourceOrder[b]!);
-    });
-    final imported = <WorldBookEntry>[];
-    final depthRoles = <int, Set<int>>{};
-    for (final value in entries.values) {
-      if (value is! Map<dynamic, dynamic>) return null;
-      if (value['position'] == 4 && value['disable'] != true) {
-        final role = value['role'] as int? ?? 0;
-        if (role == 1 || role == 2) {
-          depthRoles
-              .putIfAbsent(value['depth'] as int? ?? 4, () => <int>{})
-              .add(role);
-        }
-      }
-    }
-    var unsupportedEntryCount = 0;
-    for (final key in sourceKeys.reversed) {
-      if (entries[key] is! Map<dynamic, dynamic>) return null;
-      final entry = (entries[key] as Map<dynamic, dynamic>).cast<String, dynamic>();
-      if (entry['content'] is! String || entry['key'] is! List<dynamic>) return null;
-      final keys = (entry['key'] as List<dynamic>).cast<String>();
-      final constant = entry['constant'] as bool? ?? false;
-      final position = entry['position'] as int? ?? 0;
-      final role = entry['role'] as int? ?? 0;
-      final depth = entry['depth'] as int? ?? 4;
-      // Global scan settings are not included in standalone exports. Use ST's
-      // default when an entry inherits its scan depth/case sensitivity.
-      final scanDepth = entry['scanDepth'] as int? ?? 2;
-      final unsupported =
-          !const [0, 1, 4].contains(position) ||
-          // Inline system roles lose their depth in Claude/Gemini/Responses.
-          // Keep them disabled rather than silently moving them into the prompt.
-          (position == 4 &&
-              (!const [1, 2].contains(role) ||
-                  depth < 0 ||
-                  depth > 200 ||
-                  // A trailing assistant message is an unsupported prefill
-                  // for some providers, including current Claude models.
-                  (role == 2 && depth == 0) ||
-                  // ST uses a fixed role order at each depth; Kelivo groups by
-                  // priority. Mixed roles require manual review as well.
-                  (depthRoles[depth]?.length ?? 0) > 1)) ||
-          (!constant &&
-              (keys.any(_hasUnsupportedKeyword) ||
-                  scanDepth < 1 ||
-                  scanDepth > 200)) ||
-          _hasUnsupportedRules(entry, constant: constant);
-      if (unsupported) unsupportedEntryCount++;
-      final comment = entry['comment'] as String? ?? '';
-      final converted = WorldBookEntry(
-        id: (entry['uid'] ?? key).toString(),
-        name: comment.isNotEmpty ? comment : keys.firstOrNull ?? '',
-        enabled: !(entry['disable'] as bool? ?? false) && !unsupported,
-        // ST inserts larger orders later; Kelivo inserts higher priorities first.
-        priority: -(entry['order'] as int? ?? 100),
-        position: switch (position) {
-          0 => WorldBookInjectionPosition.beforeSystemPrompt,
-          4 => WorldBookInjectionPosition.atDepth,
-          _ => WorldBookInjectionPosition.afterSystemPrompt,
-        },
-        content: entry['content'] as String,
-        injectDepth: depth.clamp(0, 200),
-        role: role == 2
-            ? WorldBookInjectionRole.assistant
-            : WorldBookInjectionRole.user,
-        keywords: keys,
-        caseSensitive: entry['caseSensitive'] as bool? ?? false,
-        scanDepth: scanDepth.clamp(1, 200),
-        constantActive: constant,
-        sticky: (entry['sticky'] as int? ?? 0).clamp(0, 10000),
-        cooldown: (entry['cooldown'] as int? ?? 0).clamp(0, 10000),
-        delay: (entry['delay'] as int? ?? 0).clamp(0, 10000),
-      );
-      imported.add(converted);
-    }
-    final name = json['name'] as String? ?? '';
-    return WorldBookImportResult(
-      WorldBook(
-        id: '',
-        name: name.trim().isNotEmpty
-            ? name
-            : fileName
-                  .replaceAll('\\', '/')
-                  .split('/')
-                  .last
-                  .replaceFirst(RegExp(r'\.json$', caseSensitive: false), ''),
-        description: json['description'] as String? ?? '',
-        entries: imported,
-      ),
-      unsupportedEntryCount: unsupportedEntryCount,
-    );
-  } on TypeError {
-    return null;
-  } on FormatException {
+  if (decoded is! Map<dynamic, dynamic>) return null;
+  var json = decoded.cast<String, dynamic>();
+  if (json['entries'] == null && json['data'] is Map<dynamic, dynamic>) {
+    json = (json['data'] as Map<dynamic, dynamic>).cast<String, dynamic>();
+  }
+  final entries = json['entries'];
+  if (entries is! Map<dynamic, dynamic> && entries is! List<dynamic>) {
     return null;
   }
-}
+  final values = entries is Map<dynamic, dynamic> ? entries.values : entries as List<dynamic>;
+  if (values.any((e) => e is! Map<dynamic, dynamic>)) return null;
 
-int? _arrayIndex(String key) {
-  final value = int.tryParse(key);
-  return value != null &&
-          value >= 0 &&
-          value < 0xffffffff &&
-          value.toString() == key
-      ? value
-      : null;
-}
-
-bool _hasMacro(String text) => RegExp(
-  r'\{\{[\s\S]*?\}\}|<(?:user|bot|char|charifnotgroup|group)>',
-  caseSensitive: false,
-).hasMatch(text);
-
-bool _hasUnsupportedRules(
-  Map<String, dynamic> entry, {
-  required bool constant,
-}) {
-  final content = entry['content'] as String;
-  if (content.startsWith('@@') || _hasMacro(content)) {
-    return true;
-  }
-  // ST expires timed effects at a different boundary and starts cooldown when
-  // sticky expiration is observed. Copying the numbers would change activation.
-  if ((entry['sticky'] as int? ?? 0) != 0 ||
-      (entry['cooldown'] as int? ?? 0) != 0 ||
-      (entry['delay'] as int? ?? 0) > 10000) {
-    return true;
-  }
-  if (!constant &&
-      (entry['selective'] as bool? ?? true) &&
-      ((entry['keysecondary'] as List<dynamic>?)?.isNotEmpty ?? false)) {
-    return true;
-  }
-  if ((entry['useProbability'] as bool? ?? true) &&
-      (entry['probability'] as num? ?? 100) != 100) {
-    return true;
-  }
-  if ((entry['group'] as String? ?? '').trim().isNotEmpty ||
-      (entry['automationId'] as String? ?? '').trim().isNotEmpty ||
-      ((entry['triggers'] as List<dynamic>?)?.isNotEmpty ?? false)) {
-    return true;
-  }
-  final recursionDelay = entry['delayUntilRecursion'];
-  if (recursionDelay == true || (recursionDelay is num && recursionDelay > 0)) {
-    return true;
-  }
-  final filter = entry['characterFilter'];
-  if (filter is Map<dynamic, dynamic> &&
-      [
-        filter['names'],
-        filter['tags'],
-      ].any((value) => value is List<dynamic> && value.isNotEmpty)) {
-    return true;
-  }
-  return !constant &&
-      const [
-        'vectorized',
-        'matchWholeWords',
-        'matchPersonaDescription',
-        'matchCharacterDescription',
-        'matchCharacterPersonality',
-        'matchCharacterDepthPrompt',
-        'matchScenario',
-        'matchCreatorNotes',
-      ].any((field) => entry[field] == true);
-}
-
-bool _hasUnsupportedKeyword(String raw) {
-  if (_hasMacro(raw) || RegExp(r'[\r\n\x01]').hasMatch(raw)) return true;
-  final match = RegExp(r'^/([\s\S]+?)/([gimsuy]*)$').firstMatch(raw.trim());
-  if (match == null) return false;
-  final pattern = match.group(1)!;
-  final flags = match.group(2)!;
-  if (RegExp(r'(^|[^\\])/').hasMatch(pattern) ||
-      flags.split('').toSet().length != flags.length) {
-    return false;
-  }
-  try {
-    RegExp(
-      pattern,
-      multiLine: flags.contains('m'),
-      dotAll: flags.contains('s'),
-      unicode: flags.contains('u'),
+  var book = WorldBook.fromJson(json);
+  if (book.name.trim().isEmpty) {
+    book = book.copyWith(
+      name: fileName
+          .replaceAll('\\', '/')
+          .split('/')
+          .last
+          .replaceFirst(RegExp(r'\.json$', caseSensitive: false), ''),
     );
-    // ST scans newest-first with message separators. Even regexes supported by
-    // Dart can match differently; retain the original key for manual review.
-    return true;
-  } on FormatException {
-    // Like ST, invalid slash expressions remain literal keywords.
-    return false;
   }
+  return WorldBookImportResult(
+    book,
+    pendingEntryCount: book.entries
+        .where((e) => worldBookPendingFeatures(e).isNotEmpty)
+        .length,
+  );
 }
 
+/// 条目用到的、引擎**暂未实现**的 ST 功能（中文名）。随各阶段实现逐步缩短；
+/// 为空表示这个条目的行为与 ST 一致。
+Set<String> worldBookPendingFeatures(WorldBookEntry e) => {
+  if (!e.position.isImplemented) '注入位置',
+  // 本应用没有对应来源的匹配源（人设、角色备注、作者备注）永远为空。
+  if (e.matchPersonaDescription ||
+      e.matchCharacterDepthPrompt ||
+      e.matchCreatorNotes)
+    '额外匹配源（人设 / 角色备注 / 作者备注）',
+  // 本应用不会产生这两种生成类型，只限定它们的条目永远不会激活。
+  if (e.triggers.isNotEmpty &&
+      e.triggers.every((t) => t == 'impersonate' || t == 'quiet'))
+    '生成类型（代写 / 后台生成）',
+  if (e.vectorized) '向量匹配',
+  if (e.automationId.trim().isNotEmpty) '自动化',
+};
+
+/// 导入前整理 id：书 id 为空或与已有书冲突时重新生成；条目 uid 统一成不重复的
+/// 数字（已是数字且不重复的保持不变，其余按顺序分配新号）。
 WorldBook normalizeImportedWorldBook(
   WorldBook book, {
   required Set<String> existingBookIds,
@@ -243,13 +81,17 @@ WorldBook normalizeImportedWorldBook(
   if (bookId.isEmpty || existingBookIds.contains(bookId)) {
     bookId = generateId('wb');
   }
-  final seenEntryIds = <String>{};
-  final entries = <WorldBookEntry>[];
-  for (final entry in book.entries) {
-    var id = entry.id.trim();
-    if (id.isEmpty || seenEntryIds.contains(id)) id = generateId('wb');
-    seenEntryIds.add(id);
-    entries.add(entry.copyWith(id: id));
+  final used = <int>{};
+  final keep = <bool>[];
+  for (final e in book.entries) {
+    final n = int.tryParse(e.id.trim());
+    final ok = n != null && n >= 0 && '$n' == e.id.trim() && used.add(n);
+    keep.add(ok);
   }
+  var next = used.isEmpty ? 0 : used.reduce((a, b) => a > b ? a : b) + 1;
+  final entries = <WorldBookEntry>[
+    for (var i = 0; i < book.entries.length; i++)
+      keep[i] ? book.entries[i] : book.entries[i].copyWith(id: '${next++}'),
+  ];
   return book.copyWith(id: bookId, entries: entries);
 }

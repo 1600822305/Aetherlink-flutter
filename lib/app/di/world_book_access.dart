@@ -1,7 +1,12 @@
+import 'dart:convert';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
+import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/core/database/database_provider.dart';
+import 'package:aetherlink_flutter/features/chat/domain/token_estimate.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message_segment.dart';
 import 'package:aetherlink_flutter/features/world_book/application/world_book_injector.dart';
@@ -11,11 +16,17 @@ import 'package:aetherlink_flutter/features/world_book/domain/world_book_binding
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_repository.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_activation_state.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_macros.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_scan_context.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_settings.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_timed_selection.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn_state.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
+
+export 'package:aetherlink_flutter/features/world_book/domain/world_book_scan_context.dart'
+    show WorldBookTrigger;
 
 part 'world_book_access.g.dart';
 
@@ -60,6 +71,46 @@ class WorldBookGlobalDefault extends _$WorldBookGlobalDefault {
   }
 }
 
+/// 世界书全局设置（ST `world_info_*`），存应用设置 KV 的 [kWorldBookSettingsKey]。
+/// 界面用它读写；发送时用 [readWorldBookSettings]（等存储读完，不受 hydrate
+/// 时序影响）。
+@Riverpod(keepAlive: true)
+class WorldBookSettingsController extends _$WorldBookSettingsController
+    with JsonKvNotifier<WorldBookSettings> {
+  @override
+  ChatRepository get kvStore => ref.read(appSettingsStoreProvider);
+
+  @override
+  String get storageKey => kWorldBookSettingsKey;
+
+  @override
+  WorldBookSettings fromStored(Map<String, dynamic> json) =>
+      WorldBookSettings.fromJson(json);
+
+  @override
+  Map<String, dynamic> toStored(WorldBookSettings value) => value.toJson();
+
+  @override
+  WorldBookSettings build() => hydrate(WorldBookSettings.defaults);
+
+  void update(WorldBookSettings next) => persist(next);
+
+  void reset() => persist(WorldBookSettings.defaults);
+}
+
+/// 发送时读取全局设置：直接读存储，损坏或缺失时用 ST 默认值，从不抛异常。
+Future<WorldBookSettings> readWorldBookSettings(Ref ref) async {
+  try {
+    final raw = await ref
+        .read(appSettingsStoreProvider)
+        .getSetting(kWorldBookSettingsKey);
+    if (raw == null || raw.isEmpty) return WorldBookSettings.defaults;
+    return WorldBookSettings.fromJson(jsonDecode(raw));
+  } on Object {
+    return WorldBookSettings.defaults;
+  }
+}
+
 /// Resolves [assistant] / [topic]'s effective 世界书 binding — the single
 /// resolver every injection path and the 扩展 menu go through.
 /// [globalBookIds] is the 全局默认 level (see [resolveWorldBookBinding]).
@@ -94,6 +145,9 @@ Future<WorldBookTurn> collectWorldBookTurn(
   required List<String> scanTexts,
   WorldBookClock? clock,
   List<String> globalBookIds = const <String>[],
+  WorldBookMacroContext? macros,
+  WorldBookSettings settings = WorldBookSettings.defaults,
+  String trigger = WorldBookTrigger.normal,
 }) async {
   final binding = worldBookBindingFor(
     assistant,
@@ -111,6 +165,23 @@ Future<WorldBookTurn> collectWorldBookTurn(
     scanTexts: scanTexts,
     turn: clock?.turn ?? 1,
     previous: clock?.previous ?? WorldBookActivationState.empty,
+    macros: macros,
+    settings: settings,
+    trigger: trigger,
+    // 角色 = 当前助手：名字与 id 参与名字筛选，标签参与标签筛选。
+    character: assistant == null
+        ? null
+        : WorldBookCharacter(
+            names: [assistant.name, assistant.id],
+            tags: assistant.tags,
+          ),
+    sources: WorldBookScanSources(
+      characterDescription: assistant?.systemPrompt ?? '',
+      characterPersonality: assistant?.description ?? '',
+      scenario: topic?.prompt ?? '',
+    ),
+    // 预算按 ST 的方式计 token；上下文长度暂不可知，只受 budgetCap 约束。
+    countTokens: estimateTokens,
   );
   return WorldBookTurn(result.entries, state: result.state);
 }
@@ -143,20 +214,28 @@ String worldBookInjectedText(WorldBookTurn turn) => [
 
 /// [WorldBookInjector.injectSystem] for chat, which may not import the
 /// world_book application layer directly.
+///
+/// 没有触发任何条目时也会把 `{{outlet::…}}` 替换为空（同 ST）。
 String? applyWorldBookSystem(String? system, WorldBookTurn turn) =>
-    turn.isEmpty ? system : WorldBookInjector.injectSystem(system, turn.triggered);
+    WorldBookInjector.injectSystem(system, turn.triggered);
 
 /// [WorldBookInjector.injectMessages]; an empty [turn] just flattens. Adjacent
 /// plain user turns are merged per [kWorldBookMergeAdjacentUser].
+///
+/// [nativeSystem]: whether the target protocol accepts mid-chat `system`
+/// messages (OpenAI-compatible does; Anthropic / Gemini do not — see
+/// [WorldBookInjector]). Defaults to the degraded form.
 List<LlmMessage> applyWorldBookMessages(
   List<LlmMessageSegment> segments,
-  WorldBookTurn turn,
-) => turn.isEmpty
+  WorldBookTurn turn, {
+  bool nativeSystem = false,
+}) => turn.isEmpty
     ? [for (final segment in segments) ...segment.messages]
     : WorldBookInjector.injectMessages(
         segments,
         turn.triggered,
         mergeAdjacentUser: kWorldBookMergeAdjacentUser,
+        nativeSystem: nativeSystem,
       );
 
 /// The 扩展 menu's 世界书 status for a binding: whether any book is in effect,

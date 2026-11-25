@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/app/di/media_model_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
 import 'package:aetherlink_flutter/app/di/model_combo_access.dart';
+import 'package:aetherlink_flutter/app/di/world_book_access.dart' show WorldBookTrigger;
 import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
@@ -871,6 +872,7 @@ class ChatController extends _$ChatController {
       chatModel: effective,
       regexRules: regexRules,
       toolMode: mcp.mode,
+      trigger: WorldBookTrigger.regenerate,
     );
     final messages = worldBook.messages;
     final request = LlmChatRequest(
@@ -1181,6 +1183,7 @@ class ChatController extends _$ChatController {
       [...history, views[msgIndex]],
       topicId: message.topicId,
       userMessageId: message.askId ?? WorldBookRequestBuilder.ownerUserId(history),
+      trigger: WorldBookTrigger.continueGeneration,
     );
     final messages = [
       ...await _worldBookRequest.inject(

@@ -26,7 +26,7 @@ void main() {
     content: 'A dragon lives here.',
     keywords: ['dragon'],
     position: WorldBookInjectionPosition.atDepth,
-    injectDepth: 2,
+    depth: 2,
     role: WorldBookInjectionRole.assistant,
     sticky: 3,
   );

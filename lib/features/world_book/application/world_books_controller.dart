@@ -33,8 +33,8 @@ class WorldBooksController extends _$WorldBooksController {
     return book;
   }
 
-  /// 导入一份已解析的 JSON（kelivo / RikkaHub / SillyTavern），返回导入结果；
-  /// 书与条目 id 冲突时重新生成。
+  /// 导入一份已解析的 JSON（SillyTavern / 本应用 / kelivo / RikkaHub），返回
+  /// 导入结果；书 id 冲突时重新生成，条目 uid 整理成不重复的数字。
   Future<WorldBookImportResult> importBook(WorldBookImportResult parsed) async {
     final existing = await future;
     final normalized = normalizeImportedWorldBook(
@@ -44,7 +44,7 @@ class WorldBooksController extends _$WorldBooksController {
     await _save(normalized);
     return WorldBookImportResult(
       normalized,
-      unsupportedEntryCount: parsed.unsupportedEntryCount,
+      pendingEntryCount: parsed.pendingEntryCount,
     );
   }
 
@@ -103,12 +103,13 @@ class WorldBooksController extends _$WorldBooksController {
     await future;
   }
 
-  /// 新增或覆盖一个条目（按 id 匹配；id 为空时生成新 id 并追加到末尾）。
+  /// 新增或覆盖一个条目（按 id 匹配；id 为空时分配下一个数字 uid 并追加到
+  /// 末尾，与 ST 一致）。
   Future<void> saveEntry(String bookId, WorldBookEntry entry) =>
       updateBook(bookId, (book) {
         if (entry.id.isEmpty) {
           return book.copyWith(
-            entries: [...book.entries, entry.copyWith(id: generateId('wbe'))],
+            entries: [...book.entries, entry.copyWith(id: book.nextEntryId())],
           );
         }
         final exists = book.entries.any((e) => e.id == entry.id);
@@ -137,7 +138,8 @@ class WorldBooksController extends _$WorldBooksController {
     ),
   );
 
-  /// 条目上移 / 下移一位（条目顺序决定同 priority 时的注入先后）。
+  /// 条目上移 / 下移一位：只改编辑器里的显示顺序（ST `displayIndex`）；
+  /// 注入顺序由条目的 `order` 决定。
   Future<void> moveEntry(String bookId, String entryId, int delta) =>
       updateBook(bookId, (book) {
         final entries = [...book.entries];

@@ -5,6 +5,8 @@ import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/llm_history_builder.dart';
+import 'package:aetherlink_flutter/features/chat/application/user_avatar_controller.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/llm_protocol.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
@@ -13,6 +15,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dar
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message_segment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/token_estimate.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_macros.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
@@ -52,10 +55,15 @@ class WorldBookRequestBuilder {
 
   /// Evaluates the turn owned by user message [userMessageId] (null → no
   /// timer state, e.g. a topic-less preview). Persists the timer state.
+  ///
+  /// [trigger] 是 ST 的生成类型（[WorldBookTrigger]），用于条目的「生成类型」
+  /// 筛选：发送 / 重新发送 / 多模型 = normal，重新生成 = regenerate，继续 =
+  /// continue。
   Future<WorldBookTurn> evaluate(
     List<ChatMessageView> views, {
     required String? topicId,
     required String? userMessageId,
+    String trigger = WorldBookTrigger.normal,
   }) async {
     final repo = _repoOf();
     final topic = topicId == null ? null : await repo.getTopic(topicId);
@@ -73,13 +81,30 @@ class WorldBookRequestBuilder {
     final clock = owner == null || topicId == null
         ? null
         : worldBookClockFor(await _ancestorsOf(owner, topicId));
+    // ST 的 {{user}} / {{char}}：用户资料里的名字（默认「用户」）/ 当前助手名。
+    final userName = _userName();
+    final charName = assistant?.name ?? '';
+    final settings = await readWorldBookSettings(_refOf());
     final turn = await collectWorldBookTurn(
       _refOf(),
       assistant: assistant,
       topic: topic,
-      scanTexts: scanTextsOf(views, _history),
+      scanTexts: scanTextsOf(
+        views,
+        _history,
+        userName: userName,
+        charName: charName,
+        includeNames: settings.includeNames,
+      ),
+      settings: settings,
+      trigger: trigger,
       clock: clock,
       globalBookIds: globalBookIds,
+      macros: WorldBookMacroContext(
+        user: userName,
+        char: charName,
+        pickSeed: topicId ?? '',
+      ),
     );
     if (owner != null) {
       final metadata = worldBookMetadataFor(owner.metadata, turn);
@@ -99,11 +124,13 @@ class WorldBookRequestBuilder {
     List<AssistantRegex>? regexRules,
     required McpMode toolMode,
     bool dropEmptyAssistant = true,
+    String trigger = WorldBookTrigger.normal,
   }) async {
     final turn = await evaluate(
       views,
       topicId: topicId,
       userMessageId: userMessageId,
+      trigger: trigger,
     );
     return WorldBookRequest(
       messages: await inject(
@@ -136,7 +163,13 @@ class WorldBookRequestBuilder {
           toolMode: toolMode,
           dropEmptyAssistant: dropEmptyAssistant,
         );
-    return applyWorldBookMessages(segments, turn);
+    // 只有 OpenAI 兼容协议接受聊天中间的 system 消息（Anthropic / Gemini 的
+    // 适配器会丢掉它们），其余协议按 user + <system> 包裹降级。
+    return applyWorldBookMessages(
+      segments,
+      turn,
+      nativeSystem: protocolForModel(chatModel) == LlmProtocol.openaiCompatible,
+    );
   }
 
   /// The 本轮注入 block for an assistant message (empty when nothing fired).
@@ -171,23 +204,49 @@ class WorldBookRequestBuilder {
     return null;
   }
 
+  String _userName() {
+    try {
+      final name = _refOf().read(userAvatarControllerProvider).name.trim();
+      return name.isEmpty ? '用户' : name;
+    } on Object {
+      return '用户';
+    }
+  }
+
   /// The keyword scan source: each user / assistant view's request text (main
   /// text + FILE text, without 发送期正则), oldest first. Tool results and
-  /// thinking are excluded, like kelivo.
+  /// thinking are excluded. With [includeNames] each line gets the ST
+  /// `名字: ` prefix ([userName] for user views, [charName] for assistant).
   static List<String> scanTextsOf(
     Iterable<ChatMessageView> views,
-    LlmHistoryBuilder history,
-  ) => [
+    LlmHistoryBuilder history, {
+    String? userName,
+    String? charName,
+    bool includeNames = false,
+  }) => [
     for (final view in views)
       if (view.role == MessageRole.user || view.role == MessageRole.assistant)
         if (history.requestContent(view) case final text
             when text.trim().isNotEmpty)
-          text,
+          worldBookScanLine(
+            text,
+            name: view.role == MessageRole.user ? userName : charName,
+            includeNames: includeNames,
+          ),
   ];
 
   /// [owner]'s ancestors on the tree, oldest first, root excluded — one pass
   /// over the topic's messages indexed by id (O(n), cycle-guarded).
-  Future<List<({bool isUserTurn, bool isSummary, Map<String, dynamic>? metadata})>>
+  Future<
+    List<
+      ({
+        bool isUserTurn,
+        bool isAssistantTurn,
+        bool isSummary,
+        Map<String, dynamic>? metadata,
+      })
+    >
+  >
   _ancestorsOf(Message owner, String topicId) async {
     final all = await _repoOf().getMessagesByTopicId(topicId);
     final byId = {for (final m in all) m.id: m};
@@ -204,6 +263,7 @@ class WorldBookRequestBuilder {
       for (final m in path.reversed)
         (
           isUserTurn: m.role == MessageRole.user,
+          isAssistantTurn: m.role == MessageRole.assistant,
           isSummary: m.metadata?['isSummary'] == true,
           metadata: m.metadata,
         ),

@@ -1,3 +1,7 @@
+// @深度注入（world_book_injector.dart），对照 SillyTavern chat completion 的
+// `populationInjectionPrompts`：深度按消息计、同一深度按 assistant / user / system
+// 合成消息、深的在前；以及本应用的供应商兼容（system 降级、深度 0 不留助手预填）。
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
@@ -45,7 +49,7 @@ WorldBookEntry entry(
   id: content,
   content: content,
   position: position,
-  injectDepth: depth,
+  depth: depth,
   role: role,
 );
 
@@ -64,7 +68,7 @@ void main() {
     expect(WorldBookInjector.injectSystem(null, const []), isNull);
   });
 
-  test('system positions wrap the base prompt in priority order', () {
+  test('system positions wrap the base prompt in injection order', () {
     final entries = [
       entry('B1', position: WorldBookInjectionPosition.beforeSystemPrompt),
       entry('A1', position: WorldBookInjectionPosition.afterSystemPrompt),
@@ -75,53 +79,82 @@ void main() {
     expect(WorldBookInjector.injectSystem('', entries), 'B1\nB2\nA1');
   });
 
-  test('top and bottom of chat sit at the first / before the last segment', () {
-    final out = WorldBookInjector.injectMessages(history, [
-      entry('T', position: WorldBookInjectionPosition.topOfChat),
-      entry('B', position: WorldBookInjectionPosition.bottomOfChat),
-    ]);
-    expect(contents(out), [
-      '<system>\nT\n</system>',
-      'u1',
-      'a1',
-      '<system>\nB\n</system>',
-      'u2',
-    ]);
-    expect(out.first.role, MessageRole.user);
-  });
-
-  test('at depth counts user turns from the end and clamps to the top', () {
+  test('深度按消息计：深度 n 插在最后 n 条之前，不够时放到最前', () {
     List<String> at(int depth) => contents(
       WorldBookInjector.injectMessages(history, [entry('D', depth: depth)]),
     );
-    expect(at(0), ['u1', 'a1', 'u2', '<system>\nD\n</system>']);
-    expect(at(1), ['u1', 'a1', '<system>\nD\n</system>', 'u2']);
-    expect(at(2), ['<system>\nD\n</system>', 'u1', 'a1', 'u2']);
-    expect(at(50), ['<system>\nD\n</system>', 'u1', 'a1', 'u2']);
+    expect(at(0), ['u1', 'a1', 'u2', 'D']);
+    expect(at(1), ['u1', 'a1', 'D', 'u2']);
+    expect(at(2), ['u1', 'D', 'a1', 'u2']);
+    expect(at(3), ['D', 'u1', 'a1', 'u2']);
+    expect(at(50), ['D', 'u1', 'a1', 'u2']);
+
+    final longer = [user('u1'), assistant('a1'), user('u2'), assistant('a2'), user('u3')];
+    expect(
+      contents(WorldBookInjector.injectMessages(longer, [entry('D', depth: 2)])),
+      ['u1', 'a1', 'u2', 'D', 'a2', 'u3'],
+    );
   });
 
-  test('depth 0 never leaves a trailing assistant message', () {
-    final out = WorldBookInjector.injectMessages(history, [
-      entry('D', depth: 0, role: WorldBookInjectionRole.assistant),
-    ]);
-    expect(out.last.role, MessageRole.user);
-    expect(out.last.content, '<system>\nD\n</system>');
+  test('user 角色原样作为用户消息插入', () {
+    final out = WorldBookInjector.injectMessages(history, [entry('U')]);
+    expect(out[2].role, MessageRole.user);
+    expect(out[2].content, 'U');
   });
 
-  test('assistant role keeps raw content; roles merge per slot', () {
+  test('同一深度按 assistant、user、system 的顺序各合成一条', () {
     final out = WorldBookInjector.injectMessages(history, [
-      entry('X', role: WorldBookInjectionRole.assistant),
-      entry('Y'),
-      entry('Z', role: WorldBookInjectionRole.assistant),
+      entry('S1', role: WorldBookInjectionRole.system),
+      entry('U1'),
+      entry('A1', role: WorldBookInjectionRole.assistant),
+      entry('U2'),
+      entry('A2', role: WorldBookInjectionRole.assistant),
+    ], nativeSystem: true);
+    expect(contents(out), ['u1', 'a1', 'A1\nA2', 'U1\nU2', 'S1', 'u2']);
+    expect([for (final m in out.sublist(2, 5)) m.role], [
+      MessageRole.assistant,
+      MessageRole.user,
+      MessageRole.system,
     ]);
-    expect(contents(out), [
-      'u1',
-      'a1',
-      'X\nZ',
-      '<system>\nY\n</system>',
-      'u2',
+  });
+
+  test('不同深度落在同一位置时深的在前', () {
+    final out = WorldBookInjector.injectMessages(history, [
+      entry('X', depth: 5),
+      entry('Y', depth: 9),
     ]);
-    expect(out[2].role, MessageRole.assistant);
+    expect(contents(out), ['Y', 'X', 'u1', 'a1', 'u2']);
+  });
+
+  group('供应商兼容', () {
+    test('nativeSystem 时 system 角色原样发送', () {
+      final out = WorldBookInjector.injectMessages(history, [
+        entry('S', role: WorldBookInjectionRole.system),
+      ], nativeSystem: true);
+      expect(out[2].role, MessageRole.system);
+      expect(out[2].content, 'S');
+    });
+
+    test('否则 system 改为 user 并包在 <system> 里', () {
+      final out = WorldBookInjector.injectMessages(history, [
+        entry('S', role: WorldBookInjectionRole.system),
+        entry('U'),
+      ]);
+      expect(contents(out), ['u1', 'a1', 'U', '<system>\nS\n</system>', 'u2']);
+      expect(out[3].role, MessageRole.user);
+    });
+
+    test('深度 0 的 assistant 按 system 处理，末尾不会是助手消息', () {
+      final degraded = WorldBookInjector.injectMessages(history, [
+        entry('D', depth: 0, role: WorldBookInjectionRole.assistant),
+      ]);
+      expect(degraded.last.role, MessageRole.user);
+      expect(degraded.last.content, '<system>\nD\n</system>');
+      final native = WorldBookInjector.injectMessages(history, [
+        entry('D', depth: 0, role: WorldBookInjectionRole.assistant),
+      ], nativeSystem: true);
+      expect(native.last.role, MessageRole.system);
+    });
   });
 
   test('tool-call segments are never split, at any depth', () {
@@ -132,11 +165,11 @@ void main() {
       toolRound(),
       user('u3'),
     ];
-    for (var depth = 0; depth <= 4; depth++) {
+    for (var depth = 0; depth <= 5; depth++) {
       final out = WorldBookInjector.injectMessages(segments, [
         entry('D', depth: depth),
-        entry('B', position: WorldBookInjectionPosition.bottomOfChat),
-        entry('T', position: WorldBookInjectionPosition.topOfChat),
+        entry('E', depth: depth + 1),
+        entry('S', depth: depth, role: WorldBookInjectionRole.system),
       ]);
       for (var i = 0; i < out.length; i++) {
         final calls = out[i].toolCalls;
@@ -146,15 +179,29 @@ void main() {
         }
         expect(out[i + 1 + calls.length].content, 'done');
       }
-      expect(out.where((m) => m.content.contains('<system>')), hasLength(3));
+      final all = contents(out);
+      expect(all, containsAll(['D', 'E', '<system>\nS\n</system>']), reason: 'depth $depth');
     }
   });
 
+  test('positions without a counterpart in this app are not injected', () {
+    final skipped = [
+      WorldBookInjectionPosition.authorNoteTop,
+      WorldBookInjectionPosition.authorNoteBottom,
+      WorldBookInjectionPosition.examplesBefore,
+      WorldBookInjectionPosition.examplesAfter,
+      WorldBookInjectionPosition.outlet,
+    ];
+    final entries = [for (final p in skipped) entry('X', position: p)];
+    expect(
+      WorldBookInjector.injectMessages(history, entries),
+      [for (final s in history) ...s.messages],
+    );
+    expect(WorldBookInjector.injectSystem('base', entries), 'base');
+  });
+
   test('empty history still receives chat injections', () {
-    final out = WorldBookInjector.injectMessages(const [], [
-      entry('D'),
-      entry('T', position: WorldBookInjectionPosition.topOfChat),
-    ]);
-    expect(contents(out), ['<system>\nT\n</system>', '<system>\nD\n</system>']);
+    final out = WorldBookInjector.injectMessages(const [], [entry('D')]);
+    expect(contents(out), ['D']);
   });
 }

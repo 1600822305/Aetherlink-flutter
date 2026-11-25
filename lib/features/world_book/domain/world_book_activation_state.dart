@@ -1,16 +1,31 @@
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_activation.dart';
 
-/// One entry's timed effect: the user turn it last activated on, plus the
-/// [signature] of its timer settings so an edited entry starts fresh.
+/// One entry's timed effect (ST `chat_metadata.timedWorldInfo`)：
+/// - [activatedAt]：激活时的消息序号（ST `start`）；
+/// - [cooldownFrom]：持续结束、冷却开始时的消息序号（ST 在持续到期时以当时的
+///   `chat.length` 重新起算冷却）；没有持续的条目冷却从 [activatedAt] 算，为 null；
+/// - [signature]：条目指纹，编辑过的条目重新开始。
 class WorldBookEffect {
-  const WorldBookEffect({required this.activatedAt, this.signature = ''});
+  const WorldBookEffect({
+    required this.activatedAt,
+    this.signature = '',
+    this.cooldownFrom,
+  });
 
   final int activatedAt;
   final String signature;
+  final int? cooldownFrom;
+
+  WorldBookEffect withCooldownFrom(int from) => WorldBookEffect(
+    activatedAt: activatedAt,
+    signature: signature,
+    cooldownFrom: from,
+  );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'activatedAt': activatedAt,
     'signature': signature,
+    'cooldownFrom': ?cooldownFrom,
   };
 
   static WorldBookEffect? tryParse(Object? raw) {
@@ -18,9 +33,11 @@ class WorldBookEffect {
     final at = raw['activatedAt'];
     if (at is! num) return null;
     final signature = raw['signature'];
+    final from = raw['cooldownFrom'];
     return WorldBookEffect(
       activatedAt: at.toInt(),
       signature: signature is String ? signature : '',
+      cooldownFrom: from is num ? from.toInt() : null,
     );
   }
 
@@ -28,18 +45,20 @@ class WorldBookEffect {
   bool operator ==(Object other) =>
       other is WorldBookEffect &&
       other.activatedAt == activatedAt &&
-      other.signature == signature;
+      other.signature == signature &&
+      other.cooldownFrom == cooldownFrom;
 
   @override
-  int get hashCode => Object.hash(activatedAt, signature);
+  int get hashCode => Object.hash(activatedAt, signature, cooldownFrom);
 }
 
 /// The 世界书 timer state persisted on a user message's metadata under
 /// [kWorldBookActivationMetadataKey] (P3).
 ///
-/// [turn] is the 1-based count of real user turns on the active path up to and
-/// including the owning message; [effects] are keyed by
-/// `jsonEncode([bookId, entryId])` (the kelivo key, kept for compatibility).
+/// [turn] is the **message number** of the owning user message on the active
+/// path — ST `chat.length` at generation time: user and assistant messages up
+/// to and including it (see [resolveWorldBookClock]). [effects] are keyed by
+/// `jsonEncode([bookId, entryId])`.
 ///
 /// [fromJson] never throws: it also reads the legacy kelivo / P0 shape
 /// (`messageCount` + `historyHash` + `effects`), mapping `messageCount` onto
@@ -54,7 +73,7 @@ class WorldBookActivationState {
     turn: 0,
   );
 
-  static const int kVersion = 2;
+  static const int kVersion = 3;
 
   final int turn;
   final Map<String, WorldBookEffect> effects;

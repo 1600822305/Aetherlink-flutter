@@ -85,7 +85,11 @@ void main() {
       const WorldBookEntry(id: '', content: 'one'),
     );
     final added = repo.books.single.entries.single;
-    expect(added.id, isNotEmpty);
+    // 新条目分配数字 uid（与 SillyTavern 一致）。
+    expect(added.id, '0');
+    await controller().saveEntry(book.id, const WorldBookEntry(id: ''));
+    expect(repo.books.single.entries.map((e) => e.id), ['0', '1']);
+    await controller().deleteEntry(book.id, '1');
     await controller().saveEntry(book.id, added.copyWith(content: 'two'));
     expect(repo.books.single.entries.single.content, 'two');
   });
@@ -114,11 +118,11 @@ void main() {
     final saved = await controller().importBook(
       const WorldBookImportResult(
         WorldBook(id: 'dup', name: 'Imported'),
-        unsupportedEntryCount: 2,
+        pendingEntryCount: 2,
       ),
     );
     expect(saved.book.id, isNot('dup'));
-    expect(saved.unsupportedEntryCount, 2);
+    expect(saved.pendingEntryCount, 2);
     expect(repo.books, hasLength(2));
   });
 

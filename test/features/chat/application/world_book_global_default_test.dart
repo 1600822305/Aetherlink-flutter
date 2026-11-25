@@ -69,7 +69,7 @@ WorldBook _constantBook(String id) => WorldBook(
       id: 'e',
       name: id,
       content: 'LORE-$id',
-      constantActive: true,
+      constant: true,
       position: WorldBookInjectionPosition.beforeSystemPrompt,
     ),
   ],
