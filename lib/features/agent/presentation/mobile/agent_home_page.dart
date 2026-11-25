@@ -32,17 +32,25 @@ class AgentHomePage extends ConsumerWidget {
     final profile =
         profiles.where((p) => p.id == profileId).firstOrNull ??
         profiles.firstOrNull;
-    final tasks = ref.watch(agentTasksProvider);
-    final taskId = ref.watch(selectedAgentTaskIdProvider);
-    AgentTask? task;
-    for (final t in tasks) {
-      if (t.id == taskId && t.profileId == profile?.id) task = t;
-    }
+    final selectedId = ref.watch(selectedAgentTaskIdProvider);
+    // 页面骨架只关心选中话题的归属/标题/状态；轮数、token 等高频字段
+    // 由状态条自己订阅，避免整页（含事件流 markdown）跟着重建。
+    final (String? taskProfileId, String? title, AgentTaskStatus? status) =
+        selectedId == null
+        ? (null, null, null)
+        : ref.watch(
+            agentTaskProvider(selectedId).select(
+              (t) => (t?.profileId, t?.title, t?.status),
+            ),
+          );
+    final taskId = taskProfileId != null && taskProfileId == profile?.id
+        ? selectedId
+        : null;
 
     // 顶栏 chrome 与主聊天同款：纸面 surface、无阴影、1px 底分隔线。
     // 任务态时顶栏归聊天页所有（随 PageView 整屏横滑，工作台页有自己的
     // 精简顶栏，不再叠两层）；草稿/空态仍用 Scaffold.appBar。
-    final showShell = task != null && task.status != AgentTaskStatus.draft;
+    final showShell = taskId != null && status != AgentTaskStatus.draft;
     final appBar = AppBar(
       backgroundColor: theme.colorScheme.surface,
       foregroundColor: theme.colorScheme.onSurface,
@@ -58,7 +66,7 @@ class AgentHomePage extends ConsumerWidget {
         ),
       ),
       // 模型选择器放在标题行最右（与话题名持平），状态行单独在下。
-      title: task == null
+      title: taskId == null
           ? Row(
               children: [
                 Expanded(
@@ -87,7 +95,7 @@ class AgentHomePage extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        task.title,
+                        title ?? '',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -102,7 +110,7 @@ class AgentHomePage extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                AgentStatusLine(task: task),
+                AgentStatusLine(taskId: taskId),
               ],
             ),
       // 三点下拉菜单（决策 30）：智能体专属能力入口。当前有
@@ -206,11 +214,11 @@ class AgentHomePage extends ConsumerWidget {
       drawer: const AgentSidebar(),
       appBar: showShell ? null : appBar,
       body: showShell
-          ? AgentTaskShell(task: task, topBar: appBar)
+          ? AgentTaskShell(taskId: taskId!, topBar: appBar)
           : profile != null
           // 空白草稿话题与无话题选中同款空态；草稿把 task 传给输入栏，
           // 第一条消息落在该话题上而不是另建新任务。
-          ? _DraftTopicView(profile: profile, task: task)
+          ? _DraftTopicView(profile: profile, taskId: taskId)
           : Center(
               child: Text(
                 '还没有智能体，去侧边栏新建一个',
@@ -275,16 +283,18 @@ class _TopBarModelSelector extends ConsumerWidget {
 /// 干净新话题（草稿态）：像普通聊天一样空白，发第一条消息才开始任务。
 /// 工作区继承自当前智能体（已拍板：工作区绑在智能体上，在智能体
 /// 设置里改），未绑定时在这里提醒去设置。
-class _DraftTopicView extends StatelessWidget {
-  const _DraftTopicView({required this.profile, this.task});
+class _DraftTopicView extends ConsumerWidget {
+  const _DraftTopicView({required this.profile, this.taskId});
 
   final AgentProfile profile;
 
   /// 非空 = 已在列表占位的草稿话题；空 = 无话题选中。
-  final AgentTask? task;
+  final String? taskId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final id = taskId;
+    final task = id == null ? null : ref.watch(agentTaskProvider(id));
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final bound = profile.workspaceName != null;

@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
 
 /// 用户指令：贴右对称气泡（Devin/IDE 同款，与 agent 侧时间线叙述区分；
 /// 已拍板 §九）；排队追加的指令带「已排队」标记。
@@ -14,8 +15,24 @@ class UserMessageTile extends StatelessWidget {
 
   final UserMessageEvent event;
 
+  /// 每张图按此计入延迟物化成本：base64 解码 + 图片解码远重于同长度文本，
+  /// 带图消息因此总会越过内联阈值、排进分帧队列。
+  static const int _kImageCost = 2000;
+
   @override
   Widget build(BuildContext context) {
+    final imageCount = event.attachments
+        .where((a) => a.kind == AgentAttachmentKind.image)
+        .length;
+    if (imageCount == 0) return _buildBubble(context);
+    return DeferredContent(
+      cost: event.text.length + imageCount * _kImageCost,
+      estimatedHeight: 60 + event.text.length / 22 * 20 + 126,
+      builder: _buildBubble,
+    );
+  }
+
+  Widget _buildBubble(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return Padding(

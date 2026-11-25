@@ -1,9 +1,10 @@
+import 'package:aetherlink_perf/aetherlink_perf.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aetherlink_flutter/app/di/markdown_access.dart';
 import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
@@ -17,6 +18,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_followup_panel.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
 import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';
+import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
 import 'package:aetherlink_flutter/shared/widgets/no_implicit_scroll_physics.dart';
 
 /// 左页：事件流主视图（UI 稿 §4.1）——计划纪要条 + 时间线 + 底部输入区。
@@ -26,9 +28,9 @@ import 'package:aetherlink_flutter/shared/widgets/no_implicit_scroll_physics.dar
 /// 阈值内自动恢复。显式回底意图——进入页面、切换任务、用户发送——走
 /// [AutoScrollController.pinToBottom]；解除跟随时右下角浮「回到最新」按钮。
 class EventStreamPage extends ConsumerStatefulWidget {
-  const EventStreamPage({required this.task, super.key});
+  const EventStreamPage({required this.taskId, super.key});
 
-  final AgentTask task;
+  final String taskId;
 
   @override
   ConsumerState<EventStreamPage> createState() => _EventStreamPageState();
@@ -59,7 +61,10 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   @override
   void didUpdateWidget(covariant EventStreamPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.task.id != oldWidget.task.id) _autoScroll.pinToBottom();
+    if (widget.taskId != oldWidget.taskId) {
+      PerfMonitor.instance.resetPageContext();
+      _autoScroll.pinToBottom();
+    }
   }
 
   @override
@@ -80,7 +85,7 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   Widget build(BuildContext context) {
     // 用户发送或智能体提问 → 显式回底，确保交互卡立即进入视口。
     ref.listen(
-      agentTimelineProvider(widget.task.id).select((v) => v.userInputCount),
+      agentTimelineProvider(widget.taskId).select((v) => v.userInputCount),
       (prev, next) {
         if (prev != null && next > prev) _autoScroll.pinToBottom();
       },
@@ -97,20 +102,31 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
 
     // 时间线推导（块/计划/等待指示）全部来自按任务缓存的增量折叠，
     // 每个事件 delta 只重算尾部未收尾段。
-    final timeline = ref.watch(agentTimelineProvider(widget.task.id));
+    final timeline = ref.watch(agentTimelineProvider(widget.taskId));
     final plan = timeline.latestPlan;
     final blocks = timeline.blocks;
-    final showWorking = widget.task.status == AgentTaskStatus.running &&
-        !timeline.hasLiveEvent;
+    // 只取状态/模式：轮数、token 等高频写回不应重建整条时间线。
+    final (status, mode) = ref.watch(
+      agentTaskProvider(widget.taskId).select((t) => (t?.status, t?.mode)),
+    );
+    PerfMonitor.instance
+      ..setMessages(blocks.length)
+      ..setStreaming(timeline.hasLiveEvent);
+    final showWorking =
+        status == AgentTaskStatus.running && !timeline.hasLiveEvent;
     // Plan 模式收尾（方案已出完）→ 事件流末尾出「方案已就绪」卡，
     // 一键转 Code 继续执行（设计初稿 §七）。
-    final showPlanReady = widget.task.mode == AgentSessionMode.plan &&
-        widget.task.status == AgentTaskStatus.done;
+    final showPlanReady =
+        mode == AgentSessionMode.plan && status == AgentTaskStatus.done;
     final trailing = (showWorking ? 1 : 0) + (showPlanReady ? 1 : 0);
 
     return Column(
       children: [
-        if (plan != null) PlanPanel(task: widget.task, plan: plan),
+        if (plan != null)
+          _TaskBuilder(
+            taskId: widget.taskId,
+            builder: (task) => PlanPanel(task: task, plan: plan),
+          ),
         Expanded(
           child: Stack(
             children: [
@@ -123,8 +139,10 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (n) {
                     if (n is ScrollStartNotification) {
+                      PerfMonitor.instance.setScrolling(true);
                       DeferredContentScheduler.instance.setScrolling(true);
                     } else if (n is ScrollEndNotification) {
+                      PerfMonitor.instance.setScrolling(false);
                       DeferredContentScheduler.instance.setScrolling(false);
                     }
                     _syncJumpButton();
@@ -138,7 +156,10 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                     itemCount: blocks.length + trailing,
                     itemBuilder: (context, i) => i >= blocks.length
                         ? (showPlanReady
-                            ? PlanReadyCard(task: widget.task)
+                            ? _TaskBuilder(
+                                taskId: widget.taskId,
+                                builder: (task) => PlanReadyCard(task: task),
+                              )
                             : WorkingIndicatorTile(
                                 label: plan?.items
                                     .where((it) =>
@@ -150,11 +171,11 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                         : switch (blocks[i]) {
                             final SegmentBlock b => WorkSegmentTile(
                                 block: b,
-                                taskId: widget.task.id,
+                                taskId: widget.taskId,
                               ),
                             final SingleBlock b => AgentEventTile(
                                 event: b.event,
-                                taskId: widget.task.id,
+                                taskId: widget.taskId,
                               ),
                           },
                   ),
@@ -174,11 +195,31 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
             ],
           ),
         ),
-        _CompactionProgressBanner(taskId: widget.task.id),
-        AgentFollowupPanel(task: widget.task),
-        AgentInputBar(task: widget.task),
+        _CompactionProgressBanner(taskId: widget.taskId),
+        _TaskBuilder(
+          taskId: widget.taskId,
+          builder: (task) => AgentFollowupPanel(task: task),
+        ),
+        _TaskBuilder(
+          taskId: widget.taskId,
+          builder: (task) => AgentInputBar(task: task),
+        ),
       ],
     );
+  }
+}
+
+/// 需要完整任务对象的子件各自订阅，任务字段刷新只重建它们自己。
+class _TaskBuilder extends ConsumerWidget {
+  const _TaskBuilder({required this.taskId, required this.builder});
+
+  final String taskId;
+  final Widget Function(AgentTask task) builder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final task = ref.watch(agentTaskProvider(taskId));
+    return task == null ? const SizedBox.shrink() : builder(task);
   }
 }
 

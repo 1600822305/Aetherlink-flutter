@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/event_stream_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_page.dart';
@@ -10,19 +12,19 @@ import 'package:aetherlink_flutter/shared/widgets/page_swipe_lock.dart';
 /// 左页=事件流（主视图，默认落这）、右页=工作台（UI 稿 §四）。
 /// [topBar]（聊天顶栏）归事件流页所有，随整屏横滑；工作台页只有
 /// 自己的精简顶栏，不再叠两层顶栏浪费竖向空间。
-class AgentTaskShell extends StatefulWidget {
-  const AgentTaskShell({required this.task, this.topBar, super.key});
+class AgentTaskShell extends ConsumerStatefulWidget {
+  const AgentTaskShell({required this.taskId, this.topBar, super.key});
 
-  final AgentTask task;
+  final String taskId;
 
   /// 事件流页顶部的聊天顶栏（AppBar）；为 null 时不渲染。
   final PreferredSizeWidget? topBar;
 
   @override
-  State<AgentTaskShell> createState() => _AgentTaskShellState();
+  ConsumerState<AgentTaskShell> createState() => _AgentTaskShellState();
 }
 
-class _AgentTaskShellState extends State<AgentTaskShell> {
+class _AgentTaskShellState extends ConsumerState<AgentTaskShell> {
   final PageController _controller = PageController();
 
   /// 终端拖选等子组件临时禁滑用（见 PageSwipeLock）。
@@ -34,21 +36,19 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
   @override
   void didUpdateWidget(covariant AgentTaskShell oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final switchedTask = widget.task.id != oldWidget.task.id;
-    final startedWaiting =
-        widget.task.status == AgentTaskStatus.waitingInput &&
-        oldWidget.task.status != AgentTaskStatus.waitingInput;
-    if (switchedTask || startedWaiting) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_controller.hasClients) return;
-        _controller.animateToPage(
-          0,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-        );
-        _page.value = 0;
-      });
-    }
+    if (widget.taskId != oldWidget.taskId) _returnToEventStream();
+  }
+
+  void _returnToEventStream() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      _controller.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+      _page.value = 0;
+    });
   }
 
   void _backToChat() {
@@ -70,6 +70,15 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      agentTaskProvider(widget.taskId).select((t) => t?.status),
+      (prev, next) {
+        if (next == AgentTaskStatus.waitingInput &&
+            prev != AgentTaskStatus.waitingInput) {
+          _returnToEventStream();
+        }
+      },
+    );
     final theme = Theme.of(context);
     return Column(
       children: [
@@ -93,14 +102,22 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
                     child: Column(
                       children: [
                         if (widget.topBar != null) widget.topBar!,
-                        Expanded(child: EventStreamPage(task: widget.task)),
+                        Expanded(child: EventStreamPage(taskId: widget.taskId)),
                       ],
                     ),
                   ),
                   KeepAlivePage(
-                    child: WorkbenchPage(
-                      task: widget.task,
-                      onBackToChat: _backToChat,
+                    child: Consumer(
+                      builder: (context, ref, _) {
+                        final task = ref.watch(
+                          agentTaskProvider(widget.taskId),
+                        );
+                        if (task == null) return const SizedBox.shrink();
+                        return WorkbenchPage(
+                          task: task,
+                          onBackToChat: _backToChat,
+                        );
+                      },
                     ),
                   ),
                 ],

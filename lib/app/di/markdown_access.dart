@@ -6,7 +6,5 @@ library;
 
 export 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart'
     show AppMarkdown;
-export 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart'
-    show DeferredContentScheduler;
 export 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/markdown_body.dart'
     show StreamingMarkdownBody;

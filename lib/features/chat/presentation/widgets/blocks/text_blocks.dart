@@ -9,7 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
+import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/error_detail_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';

@@ -153,7 +153,15 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
       // attributed to a screen (e.g. "/chat"). setRoute is a no-op while the
       // monitor is stopped, so this is harmless when the overlay is off.
       final provider = _router!.routeInformationProvider;
-      void report() => PerfMonitor.instance.setRoute(provider.value.uri.path);
+      String? lastPath;
+      void report() {
+        final path = provider.value.uri.path;
+        if (path != lastPath) {
+          lastPath = path;
+          PerfMonitor.instance.resetPageContext();
+        }
+        PerfMonitor.instance.setRoute(path);
+      }
       provider.addListener(report);
       report();
     }

@@ -14,7 +14,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_setting
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page/deferred_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page/message_list_states.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page/message_row_decorations.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
+import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_navigation.dart';
