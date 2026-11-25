@@ -350,6 +350,24 @@ class Topics extends _$Topics {
     return updated;
   }
 
+  /// Sets [id]'s 世界书覆盖：`null` inherits the assistant's binding, `[]`
+  /// turns world books off for this topic, a non-empty list overrides. Bumps
+  /// [chatRefreshProvider] so [currentTopicProvider] re-reads the topic.
+  Future<void> setWorldBookIds(String id, List<String>? worldBookIds) async {
+    final topic = await _repo.getTopic(id);
+    if (topic == null) return;
+    await _repo.saveTopic(
+      topic.copyWith(
+        worldBookIds: worldBookIds == null
+            ? null
+            : List<String>.unmodifiable(worldBookIds),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await _reload();
+    ref.read(chatRefreshProvider.notifier).bump();
+  }
+
   /// Renames [id] (编辑话题, name only — the prompt is edited via
   /// `SystemPromptDialog` → [setPrompt]).
   Future<void> rename(String id, String name) async {

@@ -73,7 +73,7 @@ enum InputBoxButtonId {
 ///
 /// It is a superset of the toolbar buttons: [toolsMenu] / [uploadMenu] are the
 /// two aggregator buttons that open menus; the middle group is shared by the
-/// toolbar and the menus; and [newTopic] / [note] are menu-only — they are not
+/// toolbar and the menus; and [newTopic] / [note] / [worldBook] are menu-only — they are not
 /// toolbar-configurable, so they have no [InputBoxButtonId].
 enum InputBoxAction {
   toolsMenu,
@@ -84,6 +84,7 @@ enum InputBoxAction {
   generateImage,
   generateVideo,
   knowledge,
+  worldBook,
   webSearch,
   photoSelect,
   camera,
@@ -132,6 +133,7 @@ const List<InputBoxAction> kToolsMenuActions = [
   InputBoxAction.generateImage,
   InputBoxAction.generateVideo,
   InputBoxAction.knowledge,
+  InputBoxAction.worldBook,
   InputBoxAction.webSearch,
 ];
 

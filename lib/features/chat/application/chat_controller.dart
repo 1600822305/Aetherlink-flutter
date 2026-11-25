@@ -28,6 +28,7 @@ import 'package:aetherlink_flutter/features/chat/application/modes/multi_model_s
 import 'package:aetherlink_flutter/features/chat/application/modes/translate_send_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/turn_finisher.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/turn_stream_binder.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/world_book_request_builder.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
@@ -116,6 +117,15 @@ class ChatController extends _$ChatController {
   /// extracted to [LlmHistoryBuilder]. Same lazy-Ref rationale as
   /// [_toolExecutor].
   late final LlmHistoryBuilder _historyBuilder = LlmHistoryBuilder(() => ref);
+
+  /// History + 世界书注入 for send / regenerate / resend (not continue).
+  late final WorldBookRequestBuilder _worldBookRequest =
+      WorldBookRequestBuilder(
+        () => ref,
+        repo: () => _repo,
+        assistantId: () => _assistantId,
+        history: _historyBuilder,
+      );
 
   /// Assembles the per-turn system prompt (skills / memory / MCP hints);
   /// extracted to [SystemPromptBuilder].
@@ -556,12 +566,14 @@ class ChatController extends _$ChatController {
       ctx.contextCount,
     );
     final regexRules = await _sendingRegexRules();
-    final messages = await _buildLlmMessages(
+    final worldBook = await _worldBookRequest.build(
       contextViews,
+      topicId: topicId,
       chatModel: effective,
       regexRules: regexRules,
       toolMode: mcp.mode,
     );
+    final messages = worldBook.messages;
     final memInjection = await collectChatMemoryInjection(
       ref,
       assistantId: _assistantId,
@@ -576,11 +588,13 @@ class ChatController extends _$ChatController {
       model: effective,
       system: _systemFor(
         mcp,
-        await _buildSystemPromptWith(
-          _joinInjectionSections(memInjection.section, kbInjection.section),
-          modelName: effective.name,
-          modelId: effective.id,
-          providerName: current.provider.name,
+        worldBook.system(
+          await _buildSystemPromptWith(
+            _joinInjectionSections(memInjection.section, kbInjection.section),
+            modelName: effective.name,
+            modelId: effective.id,
+            providerName: current.provider.name,
+          ),
         ),
       ),
       messages: messages,
@@ -842,20 +856,24 @@ class ChatController extends _$ChatController {
       ctx.contextCount,
     );
     final regexRules = await _sendingRegexRules();
-    final messages = await _buildLlmMessages(
+    final worldBook = await _worldBookRequest.build(
       contextViews,
+      topicId: target.topicId,
       chatModel: effective,
       regexRules: regexRules,
       toolMode: mcp.mode,
     );
+    final messages = worldBook.messages;
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(
         mcp,
-        await _buildSystemPrompt(
-          modelName: effective.name,
-          modelId: effective.id,
-          providerName: current.provider.name,
+        worldBook.system(
+          await _buildSystemPrompt(
+            modelName: effective.name,
+            modelId: effective.id,
+            providerName: current.provider.name,
+          ),
         ),
       ),
       messages: messages,
@@ -1025,20 +1043,24 @@ class ChatController extends _$ChatController {
       ctx.contextCount,
     );
     final regexRules = await _sendingRegexRules();
-    final messages = await _buildLlmMessages(
+    final worldBook = await _worldBookRequest.build(
       contextViews,
+      topicId: userMessage.topicId,
       chatModel: effective,
       regexRules: regexRules,
       toolMode: mcp.mode,
     );
+    final messages = worldBook.messages;
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(
         mcp,
-        await _buildSystemPrompt(
-          modelName: effective.name,
-          modelId: effective.id,
-          providerName: current.provider.name,
+        worldBook.system(
+          await _buildSystemPrompt(
+            modelName: effective.name,
+            modelId: effective.id,
+            providerName: current.provider.name,
+          ),
         ),
       ),
       messages: messages,

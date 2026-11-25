@@ -39,6 +39,10 @@ abstract class Topic with _$Topic {
     int? tokenCount,
     bool? isDefault,
     @Default(false) bool pinned,
+    // 话题级世界书覆盖：null = 继承助手绑定，[] = 本话题显式关闭，非空 = 覆盖。
+    // 必须保持可空且无 @Default：缺字段的旧 blob 要读成 null（继承）。freezed
+    // 的 copyWith 用哨兵区分「不传」与「传 null」，可以直接写回 null。
+    List<String>? worldBookIds,
   }) = _Topic;
 
   factory Topic.fromJson(Map<String, dynamic> json) => _$TopicFromJson(json);

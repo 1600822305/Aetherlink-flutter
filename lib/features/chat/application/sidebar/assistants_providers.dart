@@ -116,6 +116,7 @@ class Assistants extends _$Assistants {
     ParameterSettings? paramSettings,
     AssistantChatBackground? chatBackground,
     List<AssistantRegex>? regexRules,
+    List<String> worldBookIds = const <String>[],
   }) async {
     final now = DateTime.now();
     final id = generateId('assistant');
@@ -133,6 +134,7 @@ class Assistants extends _$Assistants {
       skillIds: skillIds,
       chatBackground: chatBackground,
       regexRules: regexRules,
+      worldBookIds: worldBookIds,
       type: 'assistant',
       createdAt: now,
       updatedAt: now,
@@ -247,6 +249,7 @@ class Assistants extends _$Assistants {
     ParameterSettings? paramSettings,
     AssistantChatBackground? chatBackground,
     List<AssistantRegex>? regexRules,
+    List<String>? worldBookIds,
   }) async {
     final assistant = await _repo.getAssistant(id);
     if (assistant == null) {
@@ -262,6 +265,7 @@ class Assistants extends _$Assistants {
       avatar: avatar,
       chatBackground: chatBackground,
       regexRules: regexRules,
+      worldBookIds: worldBookIds ?? assistant.worldBookIds,
       updatedAt: DateTime.now(),
     );
     if (paramSettings != null) {

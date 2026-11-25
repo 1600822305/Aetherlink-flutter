@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message_segment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/app/di/auxiliary_model_access.dart';
@@ -90,9 +91,30 @@ class LlmHistoryBuilder {
     List<AssistantRegex>? regexRules,
     bool dropEmptyAssistant = true,
     required McpMode toolMode,
+  }) async => [
+    for (final segment in await buildLlmMessageSegments(
+      views,
+      chatModel: chatModel,
+      regexRules: regexRules,
+      dropEmptyAssistant: dropEmptyAssistant,
+      toolMode: toolMode,
+    ))
+      ...segment.messages,
+  ];
+
+  /// [buildLlmMessages] grouped per source view: flattening the segments in
+  /// order yields exactly [buildLlmMessages]. Views that serialise to nothing
+  /// produce no segment. Used by 世界书注入 to splice turns only at view
+  /// boundaries, so tool-call / tool-result pairs are never split.
+  Future<List<LlmMessageSegment>> buildLlmMessageSegments(
+    Iterable<ChatMessageView> views, {
+    required Model chatModel,
+    List<AssistantRegex>? regexRules,
+    bool dropEmptyAssistant = true,
+    required McpMode toolMode,
   }) async {
     final ocr = await resolveOcrFallback(chatModel);
-    final messages = <LlmMessage>[];
+    final segments = <LlmMessageSegment>[];
     for (final view in views) {
       final hasToolBlocks = view.blocks.any((block) => block is ToolBlock);
       if (dropEmptyAssistant &&
@@ -102,13 +124,16 @@ class LlmHistoryBuilder {
         continue;
       }
       if (view.role == MessageRole.assistant && hasToolBlocks) {
-        messages.addAll(
-          toolHistoryMessages(
-            view,
-            fallbackMode: toolMode,
-            regexRules: regexRules,
-          ),
+        final toolMessages = toolHistoryMessages(
+          view,
+          fallbackMode: toolMode,
+          regexRules: regexRules,
         );
+        if (toolMessages.isNotEmpty) {
+          segments.add(
+            LlmMessageSegment(role: view.role, messages: toolMessages),
+          );
+        }
         continue;
       }
       var content = requestContent(view, regexRules: regexRules);
@@ -126,11 +151,16 @@ class LlmHistoryBuilder {
           images = null;
         }
       }
-      messages.add(
-        LlmMessage(role: view.role, content: content, images: images),
+      segments.add(
+        LlmMessageSegment(
+          role: view.role,
+          messages: [
+            LlmMessage(role: view.role, content: content, images: images),
+          ],
+        ),
       );
     }
-    return messages;
+    return segments;
   }
 
   List<LlmMessage> toolHistoryMessages(

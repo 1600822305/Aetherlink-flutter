@@ -58,6 +58,8 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_sea
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/mobile/voice_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
+import 'package:aetherlink_flutter/features/world_book/presentation/mobile/world_book_detail_page.dart';
+import 'package:aetherlink_flutter/features/world_book/presentation/mobile/world_book_page.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_page.dart';
 import 'package:aetherlink_flutter/features/browser/presentation/browser_codrive_page.dart';
@@ -121,6 +123,8 @@ abstract final class AppRouter {
   static const String debateSettingsPath = '/settings/ai-debate';
   static const String knowledgeBasePath = '/settings/knowledge';
   static const String knowledgeBaseDetailPath = '/settings/knowledge/:baseId';
+  static const String worldBookPath = '/settings/world-book';
+  static const String worldBookDetailPath = '/settings/world-book/:bookId';
   static const String memoryPath = '/settings/memory';
   static const String globalMemoryPath = '/settings/memory/global';
   static const String assistantMemoryIndexPath = '/settings/memory/assistants';
@@ -431,6 +435,20 @@ abstract final class AppRouter {
             baseId: state.pathParameters['baseId'] ?? '',
             baseName: state.extra is String ? state.extra! as String : '',
           ),
+        ),
+      ),
+      GoRoute(
+        path: worldBookPath,
+        name: 'worldBook',
+        pageBuilder: (context, state) =>
+            _instant(state, const WorldBookPage()),
+      ),
+      GoRoute(
+        path: worldBookDetailPath,
+        name: 'worldBookDetail',
+        pageBuilder: (context, state) => _instant(
+          state,
+          WorldBookDetailPage(bookId: state.pathParameters['bookId'] ?? ''),
         ),
       ),
       GoRoute(
