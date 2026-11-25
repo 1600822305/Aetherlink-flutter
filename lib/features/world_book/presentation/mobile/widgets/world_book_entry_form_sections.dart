@@ -197,7 +197,20 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
   final FocusNode _focus = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    // 输入了还没回车就点别处（包括点「保存」）时，把输入框里的内容也加进去，
+    // 不然这个关键词会悄悄丢掉。
+    _focus.addListener(_onFocus);
+  }
+
+  void _onFocus() {
+    if (!_focus.hasFocus && _input.text.trim().isNotEmpty) _add();
+  }
+
+  @override
   void dispose() {
+    _focus.removeListener(_onFocus);
     _input.dispose();
     _focus.dispose();
     super.dispose();
@@ -578,18 +591,18 @@ class WorldBookPositionSelector extends StatelessWidget {
 /// 每个注入位置的一句话说明（位置 chips 下方显示）。
 String worldBookPositionHint(WorldBookInjectionPosition p) => switch (p) {
   WorldBookInjectionPosition.beforeSystemPrompt =>
-    '拼在系统提示词前面（ST：角色定义之前）',
+    '放在系统提示词前面',
   WorldBookInjectionPosition.afterSystemPrompt =>
-    '拼在系统提示词后面（ST：角色定义之后）',
-  WorldBookInjectionPosition.atDepth => '作为一条消息插在倒数第 N 条消息处',
+    '放在系统提示词后面',
+  WorldBookInjectionPosition.atDepth => '作为一条消息插进对话，位置是倒数第 N 条',
   WorldBookInjectionPosition.authorNoteTop ||
   WorldBookInjectionPosition.authorNoteBottom =>
-    '插在作者注释的前 / 后。本应用暂无作者注释，设置会保存但暂不注入',
+    '酒馆的作者注释位置，本应用没有，不会注入',
   WorldBookInjectionPosition.examplesBefore ||
   WorldBookInjectionPosition.examplesAfter =>
-    '作为示例对话插入。本应用暂无示例消息，设置会保存但暂不注入',
+    '酒馆的示例对话位置，本应用没有，不会注入',
   WorldBookInjectionPosition.outlet =>
-    '不自动注入，在助手的系统提示词里写 {{outlet::名字}}，激活时替换成这段内容',
+    '不自动注入；在系统提示词里写 {{outlet::名字}}，触发时替换成这段内容',
 };
 
 /// 三态开关的标签：null = 跟随全局。

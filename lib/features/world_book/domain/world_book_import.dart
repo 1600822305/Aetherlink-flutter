@@ -71,8 +71,10 @@ Set<String> worldBookPendingFeatures(WorldBookEntry e) => {
   if (e.automationId.trim().isNotEmpty) '自动化',
 };
 
-/// 导入前整理 id：书 id 为空或与已有书冲突时重新生成；条目 uid 统一成不重复的
-/// 数字（已是数字且不重复的保持不变，其余按顺序分配新号）。
+/// 导入前整理：书 id 为空或与已有书冲突时重新生成；条目 uid 统一成不重复的
+/// 数字（已是数字且不重复的保持不变，其余按顺序分配新号）；标题（ST `comment`）
+/// 为空的条目把 [WorldBookEntry.displayTitle] 真正写进标题，这样列表、编辑页、
+/// 导出看到的是同一个名字（导回酒馆时标题栏也有内容）。
 WorldBook normalizeImportedWorldBook(
   WorldBook book, {
   required Set<String> existingBookIds,
@@ -91,7 +93,12 @@ WorldBook normalizeImportedWorldBook(
   var next = used.isEmpty ? 0 : used.reduce((a, b) => a > b ? a : b) + 1;
   final entries = <WorldBookEntry>[
     for (var i = 0; i < book.entries.length; i++)
-      keep[i] ? book.entries[i] : book.entries[i].copyWith(id: '${next++}'),
+      _withTitle(
+        keep[i] ? book.entries[i] : book.entries[i].copyWith(id: '${next++}'),
+      ),
   ];
   return book.copyWith(id: bookId, entries: entries);
 }
+
+WorldBookEntry _withTitle(WorldBookEntry e) =>
+    e.hasInferredTitle ? e.copyWith(name: e.displayTitle) : e;

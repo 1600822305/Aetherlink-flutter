@@ -1,12 +1,12 @@
 // 条目编辑页（全屏子页，零时长路由），字段与 SillyTavern 世界书条目一致。
-// 按「写什么 → 什么时候注入 → 注入到哪里 → 高级」组织：
-//   · 内容：标题（ST comment）+ 内容；
-//   · 触发：常驻 / 关键词；主关键词、次级关键词与四种逻辑、区分大小写 / 全词匹配
-//     （可跟随全局）、扫描深度（可跟随全局）；
-//   · 注入：ST 的 8 个位置（暂未实现的标「暂不生效」）、深度与角色、Outlet 名、
-//     顺序（order）；
-//   · 高级（可折叠，有非默认值时默认展开）：概率、包含组、递归、计时器、预算、
-//     额外匹配源、生成类型、自动化 ID。引擎尚未实现的分组标「暂不生效」。
+//
+// 主页面只放三块，按「写什么 → 什么时候触发 → 放在哪里」：
+//   · 内容：标题 + 正文（无边框输入，像写笔记），底部字数 / token；
+//   · 触发：关键词触发 / 始终注入；关键词；次级条件（默认收起）；「匹配方式」
+//     一行，点开底部面板调大小写、全词、扫描深度；
+//   · 注入：位置（点开底部面板选择）、深度与身份 / Outlet 名、顺序。
+// 其余设置在「更多」卡片里，每项一行、右侧显示当前值，点开底部面板编辑：
+// 触发概率、包含组、计时器、递归、SillyTavern 兼容；「不计入注入上限」直接是开关。
 // 有未保存修改时返回会二次确认；编辑已有条目时页底可删除。
 
 import 'package:flutter/material.dart';
@@ -68,7 +68,13 @@ class _WorldBookEntryEditPageState
     worldBookSettingsControllerProvider,
   );
 
-  late final WorldBookEntry _base = widget.entry ?? const WorldBookEntry(id: '');
+  /// 编辑起点。标题为空的旧条目（修复前导入的）用列表上显示的同一个名字填进
+  /// 标题框，保存后真正写入，列表和编辑页始终一致。
+  late final WorldBookEntry _base = switch (widget.entry) {
+    final e? when e.hasInferredTitle => e.copyWith(name: e.displayTitle),
+    final e? => e,
+    null => const WorldBookEntry(id: ''),
+  };
 
   late final _name = TextEditingController(text: _base.name);
   late final _content = TextEditingController(text: _base.content);
@@ -140,46 +146,14 @@ class _WorldBookEntryEditPageState
     };
   }
 
-  late bool _advancedOpen = _hasAdvanced(_base);
-  late bool _compatOpen = _hasCompat(_base);
-  late bool _matchDetailOpen = _hasMatchDetail(_base);
+  /// 次级条件区：已有次级关键词时直接显示，否则点「添加次级条件」才出现。
+  bool _showSecondary = false;
   bool _saving = false;
 
   bool get _isNew => widget.entry == null;
 
   static TextEditingController _number(int value) =>
       TextEditingController(text: value.toString());
-
-  /// 高级区里有非默认值时默认展开，避免用户看不到已有设置。
-  static bool _hasAdvanced(WorldBookEntry e) =>
-      !e.useProbability ||
-      e.probability != 100 ||
-      e.groups.isNotEmpty ||
-      e.useGroupScoring != null ||
-      e.excludeRecursion ||
-      e.preventRecursion ||
-      e.delayUntilRecursion > 0 ||
-      (e.sticky ?? 0) > 0 ||
-      (e.cooldown ?? 0) > 0 ||
-      (e.delay ?? 0) > 0 ||
-      e.ignoreBudget;
-
-  /// 「SillyTavern 兼容」区里有非默认值时默认展开。
-  static bool _hasCompat(WorldBookEntry e) =>
-      e.vectorized ||
-      e.matchPersonaDescription ||
-      e.matchCharacterDescription ||
-      e.matchCharacterPersonality ||
-      e.matchCharacterDepthPrompt ||
-      e.matchScenario ||
-      e.matchCreatorNotes ||
-      e.triggers.isNotEmpty ||
-      e.characterFilter != null ||
-      e.automationId.isNotEmpty;
-
-  /// 匹配细节（大小写 / 全词 / 扫描深度）不是默认值时默认展开。
-  static bool _hasMatchDetail(WorldBookEntry e) =>
-      e.caseSensitive != null || e.matchWholeWords != null || e.scanDepth != null;
 
   List<TextEditingController> get _controllers => [
     _name,
@@ -198,16 +172,35 @@ class _WorldBookEntryEditPageState
     _delay,
   ];
 
+  /// 打开页面时表单「原样收集」出来的条目，作为判断有没有修改的基准。
+  ///
+  /// 不能直接拿 [_base] 比：收集时会做规整（标题去空格、计时器 0 存成 null、
+  /// 数字限定范围、生成类型按固定顺序排列……），导入的条目经常和规整后的值
+  /// 不完全一样（比如酒馆文件里 sticky / cooldown / delay 写的是 0），什么都
+  /// 没改也会被判成「已修改」。
+  late final WorldBookEntry _initial;
+
   @override
   void initState() {
     super.initState();
+    _initial = _collect();
     _content.addListener(_refresh);
   }
 
   void _refresh() => setState(() {});
 
+  /// 底部面板里的表单跟着页面状态刷新：页面每次 setState 都让它 +1。
+  final ValueNotifier<int> _tick = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _tick.value++;
+  }
+
   @override
   void dispose() {
+    _tick.dispose();
     _content.removeListener(_refresh);
     for (final c in _controllers) {
       c.dispose();
@@ -277,14 +270,23 @@ class _WorldBookEntryEditPageState
     characterFilter: _characterFilter(),
   );
 
-  bool get _dirty => _collect() != _base;
+  bool get _dirty => _collect() != _initial;
 
   bool get _canSave =>
       !_saving &&
       (_name.text.trim().isNotEmpty || _content.text.trim().isNotEmpty);
 
   Future<void> _save() async {
-    if (!_canSave) return;
+    // 先收起键盘，让关键词输入框里还没回车的内容提交进去（焦点变化在下一个
+    // microtask 才通知）。
+    FocusScope.of(context).unfocus();
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted || !_canSave) return;
+    // 没改动的已有条目不用写库，直接关闭。
+    if (!_isNew && !_dirty) {
+      Navigator.of(context).pop();
+      return;
+    }
     setState(() => _saving = true);
     try {
       await ref
@@ -304,7 +306,7 @@ class _WorldBookEntryEditPageState
     final ok = await confirmWorldBookAction(
       context,
       title: '删除条目',
-      message: '将删除「${entry.name.isEmpty ? '未命名条目' : entry.name}」。',
+      message: '将删除「${entry.displayTitle.isEmpty ? '未命名条目' : entry.displayTitle}」。',
       confirmLabel: '删除',
       destructive: true,
     );
@@ -318,6 +320,9 @@ class _WorldBookEntryEditPageState
   }
 
   Future<void> _back() async {
+    FocusScope.of(context).unfocus();
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
     final ok =
         !_dirty ||
         await confirmWorldBookAction(
@@ -342,21 +347,20 @@ class _WorldBookEntryEditPageState
     ),
   );
 
-  Widget _divider() => Divider(height: 1, color: Theme.of(context).dividerColor);
+  Widget _divider({double indent = 0}) => Divider(
+    height: 1,
+    indent: indent,
+    color: Theme.of(context).dividerColor,
+  );
 
-  Widget _subhead(String text, {bool pending = false}) => Padding(
-    padding: const EdgeInsets.only(top: 14, bottom: 2),
-    child: Row(
-      children: [
-        Text(
-          text,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (pending) const WorldBookBadge('暂不生效'),
-      ],
+  Widget _subhead(String text) => Padding(
+    padding: const EdgeInsets.only(top: 16, bottom: 2),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
     ),
   );
 
@@ -419,163 +423,36 @@ class _WorldBookEntryEditPageState
         child: TextField(
           controller: c,
           onChanged: (_) => _refresh(),
-          decoration: InputDecoration(isDense: true, labelText: label, hintText: hint),
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: label,
+            hintText: hint,
+          ),
         ),
       );
 
-  // ───────────────────────── sections ─────────────────────────
-
-  Widget _contentCard(ThemeData theme) => _card([
-    TextField(
-      controller: _name,
-      autofocus: _isNew,
-      textInputAction: TextInputAction.next,
-      onChanged: (_) => _refresh(),
-      style: theme.textTheme.titleSmall?.copyWith(
-        fontSize: 15,
-        fontWeight: FontWeight.w600,
-      ),
-      decoration: InputDecoration(
-        labelText: '标题',
-        hintText: _base.hasInferredTitle
-            ? '未填写，列表里显示为「${_base.displayTitle}」'
-            : '如：外貌、王都、魔法规则（不参与匹配）',
-      ),
+  /// 一行设置入口：图标 + 名称，右侧是当前值和「›」。
+  Widget _navRow({
+    required IconData icon,
+    required String title,
+    required String value,
+    required VoidCallback onTap,
+    bool warn = false,
+    EdgeInsets padding = const EdgeInsets.symmetric(
+      horizontal: 14,
+      vertical: 13,
     ),
-    const SizedBox(height: 12),
-    TextField(
-      controller: _content,
-      minLines: 5,
-      maxLines: 14,
-      style: theme.textTheme.bodyMedium?.copyWith(height: 1.55),
-      decoration: const InputDecoration(
-        labelText: '内容',
-        hintText:
-            '激活时注入给模型的文本，可用 {{char}} {{user}} 等宏；'
-            '首行写 @@activate / @@dont_activate 可强制激活 / 不激活',
-        alignLabelWithHint: true,
-      ),
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Text(
-        '${_content.text.characters.length} 字 · '
-        '约 ${worldBookRoughTokens(_content.text)} tokens',
-        textAlign: TextAlign.right,
-        style: theme.textTheme.bodySmall?.copyWith(
-          fontSize: 11.5,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    ),
-  ]);
-
-  Widget _triggerCard() => _card([
-    WorldBookSegmented<bool>(
-      options: const [(false, '出现关键词时'), (true, '总是（常驻）')],
-      value: _constant,
-      onChanged: (v) => setState(() => _constant = v),
-    ),
-    if (_constant)
-      const WorldBookInlineNote('每次对话都会注入这段内容，会持续占用上下文。')
-    else ...[
-      const WorldBookFieldLabel('主关键词（任一命中即可）'),
-      WorldBookKeywordsField(
-        keywords: _keywords,
-        onChanged: (v) => setState(() => _keywords = v),
-      ),
-      if (_keywords.isEmpty)
-        const WorldBookInlineNote('还没有主关键词，这个条目不会被触发。', warning: true),
-      const WorldBookFieldLabel('次级关键词（可选）'),
-      WorldBookKeywordsField(
-        keywords: _secondary,
-        hint: '主关键词命中后，再按下面的逻辑检查',
-        onChanged: (v) => setState(() => _secondary = v),
-      ),
-      if (_secondary.isNotEmpty) ...[
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final (logic, label) in const [
-              (WorldBookSecondaryLogic.andAny, '且含任一'),
-              (WorldBookSecondaryLogic.andAll, '且含全部'),
-              (WorldBookSecondaryLogic.notAny, '且都不含'),
-              (WorldBookSecondaryLogic.notAll, '且不全含'),
-            ])
-              ChoiceChip(
-                label: Text(label),
-                selected: _logic == logic,
-                visualDensity: VisualDensity.compact,
-                onSelected: (_) => setState(() => _logic = logic),
-              ),
-          ],
-        ),
-      ],
-      const SizedBox(height: 6),
-      _divider(),
-      _foldHeader(
-        '匹配细节',
-        _matchDetailSummary(),
-        _matchDetailOpen,
-        () => setState(() => _matchDetailOpen = !_matchDetailOpen),
-      ),
-      if (_matchDetailOpen) ..._matchDetailChildren(),
-    ],
-  ]);
-
-  String _matchDetailSummary() {
-    String tri(String name, bool? v) =>
-        v == null ? '' : '$name${v ? '开' : '关'}';
-    final parts = [
-      tri('大小写', _caseSensitive),
-      tri('全词', _matchWholeWords),
-      if (!_followScanDepth) '扫描 ${_scanDepth.text.trim()} 条',
-    ].where((p) => p.isNotEmpty).toList();
-    return parts.isEmpty
-        ? '跟随全局 · 扫描最近 ${_settings.scanDepth} 条消息'
-        : parts.join(' · ');
-  }
-
-  List<Widget> _matchDetailChildren() => [
-      _triState('区分大小写', _caseSensitive, (v) => _caseSensitive = v),
-      _divider(),
-      _triState('全词匹配', _matchWholeWords, (v) => _matchWholeWords = v),
-      const WorldBookInlineNote('全词匹配按空格分词，中文条目建议关闭。'),
-      const SizedBox(height: 4),
-      _divider(),
-      _switch(
-        '扫描深度跟随全局',
-        _followScanDepth,
-        (v) => _followScanDepth = v,
-        subtitle: '全局默认扫描最近 ${_settings.scanDepth} 条消息',
-      ),
-      if (!_followScanDepth)
-        _numberRow(
-          _scanDepth,
-          '扫描深度',
-          subtitle: '在最近多少条消息里找关键词',
-          min: 0,
-          max: WorldBookEntry.kMaxScanDepth,
-        ),
-  ];
-
-  /// 卡片内可折叠小节的标题行。
-  Widget _foldHeader(
-    String title,
-    String summary,
-    bool open,
-    VoidCallback onTap,
-  ) {
+  }) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: padding,
         child: Row(
           children: [
+            Icon(icon, size: 18, color: muted),
+            const SizedBox(width: 12),
             Text(
               title,
               style: theme.textTheme.titleSmall?.copyWith(
@@ -583,269 +460,233 @@ class _WorldBookEntryEditPageState
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
-                summary,
+                value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.right,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 12,
-                  color: muted,
+                  fontSize: 12.5,
+                  color: warn ? const Color(0xFFD97706) : muted,
                 ),
               ),
             ),
             const SizedBox(width: 4),
-            Icon(
-              open ? LucideIcons.chevronUp : LucideIcons.chevronDown,
-              size: 16,
-              color: muted,
-            ),
+            Icon(LucideIcons.chevronRight, size: 16, color: muted),
           ],
         ),
       ),
     );
   }
 
-  Widget _injectionCard() => _card([
-    WorldBookPositionSelector(
-      value: _position,
-      onChanged: (v) => setState(() => _position = v),
-    ),
-    WorldBookInlineNote(
-      worldBookPositionHint(_position),
-      warning: !_position.isImplemented,
-    ),
-    if (_position == WorldBookInjectionPosition.atDepth) ...[
-      const SizedBox(height: 4),
-      _numberRow(
-        _depth,
-        '深度',
-        subtitle: '0 = 最后一条消息之后',
-        min: 0,
-        max: WorldBookEntry.kMaxNumber,
-      ),
-      const WorldBookFieldLabel('以谁的身份插入'),
-      WorldBookSegmented<WorldBookInjectionRole>(
-        options: [
-          for (final r in WorldBookInjectionRole.values)
-            (r, worldBookRoleLabel(r)),
-        ],
-        value: _role,
-        onChanged: (v) => setState(() => _role = v),
-      ),
-      if (_role == WorldBookInjectionRole.system)
-        const WorldBookInlineNote(
-          'Claude、Gemini 不接受对话中间的系统消息，发给它们时会改为用户消息并标注为系统内容。',
-        ),
-    ],
-    if (_position == WorldBookInjectionPosition.outlet)
-      _textField(_outletName, 'Outlet 名字', hint: '在提示词里用 {{outlet::名字}} 取出'),
-    const SizedBox(height: 4),
-    _divider(),
-    _numberRow(
-      _order,
-      '顺序',
-      subtitle: '数值大的更靠近提示词末尾，对输出影响更大',
-      min: -WorldBookEntry.kMaxNumber,
-      max: WorldBookEntry.kMaxNumber,
-    ),
-  ]);
-
-  /// 整张可折叠的卡片（高级 / SillyTavern 兼容）。
-  Widget _foldCard({
-    required String title,
-    required String summary,
-    required bool open,
-    required VoidCallback onToggle,
-    required List<Widget> children,
-    bool warn = false,
+  /// 底部面板编辑一组设置；改动直接作用在页面状态上（随页面一起保存）。
+  Future<void> _openSheet(
+    String title,
+    List<Widget> Function() children, {
+    String? note,
   }) {
-    final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
-    return WorldBookOutlinedCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          summary,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 12,
-                            color: warn ? const Color(0xFFD97706) : muted,
-                          ),
-                        ),
-                      ],
+    FocusScope.of(context).unfocus();
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.8,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: ListenableBuilder(
+                listenable: _tick,
+                builder: (_, _) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  Icon(
-                    open ? LucideIcons.chevronUp : LucideIcons.chevronDown,
-                    size: 16,
-                    color: muted,
-                  ),
-                ],
+                    if (note != null) WorldBookInlineNote(note),
+                    const SizedBox(height: 4),
+                    ...children(),
+                  ],
+                ),
               ),
             ),
           ),
-          if (open) ...[
-            _divider(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: children,
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
 
-  /// 高级区折叠时的摘要：列出改过的设置。
-  String _advancedSummary() {
-    final e = _collect();
+  // ───────────────────────── summaries ─────────────────────────
+
+  String _matchSummary() {
+    String? tri(String name, bool? v) =>
+        v == null ? null : '$name${v ? '开' : '关'}';
     final parts = [
-      if (!e.useProbability) '不判定概率'
-      else if (e.probability != 100) '概率 ${e.probability}%',
-      if (e.groups.isNotEmpty) '组「${e.groups.join('、')}」',
-      if ((e.sticky ?? 0) > 0) '持续 ${e.sticky}',
-      if ((e.cooldown ?? 0) > 0) '冷却 ${e.cooldown}',
-      if ((e.delay ?? 0) > 0) '延迟 ${e.delay}',
-      if (e.excludeRecursion || e.preventRecursion || e.delayUntilRecursion > 0)
-        '递归设置',
-      if (e.ignoreBudget) '不计入预算',
-    ];
-    return parts.isEmpty ? '概率、包含组、计时器、递归、预算 · 全部默认' : parts.join(' · ');
+      tri('大小写', _caseSensitive),
+      tri('全词', _matchWholeWords),
+      if (!_followScanDepth) '最近 ${_scanDepth.text.trim()} 条',
+    ].whereType<String>().toList();
+    return parts.isEmpty ? '跟随全局' : parts.join(' · ');
   }
 
-  /// 兼容区折叠时的摘要；用到本应用没有的功能时提示。
+  String _probabilitySummary() =>
+      _useProbability ? '${_read(_probability, 100, 0, 100)}%' : '不判定';
+
+  String _groupSummary() {
+    final g = _group.text.trim();
+    return g.isEmpty ? '无' : g;
+  }
+
+  String _timerSummary() {
+    final sticky = _timer(_sticky);
+    final cooldown = _timer(_cooldown);
+    final delay = _timer(_delay);
+    final parts = [
+      if (sticky != null) '持续 $sticky',
+      if (cooldown != null) '冷却 $cooldown',
+      if (delay != null) '延迟 $delay',
+    ];
+    return parts.isEmpty ? '无' : parts.join(' · ');
+  }
+
+  String _recursionSummary() {
+    final level = _read(_delayUntilRecursion, 0, 0, WorldBookEntry.kMaxNumber);
+    final parts = [
+      if (_excludeRecursion) '不被触发',
+      if (_preventRecursion) '不触发其他',
+      if (level > 0) '第 $level 层',
+    ];
+    if (parts.isEmpty) return _settings.recursive ? '默认' : '全局未开启';
+    return parts.join(' · ');
+  }
+
+  /// 兼容区的摘要；用到本应用不起作用的设置时为警示色。
   (String, bool) _compatSummary() {
     final e = _collect();
     final pending = worldBookPendingFeatures(e);
+    if (pending.isNotEmpty) return ('${pending.length} 项不起作用', true);
     final parts = [
       if (e.matchCharacterDescription ||
           e.matchCharacterPersonality ||
-          e.matchScenario ||
-          e.matchPersonaDescription ||
-          e.matchCharacterDepthPrompt ||
-          e.matchCreatorNotes)
+          e.matchScenario)
         '额外匹配源',
       if (e.triggers.isNotEmpty) '生成类型',
       if (_filterNames.isNotEmpty || _filterTags.isNotEmpty) '助手筛选',
     ];
-    if (pending.isNotEmpty) {
-      return ('有 ${pending.length} 项设置在本应用不起作用：${pending.join('、')}', true);
-    }
-    return (
-      parts.isEmpty ? '从 SillyTavern 导入的书才会用到，一般不用管' : '已设置：${parts.join('、')}',
-      false,
-    );
+    return (parts.isEmpty ? '未使用' : parts.join('、'), false);
   }
 
-  List<Widget> _advancedChildren() => [
-    _subhead('概率'),
-    _switch('启用概率', _useProbability, (v) => _useProbability = v),
-    if (_useProbability)
+  // ───────────────────────── sheet contents ─────────────────────────
+
+  List<Widget> _matchChildren() => [
+    _triState('区分大小写', _caseSensitive, (v) => _caseSensitive = v),
+    _divider(),
+    _triState('全词匹配', _matchWholeWords, (v) => _matchWholeWords = v),
+    const WorldBookInlineNote('全词匹配按空格分词，中文条目建议关闭。'),
+    const SizedBox(height: 4),
+    _divider(),
+    _switch(
+      '扫描深度跟随全局',
+      _followScanDepth,
+      (v) => _followScanDepth = v,
+      subtitle: '全局是最近 ${_settings.scanDepth} 条消息',
+    ),
+    if (!_followScanDepth)
       _numberRow(
-        _probability,
-        '触发概率（%）',
-        subtitle: '关键词命中后按这个概率决定是否注入',
+        _scanDepth,
+        '扫描深度',
+        subtitle: '在最近多少条消息里找关键词',
         min: 0,
-        max: 100,
+        max: WorldBookEntry.kMaxScanDepth,
       ),
-    _subhead('包含组'),
-    _textField(_group, '组名', hint: '同组条目同时命中时只注入一条；多个组用逗号分隔'),
+  ];
+
+  List<Widget> _probabilityChildren() => [
+    _switch(
+      '按概率触发',
+      _useProbability,
+      (v) => _useProbability = v,
+      subtitle: '关键词命中后，再按概率决定这次注不注入',
+    ),
+    if (_useProbability)
+      _numberRow(_probability, '概率（%）', min: 0, max: 100),
+  ];
+
+  List<Widget> _groupChildren() => [
+    _textField(_group, '组名', hint: '多个组用逗号分隔'),
     _switch(
       '组内优先',
       _groupOverride,
       (v) => _groupOverride = v,
-      subtitle: '同组时直接选顺序最大的，不随机',
+      subtitle: '同组时直接选它（多个优先时选顺序最大的）',
     ),
     _numberRow(
       _groupWeight,
-      '组内权重',
-      subtitle: '随机选择时的权重',
+      '权重',
+      subtitle: '随机挑选时，权重越大越容易被选中',
       min: 1,
       max: WorldBookEntry.kMaxNumber,
     ),
     _triState('按命中数评分', _useGroupScoring, (v) => _useGroupScoring = v),
-    _subhead('递归'),
-    if (!_settings.recursive)
-      const WorldBookInlineNote('全局设置里的「递归扫描」未开启，这一组设置暂时不起作用。'),
-    _switch(
-      '不可被递归激活',
-      _excludeRecursion,
-      (v) => _excludeRecursion = v,
-      subtitle: '其他条目的内容不能触发它',
-    ),
-    _switch(
-      '阻止后续递归',
-      _preventRecursion,
-      (v) => _preventRecursion = v,
-      subtitle: '它的内容不再用来触发其他条目',
-    ),
-    _numberRow(
-      _delayUntilRecursion,
-      '延迟到递归层级',
-      subtitle: '0 = 关闭；N = 只在第 N 层递归扫描时才能激活',
-      min: 0,
-      max: WorldBookEntry.kMaxNumber,
-    ),
-    _subhead('计时器'),
+  ];
+
+  List<Widget> _timerChildren() => [
     _numberRow(
       _sticky,
       '持续',
-      subtitle: '激活后保持生效的消息数，0 = 关闭',
+      subtitle: '激活后接下来多少条消息内保持注入',
       min: 0,
       max: WorldBookEntry.kMaxNumber,
     ),
     _numberRow(
       _cooldown,
       '冷却',
-      subtitle: '持续结束后多少条消息内不能再激活',
+      subtitle: '之后多少条消息内不能再触发',
       min: 0,
       max: WorldBookEntry.kMaxNumber,
     ),
     _numberRow(
       _delay,
       '延迟',
-      subtitle: '聊天满多少条消息后才可激活',
+      subtitle: '聊天满多少条消息后才能触发',
       min: 0,
       max: WorldBookEntry.kMaxNumber,
     ),
-    const WorldBookInlineNote('按消息条数计算（用户和助手的消息都算），一来一回是 2 条。'),
-    _subhead('预算'),
+  ];
+
+  List<Widget> _recursionChildren() => [
+    if (!_settings.recursive)
+      const WorldBookInlineNote('全局设置里的「递归扫描」没有开启，这些设置暂时不起作用。'),
     _switch(
-      '不计入预算',
-      _ignoreBudget,
-      (v) => _ignoreBudget = v,
-      subtitle: '超出 token 预算时也照常注入',
+      '不被其他条目触发',
+      _excludeRecursion,
+      (v) => _excludeRecursion = v,
+      subtitle: '只认聊天记录里的关键词',
+    ),
+    _switch(
+      '不触发其他条目',
+      _preventRecursion,
+      (v) => _preventRecursion = v,
+      subtitle: '它的内容不再用来找其他条目的关键词',
+    ),
+    _numberRow(
+      _delayUntilRecursion,
+      '延迟到递归层级',
+      subtitle: '0 = 关闭；N = 第 N 层递归时才能触发',
+      min: 0,
+      max: WorldBookEntry.kMaxNumber,
     ),
   ];
 
-  /// 「SillyTavern 兼容」区：额外匹配源、生成类型、助手筛选，以及本应用没有
-  /// 对应功能、只保存的设置。
   List<Widget> _compatChildren() => [
     _subhead('额外匹配源'),
     const WorldBookInlineNote('除了聊天记录，再在这些内容里找关键词。'),
@@ -853,44 +694,43 @@ class _WorldBookEntryEditPageState
       '角色描述',
       _matchCharDesc,
       (v) => _matchCharDesc = v,
-      subtitle: '本应用对应：助手的系统提示词',
+      subtitle: '对应助手的系统提示词',
     ),
     _switch(
       '角色性格',
       _matchCharPersonality,
       (v) => _matchCharPersonality = v,
-      subtitle: '本应用对应：助手简介',
+      subtitle: '对应助手简介',
     ),
     _switch(
       '场景',
       _matchScenario,
       (v) => _matchScenario = v,
-      subtitle: '本应用对应：话题提示词',
+      subtitle: '对应话题提示词',
     ),
-    _switch(
-      '用户人设',
-      _matchPersona,
-      (v) => _matchPersona = v,
-      subtitle: '本应用暂无对应内容，开启后不会匹配到',
-    ),
-    _switch(
-      '角色备注',
-      _matchDepthPrompt,
-      (v) => _matchDepthPrompt = v,
-      subtitle: '本应用暂无对应内容，开启后不会匹配到',
-    ),
-    _switch(
-      '作者备注',
-      _matchCreatorNotes,
-      (v) => _matchCreatorNotes = v,
-      subtitle: '本应用暂无对应内容，开启后不会匹配到',
-    ),
+    if (_matchPersona || _matchDepthPrompt || _matchCreatorNotes) ...[
+      _switch(
+        '用户人设',
+        _matchPersona,
+        (v) => _matchPersona = v,
+        subtitle: '本应用没有对应内容，不起作用',
+      ),
+      _switch(
+        '角色备注',
+        _matchDepthPrompt,
+        (v) => _matchDepthPrompt = v,
+        subtitle: '本应用没有对应内容，不起作用',
+      ),
+      _switch(
+        '作者备注',
+        _matchCreatorNotes,
+        (v) => _matchCreatorNotes = v,
+        subtitle: '本应用没有对应内容，不起作用',
+      ),
+    ],
     _subhead('生成类型'),
-    const WorldBookInlineNote(
-      '不选 = 所有类型都可以激活。本应用的发送、重新发送和多模型都算「正常发送」；'
-      '「代写」「后台生成」在本应用中不会出现。',
-    ),
-    const SizedBox(height: 6),
+    const WorldBookInlineNote('不选 = 都可以触发。发送、重新发送和多模型都算「正常发送」。'),
+    const SizedBox(height: 8),
     Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -913,7 +753,7 @@ class _WorldBookEntryEditPageState
       '排除模式',
       _filterExclude,
       (v) => _filterExclude = v,
-      subtitle: _filterExclude ? '下面列出的助手不激活这个条目' : '只有下面列出的助手才激活这个条目',
+      subtitle: _filterExclude ? '下面的助手不触发' : '只有下面的助手触发',
     ),
     const WorldBookFieldLabel('助手名字'),
     WorldBookKeywordsField(
@@ -928,17 +768,292 @@ class _WorldBookEntryEditPageState
       onChanged: (v) => setState(() => _filterTags = v),
     ),
     if (_vectorized || _automationId.text.trim().isNotEmpty) ...[
-      _subhead('仅保存', pending: true),
-      const WorldBookInlineNote('导入时带过来的设置，本应用不使用，导出时会原样写回。'),
-      _switch(
-        '向量匹配',
-        _vectorized,
-        (v) => _vectorized = v,
-        subtitle: '按语义相似度激活',
-      ),
-      _textField(_automationId, '自动化 ID', hint: 'SillyTavern 快速回复联动'),
+      _subhead('仅保存'),
+      const WorldBookInlineNote('导入时带过来的设置，本应用不使用，导出时原样写回。'),
+      _switch('向量匹配', _vectorized, (v) => _vectorized = v),
+      _textField(_automationId, '自动化 ID'),
     ],
   ];
+
+  Future<void> _pickPosition() async {
+    FocusScope.of(context).unfocus();
+    final picked = await showModalBottomSheet<WorldBookInjectionPosition>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        Widget tile(WorldBookInjectionPosition p) => ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+          title: Text(worldBookPositionLabel(p)),
+          subtitle: Text(
+            worldBookPositionHint(p),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          trailing: p == _position
+              ? Icon(LucideIcons.check, size: 18, color: theme.colorScheme.primary)
+              : null,
+          onTap: () => Navigator.of(ctx).pop(p),
+        );
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.8,
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final p in WorldBookInjectionPosition.values)
+                  if (p.isImplemented) tile(p),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                  child: Text(
+                    '本应用没有对应功能（只保存，不注入）',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                for (final p in WorldBookInjectionPosition.values)
+                  if (!p.isImplemented) tile(p),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (picked != null) setState(() => _position = picked);
+  }
+
+  // ───────────────────────── sections ─────────────────────────
+
+  static const InputDecoration _bare = InputDecoration(
+    isDense: true,
+    filled: false,
+    border: InputBorder.none,
+    enabledBorder: InputBorder.none,
+    focusedBorder: InputBorder.none,
+  );
+
+  Widget _contentCard(ThemeData theme) => _card([
+    TextField(
+      controller: _name,
+      autofocus: _isNew,
+      textInputAction: TextInputAction.next,
+      onChanged: (_) => _refresh(),
+      style: theme.textTheme.titleMedium?.copyWith(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: _bare.copyWith(
+        hintText: '标题',
+        contentPadding: const EdgeInsets.symmetric(vertical: 6),
+      ),
+    ),
+    _divider(),
+    TextField(
+      controller: _content,
+      minLines: 6,
+      maxLines: 16,
+      style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+      decoration: _bare.copyWith(
+        hintText: '触发时发给模型的内容，可以用 {{char}}、{{user}} 等宏',
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+      ),
+    ),
+    Text(
+      '${_content.text.characters.length} 字 · '
+      '约 ${worldBookRoughTokens(_content.text)} tokens',
+      textAlign: TextAlign.right,
+      style: theme.textTheme.bodySmall?.copyWith(
+        fontSize: 11.5,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    ),
+  ]);
+
+  Widget _triggerCard() => _card([
+    WorldBookSegmented<bool>(
+      options: const [(false, '关键词触发'), (true, '始终注入')],
+      value: _constant,
+      onChanged: (v) => setState(() => _constant = v),
+    ),
+    if (_constant)
+      const WorldBookInlineNote('每次对话都会注入，会一直占用上下文。')
+    else ...[
+      const WorldBookFieldLabel('关键词（命中任意一个即触发）'),
+      WorldBookKeywordsField(
+        keywords: _keywords,
+        onChanged: (v) => setState(() => _keywords = v),
+      ),
+      if (_keywords.isEmpty)
+        const WorldBookInlineNote('还没有关键词，这个条目不会被触发。', warning: true),
+      if (_secondary.isEmpty && !_showSecondary)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+            ),
+            onPressed: () => setState(() => _showSecondary = true),
+            icon: const Icon(LucideIcons.plus, size: 14),
+            label: const Text('添加次级条件'),
+          ),
+        )
+      else ...[
+        const WorldBookFieldLabel('次级条件（关键词命中后再检查）'),
+        WorldBookSegmented<WorldBookSecondaryLogic>(
+          options: const [
+            (WorldBookSecondaryLogic.andAny, '含任一'),
+            (WorldBookSecondaryLogic.andAll, '含全部'),
+            (WorldBookSecondaryLogic.notAny, '都不含'),
+            (WorldBookSecondaryLogic.notAll, '不全含'),
+          ],
+          value: _logic,
+          onChanged: (v) => setState(() => _logic = v),
+        ),
+        const SizedBox(height: 8),
+        WorldBookKeywordsField(
+          keywords: _secondary,
+          hint: '次级关键词',
+          onChanged: (v) => setState(() => _secondary = v),
+        ),
+      ],
+      const SizedBox(height: 8),
+      _divider(),
+      _navRow(
+        icon: LucideIcons.sliders,
+        title: '匹配方式',
+        value: _matchSummary(),
+        padding: const EdgeInsets.only(top: 12, bottom: 2),
+        onTap: () => _openSheet('匹配方式', _matchChildren),
+      ),
+    ],
+  ]);
+
+  Widget _injectionCard() => _card([
+    _navRow(
+      icon: LucideIcons.mapPin,
+      title: '位置',
+      value: worldBookPositionLabel(_position),
+      warn: !_position.isImplemented,
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      onTap: _pickPosition,
+    ),
+    WorldBookInlineNote(
+      worldBookPositionHint(_position),
+      warning: !_position.isImplemented,
+    ),
+    if (_position == WorldBookInjectionPosition.atDepth) ...[
+      const SizedBox(height: 8),
+      _divider(),
+      _numberRow(
+        _depth,
+        '深度',
+        subtitle: '0 = 放在最后一条消息之后',
+        min: 0,
+        max: WorldBookEntry.kMaxNumber,
+      ),
+      const WorldBookFieldLabel('作为谁的消息'),
+      WorldBookSegmented<WorldBookInjectionRole>(
+        options: [
+          for (final r in WorldBookInjectionRole.values)
+            (r, worldBookRoleLabel(r)),
+        ],
+        value: _role,
+        onChanged: (v) => setState(() => _role = v),
+      ),
+      if (_role == WorldBookInjectionRole.system)
+        const WorldBookInlineNote(
+          'Claude、Gemini 不支持对话中间的系统消息，发给它们时会改成带标注的用户消息。',
+        ),
+    ],
+    if (_position == WorldBookInjectionPosition.outlet)
+      _textField(_outletName, 'Outlet 名字', hint: '在系统提示词里写 {{outlet::名字}}'),
+    const SizedBox(height: 8),
+    _divider(),
+    _numberRow(
+      _order,
+      '顺序',
+      subtitle: '同一位置里数值大的排在后面，对回复影响更大',
+      min: -WorldBookEntry.kMaxNumber,
+      max: WorldBookEntry.kMaxNumber,
+    ),
+  ]);
+
+  Widget _moreCard() {
+    final (compat, compatWarn) = _compatSummary();
+    return WorldBookOutlinedCard(
+      child: Column(
+        children: [
+          _navRow(
+            icon: LucideIcons.gauge,
+            title: '触发概率',
+            value: _probabilitySummary(),
+            onTap: () => _openSheet('触发概率', _probabilityChildren),
+          ),
+          _divider(indent: 44),
+          _navRow(
+            icon: LucideIcons.layers,
+            title: '包含组',
+            value: _groupSummary(),
+            onTap: () => _openSheet(
+              '包含组',
+              _groupChildren,
+              note: '同组的条目同时命中时，只注入其中一条。',
+            ),
+          ),
+          _divider(indent: 44),
+          _navRow(
+            icon: LucideIcons.timer,
+            title: '计时器',
+            value: _timerSummary(),
+            onTap: () => _openSheet(
+              '计时器',
+              _timerChildren,
+              note: '按消息条数计算，用户和助手的消息都算，一来一回是 2 条。0 = 关闭。',
+            ),
+          ),
+          _divider(indent: 44),
+          _navRow(
+            icon: LucideIcons.refreshCw,
+            title: '递归',
+            value: _recursionSummary(),
+            onTap: () => _openSheet(
+              '递归',
+              _recursionChildren,
+              note: '已触发条目的内容，也可以用来触发其他条目。',
+            ),
+          ),
+          _divider(indent: 44),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: _switch(
+              '不计入注入上限',
+              _ignoreBudget,
+              (v) => _ignoreBudget = v,
+              subtitle: '超出全局注入上限时也照常注入',
+            ),
+          ),
+          _divider(indent: 44),
+          _navRow(
+            icon: LucideIcons.plug,
+            title: 'SillyTavern 兼容',
+            value: compat,
+            warn: compatWarn,
+            onTap: () => _openSheet(
+              'SillyTavern 兼容',
+              _compatChildren,
+              note: '从酒馆导入的世界书才会用到，一般不用管。',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -977,38 +1092,18 @@ class _WorldBookEntryEditPageState
         body: GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             children: [
               _contentCard(theme),
-              const WorldBookFormLabel('什么时候注入'),
+              const WorldBookFormLabel('触发'),
               _triggerCard(),
-              const WorldBookFormLabel('注入到哪里'),
+              const WorldBookFormLabel('注入'),
               _injectionCard(),
               const WorldBookFormLabel('更多'),
-              _foldCard(
-                title: '高级',
-                summary: _advancedSummary(),
-                open: _advancedOpen,
-                onToggle: () => setState(() => _advancedOpen = !_advancedOpen),
-                children: _advancedChildren(),
-              ),
-              const SizedBox(height: 12),
-              Builder(
-                builder: (_) {
-                  final (summary, warn) = _compatSummary();
-                  return _foldCard(
-                    title: 'SillyTavern 兼容',
-                    summary: summary,
-                    warn: warn,
-                    open: _compatOpen,
-                    onToggle: () => setState(() => _compatOpen = !_compatOpen),
-                    children: _compatChildren(),
-                  );
-                },
-              ),
+              _moreCard(),
               if (!_isNew) ...[
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 Center(
                   child: TextButton.icon(
                     style: TextButton.styleFrom(

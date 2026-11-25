@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_import.dart';
 
 void main() {
   test('有标题时用标题', () {
@@ -39,9 +40,20 @@ void main() {
     expect(e.displayTitle, '${'长' * 30}…');
   });
 
-  test('只用于显示：导出时 comment 仍为空', () {
-    const e = WorldBookEntry(id: '0', keywords: ['k']);
-    expect(e.toJson()['comment'], '');
+  test('导入时把推断的标题真正写进条目（列表 / 编辑页 / 导出一致）', () {
+    final book = normalizeImportedWorldBook(
+      const WorldBook(
+        id: 'b',
+        entries: [
+          WorldBookEntry(id: '0', keywords: ['Benerit Group'], content: 'x'),
+          WorldBookEntry(id: '1', name: '自己的标题', keywords: ['k']),
+          WorldBookEntry(id: '2', content: ''),
+        ],
+      ),
+      existingBookIds: const {},
+    );
+    expect(book.entries.map((e) => e.name), ['Benerit Group', '自己的标题', '']);
+    expect(book.entries.first.toJson()['comment'], 'Benerit Group');
   });
 
   test('ST 文件 comment 为空时也能显示名字', () {
