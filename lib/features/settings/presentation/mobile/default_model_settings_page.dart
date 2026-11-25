@@ -727,7 +727,6 @@ class _ActionRow extends StatelessWidget {
     required this.accent,
     required this.title,
     required this.description,
-    this.showChevron = true,
     this.onTap,
   });
 
@@ -735,7 +734,6 @@ class _ActionRow extends StatelessWidget {
   final Color accent;
   final String title;
   final String description;
-  final bool showChevron;
 
   /// Navigation tap. When null the row renders at full visual fidelity but is
   /// non-functional (its destination / toggle doesn't exist yet this milestone).
@@ -791,7 +789,7 @@ class _ActionRow extends StatelessWidget {
               ],
             ),
           ),
-          if (showChevron) ...[
+          if (onTap != null) ...[
             const SizedBox(width: 8),
             Icon(
               LucideIcons.chevronRight,
