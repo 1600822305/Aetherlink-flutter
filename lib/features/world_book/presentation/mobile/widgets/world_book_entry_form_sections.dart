@@ -251,10 +251,9 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 for (final k in widget.keywords) _chip(theme, k),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
-                  child: IntrinsicWidth(
-                    child: TextField(
+                SizedBox(
+                  width: widget.keywords.isEmpty ? 220 : 120,
+                  child: TextField(
                         controller: _input,
                         focusNode: _focus,
                         onChanged: _onChanged,
@@ -285,7 +284,6 @@ class _WorldBookKeywordsFieldState extends State<WorldBookKeywordsField> {
                           ),
                         ),
                       ),
-                  ),
                 ),
               ],
             ),
