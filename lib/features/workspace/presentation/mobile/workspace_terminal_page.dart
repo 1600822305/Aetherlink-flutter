@@ -729,13 +729,22 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
           Expanded(
             child: TerminalSelectionPageLock(
               controller: aiView.controller,
-              child: TerminalView(
+              child: MediaQuery.removePadding(
+                // xterm 用 MediaQuery.padding 当内边距（为全屏终端设计）；嵌在页面中
+                // 时会把状态栏高度算进来，顶部留白、底部行被挤出可视区。
+                context: context,
+                removeTop: true,
+                removeBottom: true,
+                removeLeft: true,
+                removeRight: true,
+                child: TerminalView(
                 aiView.terminal,
                 controller: aiView.controller,
                 focusNode: aiView.focusNode,
                 textStyle: textStyle,
                 padding: const EdgeInsets.all(8),
               ),
+                ),
             ),
           ),
           TerminalExtraKeysBar(
@@ -763,7 +772,13 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
           Expanded(
             child: TerminalSelectionPageLock(
               controller: tab.controller,
-              child: IndexedStack(
+              child: MediaQuery.removePadding(
+                context: context,
+                removeTop: true,
+                removeBottom: true,
+                removeLeft: true,
+                removeRight: true,
+                child: IndexedStack(
                 index: _active,
                 children: [
                   for (final t in _tabs)
@@ -775,6 +790,7 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
                       padding: const EdgeInsets.all(8),
                     ),
                 ],
+              ),
               ),
             ),
           ),

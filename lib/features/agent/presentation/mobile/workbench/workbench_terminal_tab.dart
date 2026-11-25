@@ -160,12 +160,21 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
             Expanded(
               child: TerminalSelectionPageLock(
                 controller: view.controller,
-                child: TerminalView(
+                child: MediaQuery.removePadding(
+                  // xterm 用 MediaQuery.padding 当内边距（为全屏终端设计）；嵌在页面中
+                  // 时会把状态栏高度算进来，顶部留白、底部行被挤出可视区。
+                  context: context,
+                  removeTop: true,
+                  removeBottom: true,
+                  removeLeft: true,
+                  removeRight: true,
+                  child: TerminalView(
                   view.terminal,
                   controller: view.controller,
                   focusNode: view.focusNode,
                   textStyle: const TerminalStyle(fontSize: 13),
                   padding: const EdgeInsets.all(8),
+                ),
                 ),
               ),
             ),
