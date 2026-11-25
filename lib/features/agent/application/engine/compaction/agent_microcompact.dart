@@ -257,6 +257,25 @@ List<AgentEvent> buildContextView(
 // 清理的工具调用 id」，引擎 / 重放 / 压缩核算 / 上下文明细四侧自动一致，
 // 续跑、重启后也不丢。事件流里的工具结果原文永不改写，可随时恢复。
 
+const String _kNoteTag = '<!--ctx-note:';
+
+/// 给模型看的提示标记（写在状态行末尾）：状态行本身不进上下文，带这个
+/// 标记的会在重放时变成一条 system-reminder（如回滚后告诉模型文件已变）。
+String modelNoteMarker(String note) =>
+    '$_kNoteTag${note.replaceAll('\n', ' ').replaceAll('-->', '—>')}$_kTagEnd';
+
+/// 取状态行里给模型的提示；没有返回 null。
+String? modelNoteOf(String description) {
+  if (!description.contains(_kNoteTag)) return null;
+  for (final raw in description.split('\n')) {
+    final line = raw.trim();
+    if (line.startsWith(_kNoteTag) && line.endsWith(_kTagEnd)) {
+      return line.substring(_kNoteTag.length, line.length - _kTagEnd.length);
+    }
+  }
+  return null;
+}
+
 /// 被用户手动清除的工具输出在上下文里的占位文本。
 const String kManualClearedPlaceholder = '[工具输出已由用户手动清除，需要时请重新调用工具获取]';
 

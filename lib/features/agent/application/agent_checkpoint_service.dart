@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
@@ -30,6 +31,38 @@ class AgentCheckpointService {
   /// 检查点不可用的提示每个任务只出一次（避免每条消息刷屏）。
   final Set<String> _hintShown = {};
 
+  /// 进行中的后台快照：任务 id → 补写 future（引擎启动前要等它完成，
+  /// 否则智能体可能抢先改文件，检查点记下的就不是「发消息前」的状态）。
+  final Map<String, Future<void>> _pendingFills = {};
+
+  /// 正在补写快照的检查点事件 id（UI 据此区分「快照中」与「快照中断」）。
+  final Set<String> _filling = {};
+
+  /// 等快照最多这么久；超时就继续执行并提示，不让任务卡死。
+  static const Duration kSnapshotWaitTimeout = Duration(seconds: 45);
+
+  bool isSnapshotting(String checkpointEventId) =>
+      _filling.contains(checkpointEventId);
+
+  /// 引擎启动前调用：等本任务进行中的检查点快照落地。
+  Future<void> awaitPendingSnapshot(String taskId) async {
+    final pending = _pendingFills[taskId];
+    if (pending == null) return;
+    try {
+      await pending.timeout(kSnapshotWaitTimeout);
+    } on TimeoutException {
+      try {
+        await _store().appendStatusChange(
+          taskId,
+          '检查点快照超过 ${kSnapshotWaitTimeout.inSeconds} 秒未完成，已先继续执行'
+          '（这个检查点可能包含智能体之后的改动）',
+        );
+      } catch (_) {}
+    } catch (_) {
+      // 快照失败已在补写里降级处理，这里不再阻断任务。
+    }
+  }
+
   /// 每条用户消息落地前都落检查点（含 plan/ask 模式，中途切模式后
   /// 也能回滚到任意一条消息之前）；不可用/失败降级为一次性状态
   /// 提示，不阻断任务启动。
@@ -52,16 +85,39 @@ class AgentCheckpointService {
       }
       return;
     }
-    unawaited(_fillCheckpoint(task, placeholder));
+    _filling.add(placeholder.id);
+    final fill = _fillCheckpoint(task, placeholder).whenComplete(() {
+      _filling.remove(placeholder.id);
+    });
+    _pendingFills[task.id] = fill;
+    unawaited(
+      fill.whenComplete(() {
+        if (identical(_pendingFills[task.id], fill)) {
+          _pendingFills.remove(task.id);
+        }
+      }),
+    );
   }
 
   /// 后台补写占位检查点的 git 快照结果。
   Future<void> _fillCheckpoint(AgentTask task, CheckpointEvent event) async {
     try {
+      // 上一个有快照的检查点：工作区没变时直接复用它的 commit。
+      var previous = const <String, String>{};
+      try {
+        previous =
+            (await _store().getEvents(task.id))
+                .whereType<CheckpointEvent>()
+                .where((e) => e.id != event.id && e.commits.isNotEmpty)
+                .lastOrNull
+                ?.commits ??
+            const {};
+      } catch (_) {}
       final result = await createAgentCheckpoint(
         _ref,
         task.id,
         task.workspaceId.isEmpty ? null : task.workspaceId,
+        previous: previous,
       );
       if (result.commits != null) {
         await _store().updateCheckpoint(
@@ -149,12 +205,18 @@ class AgentCheckpointService {
       );
     }
     final ckpt = _checkpointSummary(checkpoint.commits);
+    final fileNames = result == null
+        ? ''
+        : result.files.take(8).map((f) => f.path).join('、');
     await _store().appendStatusChange(task.id, switch (mode) {
-      AgentRollbackMode.messagesOnly => '已回滚对话到检查点 $ckpt（工作区文件未变）',
+      AgentRollbackMode.messagesOnly =>
+        '已回滚对话到检查点 $ckpt（工作区文件未变）\n'
+            '${modelNoteMarker('用户把对话回滚到了更早的检查点，之后的对话已删除，但工作区文件保持回滚前的样子，可能包含那段被删对话里做过的修改。继续之前先重新读取相关文件确认当前内容，不要凭记忆假设文件状态。')}',
       AgentRollbackMode.filesOnly =>
         '已回滚工作区到检查点 $ckpt'
             '${_fileSummary(result!.files)}'
-            '（回滚前状态已保存为新检查点，可再回滚回来）',
+            '（回滚前状态已保存为新检查点，可再回滚回来）\n'
+            '${modelNoteMarker('用户把工作区文件还原到了检查点 $ckpt（对话保留）。上面对话里你做过的文件修改${result.files.isEmpty ? '' : '（涉及：$fileNames${result.files.length > 8 ? ' 等' : ''}）'}已经不在了，继续之前先重新读取相关文件，不要假设之前的修改还在。')}',
       AgentRollbackMode.filesAndMessages =>
         '已回滚对话与工作区到检查点 $ckpt'
             '${_fileSummary(result!.files)}'

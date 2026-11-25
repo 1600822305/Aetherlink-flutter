@@ -95,23 +95,38 @@ enum RollbackFileKind {
 Future<AgentCheckpointResult> createAgentCheckpoint(
   Ref ref,
   String taskId,
-  String? workspaceId,
-) async {
-  final context = await _repoContext(ref, workspaceId);
+  String? workspaceId, {
+  Map<String, String> previous = const {},
+}) async {
+  final context = await _repoContext(ref, workspaceId, useCache: true);
   if (context.unavailableReason != null) {
     return AgentCheckpointResult.unavailable(context.unavailableReason!);
   }
   final (backend, roots) = (context.backend!, context.repoRoots!);
-  final commits = <String, String>{};
-  String? firstError;
-  for (final repoRoot in roots) {
+  // 多仓库并行快照（各仓库互不相干，串行只会把耗时叠加）。
+  Future<(String, String?, String?)> one(String repoRoot) async {
     try {
-      commits[repoRoot] = await _snapshot(backend, repoRoot, taskId);
+      final commit = await _snapshot(
+        backend,
+        repoRoot,
+        taskId,
+        previousCommit: previous[repoRoot],
+      );
+      return (repoRoot, commit, null);
     } on _GitFailure catch (e) {
-      firstError ??= e.message;
+      return (repoRoot, null, e.message);
     }
   }
+
+  final results = await Future.wait(roots.map(one));
+  final commits = <String, String>{
+    for (final (root, commit, _) in results)
+      if (commit != null) root: commit,
+  };
   if (commits.isEmpty) {
+    // 仓库可能被删/移动：作废缓存，下次重新发现。
+    _repoRootsCache.clear();
+    final firstError = results.map((r) => r.$3).whereType<String>().firstOrNull;
     return AgentCheckpointResult.unavailable('git 快照失败：$firstError');
   }
   return AgentCheckpointResult.ok(commits);
@@ -435,7 +450,17 @@ class _RepoContext {
   final String? unavailableReason;
 }
 
-Future<_RepoContext> _repoContext(Ref ref, String? workspaceId) async {
+/// 仓库发现缓存：工作区根 → (仓库根列表, 发现时间)。每条消息都扫一遍
+/// 工作区找 .git 很贵（PRoot/SSH 上是一次 find），检查点创建走缓存；
+/// 回滚/预览这类破坏性或需要准确的操作仍重新发现。
+final Map<String, (List<String>, DateTime)> _repoRootsCache = {};
+const Duration _kRepoRootsTtl = Duration(minutes: 10);
+
+Future<_RepoContext> _repoContext(
+  Ref ref,
+  String? workspaceId, {
+  bool useCache = false,
+}) async {
   // 检查点/回滚是破坏性操作，绑定解析失败不回退到其他工作区。
   final resolved =
       await resolveAgentWorkspace(ref, workspaceId, allowFallback: false);
@@ -448,7 +473,16 @@ Future<_RepoContext> _repoContext(Ref ref, String? workspaceId) async {
       '当前工作区为纯 SAF 后端，无法执行 git；检查点仅在 SSH / PRoot 工作区可用',
     );
   }
-  final roots = await discoverGitRepos(backend, workspace.root);
+  final cacheKey = '${workspaceId ?? ''}|${workspace.root}';
+  final cached = useCache ? _repoRootsCache[cacheKey] : null;
+  final List<String> roots;
+  if (cached != null &&
+      DateTime.now().difference(cached.$2) < _kRepoRootsTtl) {
+    roots = cached.$1;
+  } else {
+    roots = await discoverGitRepos(backend, workspace.root);
+    if (roots.isNotEmpty) _repoRootsCache[cacheKey] = (roots, DateTime.now());
+  }
   if (roots.isEmpty) {
     return const _RepoContext.unavailable('工作区里没有发现 git 仓库，初始化 git 后可用检查点');
   }
@@ -472,7 +506,8 @@ Future<void> cleanupAgentCheckpointRefs(
     for (final repoRoot in roots) {
       await backend.exec(
         'git for-each-ref --format="%(refname)" ${shellQuoteArg(prefix)} '
-        '| while read -r r; do git update-ref -d "\$r"; done',
+        '| while read -r r; do git update-ref -d "\$r"; done; '
+        'rm -f "\$(git rev-parse --git-dir)/aetherlink/ckpt-index-$safeTask"',
         workingDirectory: repoRoot,
         timeout: const Duration(minutes: 1),
       );
@@ -484,14 +519,22 @@ Future<void> cleanupAgentCheckpointRefs(
 /// 长期使用不会让 .git 无限膨胀。
 const int kMaxCheckpointRefsPerTask = 50;
 
-/// 临时索引快照：不碰用户 index/HEAD/分支；含未跟踪文件（尊重
-/// .gitignore）。commit 挂到 `refs/aetherlink/checkpoints/任务/时间戳`
-/// 防 gc。返回 commit 哈希。
+/// 增量快照（对标 Cline/Cursor 的 shadow git 思路）：
+/// · 每个任务一份**常驻**临时索引（`<git-dir>/aetherlink/ckpt-index-<任务>`），
+///   不再每次 read-tree 一个空白索引——空白索引没有 stat 缓存，`git add -A`
+///   会把整个工作区每个文件重新读一遍算哈希，大仓库要好几秒；常驻索引只需
+///   stat 比对，只重算真正变了的文件。
+/// · 首次快照用用户自己的 `.git/index` 当种子（已有已跟踪文件的 stat 缓存），
+///   拿不到再退回 read-tree。
+/// · 工作区和上一个检查点完全一样时直接复用上一个 commit，不新建 ref。
+/// · 修剪旧 ref 并进同一次 exec（PRoot/SSH 每次 exec 都有启动开销）。
+/// 不碰用户 index/HEAD/分支；含未跟踪文件（尊重 .gitignore）。返回 commit。
 Future<String> _snapshot(
   WorkspaceBackend backend,
   String repoRoot,
-  String taskId,
-) async {
+  String taskId, {
+  String? previousCommit,
+}) async {
   final safeTask = taskId.replaceAll(RegExp(r'[^\w-]'), '_');
   final refName =
       'refs/aetherlink/checkpoints/$safeTask/'
@@ -499,31 +542,43 @@ Future<String> _snapshot(
   const author =
       '-c user.name=AetherLink '
       '-c user.email=checkpoint@aetherlink.local';
-  // 索引文件名带任务与时间戳：同一仓库并发任务（父任务/子代理）互不
-  // 踩索引；末尾无条件删除，失败路径不留残留。
-  final idxName =
-      '.git/aetherlink-ckpt-index-$safeTask-'
-      '${DateTime.now().millisecondsSinceEpoch}';
+  final prev = previousCommit == null || previousCommit.isEmpty
+      ? "''"
+      : shellQuoteArg(previousCommit);
+  final prefix = shellQuoteArg('refs/aetherlink/checkpoints/$safeTask/');
   final result = await backend.exec(
-    'idx=${shellQuoteArg(idxName)} && '
-    '{ GIT_INDEX_FILE=\$idx git read-tree HEAD 2>/dev/null '
-    '|| GIT_INDEX_FILE=\$idx git read-tree --empty; } && '
-    'GIT_INDEX_FILE=\$idx git add -A . && '
-    'tree=\$(GIT_INDEX_FILE=\$idx git write-tree) && '
-    'if git rev-parse -q --verify HEAD >/dev/null 2>&1; then '
-    'commit=\$(git $author commit-tree \$tree -p HEAD -m aetherlink-checkpoint); '
+    'gd=\$(git rev-parse --git-dir) && mkdir -p "\$gd/aetherlink" && '
+    'idx="\$gd/aetherlink/ckpt-index-$safeTask" && '
+    'export GIT_INDEX_FILE="\$idx" && '
+    'if [ ! -f "\$idx" ]; then '
+    '{ [ -f "\$gd/index" ] && cp "\$gd/index" "\$idx"; } '
+    '|| git read-tree HEAD 2>/dev/null || git read-tree --empty; fi && '
+    'git -c core.untrackedCache=true add -A . && '
+    'tree=\$(git write-tree) && '
+    'prev=$prev && '
+    'if [ -n "\$prev" ] && '
+    '[ "\$(git rev-parse -q --verify "\$prev^{tree}" 2>/dev/null)" = "\$tree" ]; then '
+    'echo "AETHER_CKPT_SAME:\$prev"; '
     'else '
-    'commit=\$(git $author commit-tree \$tree -m aetherlink-checkpoint); '
-    'fi && '
-    'git update-ref ${shellQuoteArg(refName)} \$commit && '
+    'if git rev-parse -q --verify HEAD >/dev/null 2>&1; then '
+    'commit=\$(git $author commit-tree "\$tree" -p HEAD -m aetherlink-checkpoint); '
+    'else commit=\$(git $author commit-tree "\$tree" -m aetherlink-checkpoint); fi && '
+    'git update-ref ${shellQuoteArg(refName)} "\$commit" && '
     'echo "AETHER_CKPT_OK:\$commit"; '
-    'rc=\$?; rm -f \$idx 2>/dev/null; exit \$rc',
+    'fi; '
+    'rc=\$?; unset GIT_INDEX_FILE; '
+    // 失败时删掉常驻索引，下次从头重建，避免坏索引一直卡住。
+    'if [ \$rc -ne 0 ]; then rm -f "\$idx" 2>/dev/null; else '
+    '{ git for-each-ref --format="%(refname)" --sort=-refname $prefix '
+    '| tail -n +${kMaxCheckpointRefsPerTask + 1} '
+    '| while read -r r; do git update-ref -d "\$r"; done; } >/dev/null 2>&1; fi; '
+    'exit \$rc',
     workingDirectory: repoRoot,
     timeout: const Duration(minutes: 2),
   );
   // 用标记行定位 commit，不受 profile/警告等无关输出干扰。
   final commit = RegExp(
-    r'AETHER_CKPT_OK:([0-9a-f]{7,40})',
+    r'AETHER_CKPT_(?:OK|SAME):([0-9a-f]{7,40})',
   ).firstMatch(result.stdout)?.group(1);
   if (result.timedOut) {
     throw const _GitFailure('git 快照超时（仓库过大或存储过慢）');
@@ -540,17 +595,5 @@ Future<String> _snapshot(
       detail.isEmpty ? '未知错误（exit ${result.exitCode}）' : detail,
     );
   }
-  // 修剪本任务超出保留上限的旧 ref（ref 名是毫秒时间戳，字典序即
-  // 时间序）；失败静默忽略，不影响快照结果。
-  try {
-    await backend.exec(
-      'git for-each-ref --format="%(refname)" --sort=-refname '
-      '${shellQuoteArg('refs/aetherlink/checkpoints/$safeTask/')} '
-      '| tail -n +${kMaxCheckpointRefsPerTask + 1} '
-      '| while read -r r; do git update-ref -d "\$r"; done',
-      workingDirectory: repoRoot,
-      timeout: const Duration(seconds: 30),
-    );
-  } catch (_) {}
   return commit;
 }

@@ -69,6 +69,7 @@ class AgentEngine {
     this.onPostCompact,
     this.onCompactionFailed,
     this.manualCompactSignal,
+    this.beforeMutatingTool,
   });
 
   final AgentLlmClient llm;
@@ -126,6 +127,10 @@ class AgentEngine {
   /// 下一个安全点强制压缩一次（忽略触发阈值与熔断，仍走 keep 规则），
   /// 请求可携带用户关注点（升级计划 ⑦）；调用即消费（取后清除）。
   final ManualCompactRequest? Function()? manualCompactSignal;
+
+  /// 执行会改动工作区的工具（非只读）之前等待的闸门：用于等检查点快照
+  /// 落地。只读工具和 LLM 请求不受影响，快照与模型思考并行。
+  final Future<void> Function()? beforeMutatingTool;
 
   /// 收尾防线（正文缺失拦截 + stop hook），状态随引擎实例生灭。
   late final FinishGuards _guards = FinishGuards(stopGuard: stopGuard);
@@ -328,6 +333,14 @@ class AgentEngine {
           AgentToolCallRequest call,
           ToolCallEvent event,
         ) async {
+          final gate = beforeMutatingTool;
+          if (gate != null) {
+            var readOnly = false;
+            try {
+              readOnly = tools.isConcurrencySafe(call);
+            } catch (_) {}
+            if (!readOnly) await gate();
+          }
           final stopwatch = Stopwatch()..start();
           var timeoutInterruptGen = 0;
           // 超时分级：长命令类工具（终端等）由执行器按调用参数放宽兜底，

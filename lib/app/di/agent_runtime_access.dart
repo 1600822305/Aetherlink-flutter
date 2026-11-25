@@ -1154,10 +1154,18 @@ List<LlmMessage> _replayMessages(
             ),
           );
         }
-      case ReasoningEvent() ||
-          PlanUpdateEvent() ||
-          CheckpointEvent() ||
-          StatusChangeEvent():
+      case StatusChangeEvent():
+        // 回滚等操作留给模型的提示（状态行本身不进上下文）。
+        final note = modelNoteOf(event.description);
+        if (note != null) {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: '<system-reminder>$note</system-reminder>',
+            ),
+          );
+        }
+      case ReasoningEvent() || PlanUpdateEvent() || CheckpointEvent():
         break;
     }
   }

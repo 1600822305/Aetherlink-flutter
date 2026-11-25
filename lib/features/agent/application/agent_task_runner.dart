@@ -312,6 +312,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     _run(updated);
   }
 
+  /// 该检查点是否正在后台补写快照（区分「快照中」与「快照中断」）。
+  bool isSnapshotting(String checkpointEventId) =>
+      _checkpoints.isSnapshotting(checkpointEventId);
+
   /// 回滚到检查点：详见 [AgentCheckpointService.rollbackToCheckpoint]。
   Future<AgentRollbackResult?> rollbackToCheckpoint(
     AgentTask task,
@@ -560,6 +564,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       onCompactionFailed: () =>
           ref.read(agentCompactionProgressProvider.notifier).finish(task.id),
       manualCompactSignal: () => _manualCompact.consumeSignal(task.id),
+      // 快照与 LLM 首轮并行，只在第一次写操作前等它落地。
+      beforeMutatingTool: () => _checkpoints.awaitPendingSnapshot(task.id),
     );
     // fileChanged hooks 的工作区文件 watcher：与本次运行同生命周期
     // （无配置时 start 内部不订阅）。
