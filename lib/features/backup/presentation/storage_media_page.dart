@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/backup/application/storage_media_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_media.dart';
 import 'package:aetherlink_flutter/features/backup/domain/storage_report.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/storage_thumbnail_cache.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/storage_widgets.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_block_preview.dart';
@@ -224,7 +225,13 @@ class _StorageMediaPageState extends ConsumerState<StorageMediaPage> {
                 ]),
                 Text(selected.isEmpty ? '共 ${items.length} 项' : '已选 ${selected.length} 项',
                   style: const TextStyle(fontSize: 12)),
-                if (state.isLoading || state.isBusy) const LinearProgressIndicator(),
+                if (state.isLoading || state.isBusy) const LinearProgressIndicator()
+                else if (state.isUpdating) ...[
+                  const LinearProgressIndicator(minHeight: 1.5),
+                  const Padding(padding: EdgeInsets.only(top: 4),
+                    child: Text('正在后台更新列表并核对使用情况…',
+                      style: TextStyle(fontSize: 11))),
+                ],
                 if (state.error != null && !state.hasLoaded) ...[
                   StorageNotice('加载未完成：${state.error}'),
                   TextButton(onPressed: controller.refresh, child: const Text('重试')),
@@ -311,17 +318,7 @@ Future<ImageProvider> _imageProvider(StorageMedia item,
     Future<String> Function(String) loadPayload) async {
   if (item.isInline) {
     final raw = await loadPayload(item.id);
-    final bytes = await Isolate.run(() {
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      final file = data['file'] as Map<String, dynamic>?;
-      final source = (data['base64Data'] as String?)?.isNotEmpty == true
-          ? data['base64Data'] as String
-          : (file?['base64Data'] as String?)?.isNotEmpty == true
-              ? file!['base64Data'] as String
-              : data['url'] as String? ?? '';
-      final encoded = source.startsWith('data:') ? source.substring(source.indexOf(',') + 1) : source;
-      return base64Decode(encoded.replaceAll(RegExp(r'\s'), ''));
-    });
+    final bytes = await Isolate.run(() => decodeInlineImage(raw));
     return MemoryImage(bytes);
   }
   if (RegExp(r'^https?://').hasMatch(item.source)) return CachedNetworkImageProvider(item.source);
@@ -342,14 +339,24 @@ class _MediaThumbnail extends StatefulWidget {
 }
 
 class _MediaThumbnailState extends State<_MediaThumbnail> {
-  late Future<ImageProvider> _provider = _imageProvider(widget.item, widget.loadPayload);
+  late Future<ImageProvider> _provider = _thumbnail();
+
+  /// 优先读磁盘缩略图缓存；网络图或生成失败时回退原图（照旧限 240 宽解码）。
+  Future<ImageProvider> _thumbnail() async {
+    try {
+      final file = await StorageThumbnailCache.thumbnailFor(
+        widget.item, widget.loadPayload);
+      if (file != null) return FileImage(file);
+    } catch (_) {}
+    return _imageProvider(widget.item, widget.loadPayload);
+  }
 
   @override
   void didUpdateWidget(_MediaThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.source != widget.item.source ||
         oldWidget.item.modifiedAt != widget.item.modifiedAt) {
-      _provider = _imageProvider(widget.item, widget.loadPayload);
+      _provider = _thumbnail();
     }
   }
   @override

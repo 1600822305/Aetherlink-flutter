@@ -61,6 +61,44 @@ SELECT id, topic_id, topic_title, assistant_id, type, mime_type,
 FROM encoded_media
 ''';
 
+/// 秒开路径的对话媒体查询：与 [kStorageMediaSql] 同源，但内联数据大小
+/// 优先用块里记录的 size，否则按 base64 长度 × 3/4 估算——不再对整段
+/// base64 做 4 层 replace + GLOB 校验（大图要被复制好几遍，是主要耗时）。
+const kStorageMediaQuickSql = '''
+WITH media AS (
+SELECT b.id, t.id AS topic_id,
+  CASE WHEN t.id IS NULL THEN '未关联话题' ELSE COALESCE(NULLIF(json_extract(
+    CASE WHEN json_valid(t.data) THEN t.data ELSE '{}' END, '\$.name'), ''),
+    '未命名话题') END AS topic_title,
+  json_extract(CASE WHEN json_valid(t.data) THEN t.data ELSE '{}' END,
+    '\$.assistantId') AS assistant_id,
+  json_extract(b.data, '\$.type') AS type,
+  json_extract(b.data, '\$.mimeType') AS mime_type,
+  json_extract(b.data, '\$.createdAt') AS created_at,
+  COALESCE(json_extract(b.data, '\$.updatedAt'),
+    json_extract(b.data, '\$.createdAt')) AS modified_at,
+  json_extract(b.data, '\$.size') AS declared_size,
+  json_extract(b.data, '\$.url') AS url,
+  COALESCE(NULLIF(length(json_extract(b.data, '\$.base64Data')), 0),
+    NULLIF(length(json_extract(b.data, '\$.file.base64Data')), 0)) AS inline_len,
+  COALESCE(json_extract(b.data, '\$.name'),
+    json_extract(b.data, '\$.file.origin_name'), b.id) AS name
+FROM message_block_rows b
+LEFT JOIN message_rows m ON m.id = b.message_id
+LEFT JOIN topic_rows t ON t.id = m.topic_id
+WHERE json_valid(b.data) AND json_extract(b.data, '\$.type') IN ('image', 'video', 'file')
+)
+SELECT id, topic_id, topic_title, assistant_id, type, mime_type,
+  created_at, modified_at, declared_size, name,
+  CASE WHEN url LIKE 'data:%' THEN '' ELSE url END AS url,
+  CASE
+    WHEN inline_len IS NOT NULL OR url LIKE 'data:%' THEN COALESCE(
+      NULLIF(declared_size, 0),
+      COALESCE(inline_len, length(url) - instr(url, ',')) * 3 / 4)
+    ELSE NULL END AS inline_bytes
+FROM media
+''';
+
 const kStorageReferencesSql = '''
 SELECT data AS value FROM message_block_rows
 UNION ALL SELECT data FROM message_rows
@@ -82,16 +120,52 @@ UNION ALL SELECT value FROM app_setting_rows
 UNION ALL SELECT key FROM app_setting_rows
 ''';
 
-class StorageMediaRepositoryImpl implements StorageMediaRepository {
+class StorageMediaRepositoryImpl
+    implements StorageMediaRepository, CachedStorageMediaSource {
   StorageMediaRepositoryImpl(this._db, {
     Future<Directory> Function()? documentsDirectory,
+    Future<Directory> Function()? cacheDirectory,
     List<String> Function()? activeReferences,
   }) : _documentsDirectory = documentsDirectory ?? getApplicationDocumentsDirectory,
+       _cacheDirectory = cacheDirectory ?? getApplicationCacheDirectory,
        _activeReferences = activeReferences;
 
   final AppDatabase _db;
   final Future<Directory> Function() _documentsDirectory;
+  final Future<Directory> Function() _cacheDirectory;
   final List<String> Function()? _activeReferences;
+
+  Future<String> _cachePath() async =>
+      p.join((await _cacheDirectory()).path, 'storage_media_index.json');
+
+  @override
+  Future<List<StorageMedia>?> loadCached() async {
+    final documents = (await _documentsDirectory()).path;
+    final path = await _cachePath();
+    return Isolate.run(() => readStorageMediaCache(path, documents));
+  }
+
+  @override
+  Future<List<StorageMedia>> scanQuick({
+    List<StorageMedia> previous = const [],
+  }) async {
+    final documents = (await _documentsDirectory()).path;
+    final known = {for (final item in previous) item.id: item.isInUse};
+    // 先让 drift 把 WAL 落定，isolate 里的只读连接才看得到最新数据。
+    await _db.customSelect('SELECT 1').get();
+    return Isolate.run(() => quickScanStorageMedia(documents, known));
+  }
+
+  @override
+  Future<List<StorageMedia>> resolveUsage(List<StorageMedia> items) async {
+    final documents = (await _documentsDirectory()).path;
+    final references = _activeReferences?.call() ?? const <String>[];
+    final path = await _cachePath();
+    await _db.customSelect('SELECT 1').get();
+    return Isolate.run(
+      () => resolveStorageMediaUsage(documents, path, items, references),
+    );
+  }
 
   @override
   Future<List<StorageMedia>> load() async {
@@ -326,4 +400,108 @@ StorageMediaDeletion deleteStorageMedia(
       rethrow;
     }
   } finally { db.dispose(); }
+}
+
+// ---------------------------------------------------------------------------
+// 秒开路径：缓存文件 + 快速扫描 + 一次遍历核对引用（均在 isolate 内运行）。
+
+const _kCacheVersion = 1;
+
+List<StorageMedia>? readStorageMediaCache(String path, String documents) {
+  try {
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    final json = jsonDecode(file.readAsStringSync());
+    if (json is! Map<String, dynamic> ||
+        json['version'] != _kCacheVersion ||
+        json['documents'] != documents) {
+      return null;
+    }
+    return [
+      for (final item in json['items'] as List)
+        StorageMedia.fromJson((item as Map).cast<String, Object?>()),
+    ];
+  } catch (_) {
+    return null; // 缓存损坏 = 没有缓存，走全量扫描。
+  }
+}
+
+void _writeStorageMediaCache(
+    String path, String documents, List<StorageMedia> items) {
+  try {
+    final file = File(path);
+    file.parent.createSync(recursive: true);
+    final tmp = File('$path.tmp');
+    tmp.writeAsStringSync(jsonEncode({
+      'version': _kCacheVersion,
+      'documents': documents,
+      'items': [for (final item in items) item.toJson()],
+    }));
+    tmp.renameSync(path);
+  } catch (_) {
+    // 写缓存失败只影响下次的秒开，不影响本次结果。
+  }
+}
+
+List<StorageMedia> quickScanStorageMedia(
+    String documents, Map<String, bool> known) {
+  final db = _openStorageDatabase(documents, OpenMode.readOnly);
+  try {
+    final rows = db.select(kStorageMediaQuickSql)
+        .map((row) => Map<String, Object?>.from(row)).toList();
+    final items = scanStorageMedia(documents, rows, const []);
+    return [
+      for (final item in items)
+        item.id.startsWith('disk:')
+            ? item.copyWith(isInUse: known[item.id] ?? true, usagePending: true)
+            : item,
+    ];
+  } finally { db.dispose(); }
+}
+
+/// 一次遍历所有引用来源，把磁盘文件名（及其 URL 编码形式）当子串在引用
+/// 文本里找：命中即「使用中」。比原来「每个文件把全库 json_tree 扫两遍」
+/// 少一个数量级；判断更宽松（找到文件名就算在用），宁可多留不误删——
+/// 真正删除前 [deleteStorageMedia] 仍按原来的严格规则逐个复核。
+List<StorageMedia> resolveStorageMediaUsage(String documents, String cachePath,
+    List<StorageMedia> items, List<String> activeReferences) {
+  final pending = <String, Set<String>>{}; // needle -> item ids
+  for (final item in items) {
+    if (!item.id.startsWith('disk:')) continue;
+    final name = p.basename(item.source).toLowerCase();
+    if (name.isEmpty) continue;
+    for (final needle in {name, Uri.encodeComponent(name).toLowerCase()}) {
+      pending.putIfAbsent(needle, () => {}).add(item.id);
+    }
+  }
+  final used = <String>{};
+  void scan(String? value) {
+    if (value == null || value.isEmpty || pending.isEmpty) return;
+    var text = value.toLowerCase();
+    // JSON 里被转义的非 ASCII 文件名：解一层再找。
+    if (text.contains(r'\u')) text = '$text\n${_referenceText(value)}';
+    final hits = [for (final needle in pending.keys) if (text.contains(needle)) needle];
+    for (final needle in hits) {
+      used.addAll(pending.remove(needle)!);
+    }
+  }
+
+  activeReferences.forEach(scan);
+  final db = _openStorageDatabase(documents, OpenMode.readOnly);
+  try {
+    final cursor = db.prepare(kStorageReferencesSql).selectCursor();
+    while (pending.isNotEmpty && cursor.moveNext()) {
+      final value = cursor.current.values.first;
+      scan(value is String ? value : value?.toString());
+    }
+  } finally { db.dispose(); }
+
+  final resolved = [
+    for (final item in items)
+      item.id.startsWith('disk:')
+          ? item.copyWith(isInUse: used.contains(item.id), usagePending: false)
+          : item,
+  ];
+  _writeStorageMediaCache(cachePath, documents, resolved);
+  return resolved;
 }
