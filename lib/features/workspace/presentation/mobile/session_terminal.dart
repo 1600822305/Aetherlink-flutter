@@ -53,8 +53,7 @@ Future<void> pasteClipboardToTerminal(
 /// xterm 是画布渲染，没有系统文本选区（手柄 / 放大镜 / 复制面板）。这里在
 /// 长按选中（或点快捷栏「复制」）时，把终端缓冲区转成等宽纯文本覆盖在终端
 /// 上，外面包聊天同款 [MessageSelectionArea]：系统选区手柄可拖、复制面板
-/// （复制 / 全选 / 引用 / 分享，跟随 外观设置 → 复制面板 配置）完全复用。
-/// 点「完成」或返回键退出，回到正常终端。
+/// 完全复用（终端里只保留 复制 / 全选）。点「完成」或返回键退出。
 class TerminalSelectionMenu extends StatefulWidget {
   const TerminalSelectionMenu({
     super.key,
@@ -70,8 +69,8 @@ class TerminalSelectionMenu extends StatefulWidget {
   final double fontSize;
 
   /// controller → 已挂载的选择层，供快捷栏「复制」键在无选区时进入选择模式。
-  static final Map<TerminalController, _TerminalSelectionMenuState> _byController =
-      {};
+  static final Map<TerminalController, _TerminalSelectionMenuState>
+      _byController = {};
 
   /// 进入选择模式；没有挂载对应选择层时返回 false。
   static bool enterSelectMode(TerminalController controller) {
