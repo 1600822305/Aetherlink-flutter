@@ -59,7 +59,10 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
   /// Already-added model ids the user toggled off for removal.
   final Set<String> _removed = {};
 
-  final Set<String> _expandedGroups = {};
+  /// Explicit per-group expansion overrides. Groups without an entry follow
+  /// the contextual default (expanded while searching or when it's the only
+  /// group); once the user taps a header, that choice always wins.
+  final Map<String, bool> _expansionOverrides = {};
   final Map<String, ModelCapabilities?> _capsCache = {};
 
   List<LlmModelInfo> _models = const [];
@@ -174,9 +177,10 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
     });
   }
 
-  void _toggleExpand(String groupName) {
+  void _toggleExpand(String groupName, bool defaultExpanded) {
     setState(() {
-      if (!_expandedGroups.remove(groupName)) _expandedGroups.add(groupName);
+      final current = _expansionOverrides[groupName] ?? defaultExpanded;
+      _expansionOverrides[groupName] = !current;
     });
   }
 
@@ -200,9 +204,10 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final grouped = _groupedModels;
-    // Auto-expand while searching or when there's a single group, so results
-    // aren't hidden behind collapsed headers.
-    final autoExpand = _searchTerm.isNotEmpty || grouped.length == 1;
+    // Default to expanded while searching or when there's a single group, so
+    // results aren't hidden behind collapsed headers. An explicit tap on a
+    // group header overrides this default.
+    final defaultExpanded = _searchTerm.isNotEmpty || grouped.length == 1;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -259,14 +264,14 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
                             return _GroupSection(
                               groupName: groupName,
                               models: models,
-                              isExpanded:
-                                  autoExpand ||
-                                  _expandedGroups.contains(groupName),
+                              isExpanded: _expansionOverrides[groupName] ??
+                                  defaultExpanded,
                               isFullySelected: _isGroupFullySelected(models),
                               isModelSelected: _isModelSelected,
                               isExisting: _isExisting,
                               capsFor: _capsFor,
-                              onToggleExpand: () => _toggleExpand(groupName),
+                              onToggleExpand: () =>
+                                  _toggleExpand(groupName, defaultExpanded),
                               onToggleGroup: () => _toggleGroup(models),
                               onToggleModel: _toggleModel,
                             );
