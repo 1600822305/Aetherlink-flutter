@@ -317,7 +317,9 @@ sealed class MessageBlock with _$MessageBlock {
   /// Like [MemoryInjectionBlock], an app-generated info block prepended to the
   /// assistant message — the 对话内「本轮注入 N 条世界书」可展开块. [entries] holds
   /// the triggered entry names in injection order; [estimatedTokens] is the
-  /// heuristic token cost of the injected text. Never sent to the model.
+  /// heuristic token cost of the injected text; [reasons] (aligned with
+  /// [entries], may be shorter for blocks saved before it existed) says why
+  /// each entry fired. Never sent to the model.
   @FreezedUnionValue('world_book_injection')
   const factory MessageBlock.worldBookInjection({
     required String id,
@@ -331,6 +333,7 @@ sealed class MessageBlock with _$MessageBlock {
     required int count,
     @Default(<String>[]) List<String> entries,
     @Default(0) int estimatedTokens,
+    @Default(<String>[]) List<String> reasons,
   }) = WorldBookInjectionBlock;
 
   factory MessageBlock.fromJson(Map<String, dynamic> json) =>

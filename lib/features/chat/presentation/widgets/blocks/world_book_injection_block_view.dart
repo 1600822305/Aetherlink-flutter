@@ -4,7 +4,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 
 /// Renders a `WORLD_BOOK_INJECTION` block: a collapsed 「本轮注入 N 条世界书」
-/// chip (with the estimated token cost) that expands to the entry names.
+/// chip (with the estimated token cost) that expands to the entry names, each
+/// with why it fired（命中的关键词 / 常驻 / 持续中 / 递归…）when recorded.
 /// Styled like [MemoryInjectionBlockView] so the two info blocks read as a set.
 class WorldBookInjectionBlockView extends StatefulWidget {
   const WorldBookInjectionBlockView({required this.block, super.key});
@@ -25,6 +26,7 @@ class _WorldBookInjectionBlockViewState
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final entries = widget.block.entries;
+    final reasons = widget.block.reasons;
     final hasDetail = entries.isNotEmpty;
     final tokens = widget.block.estimatedTokens;
     return Container(
@@ -83,12 +85,25 @@ class _WorldBookInjectionBlockViewState
                   ),
                   const SizedBox(width: 2),
                   Expanded(
-                    child: Text(
-                      entries[i],
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.8),
-                        height: 1.4,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entries[i],
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurface.withValues(alpha: 0.8),
+                            height: 1.4,
+                          ),
+                        ),
+                        if (i < reasons.length && reasons[i].isNotEmpty)
+                          Text(
+                            reasons[i],
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: cs.onSurface.withValues(alpha: 0.5),
+                              height: 1.35,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],

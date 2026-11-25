@@ -14,8 +14,12 @@ import 'package:aetherlink_flutter/features/world_book/domain/world_book_setting
 /// [selectTimedWorldBookEntries]'s result: the activated entries in injection
 /// order, the state to persist on this turn's user message, and whether the
 /// token budget stopped activation（ST `world_info_overflow_alert` 用）。
+///
+/// [reasons] 与 [entries] 一一对应，是给用户看的激活原因（见
+/// [_Candidate.reason]）。
 typedef WorldBookTimedResult = ({
   List<WorldBookEntry> entries,
+  List<String> reasons,
   WorldBookActivationState state,
   bool budgetOverflowed,
 });
@@ -38,7 +42,14 @@ class _Candidate {
     required this.content,
     required this.activate,
     required this.dontActivate,
+    required this.bookName,
   });
+
+  final String bookName;
+
+  /// 激活原因，激活时写入：常驻 / 持续中 / @@activate / 命中的关键词，递归和
+  /// 「最少激活数」扩大深度时再加说明。
+  String reason = '';
 
   final WorldBookEntry entry;
 
@@ -130,25 +141,37 @@ WorldBookTimedResult selectTimedWorldBookEntries({
       macros == null ? s : substituteWorldBookMacros(s, macros);
 
   // ── 候选准备：计时效果、宏替换后的关键词 ────────────────────────────
-  final effects = <String, WorldBookEffect>{};
+  // 先继承上一轮的全部计时状态，绑定的书里的条目在下面逐条重新计算；这次没
+  // 绑定的书（比如话题临时换了书）的状态原样保留，换回来时接着算。所在的书
+  // 还在、条目已经删掉的状态直接丢弃。
+  final effects = <String, WorldBookEffect>{...previous.effects};
+  final liveBooks = {for (final book in books) book.id: book};
+  effects.removeWhere((key, _) {
+    try {
+      final parts = jsonDecode(key);
+      if (parts is! List<dynamic> || parts.length != 2) return true;
+      final book = liveBooks['${parts[0]}'];
+      return book != null && !book.entries.any((e) => e.id == '${parts[1]}');
+    } on Object {
+      return true;
+    }
+  });
   final candidates = <_Candidate>[];
   for (var b = 0; b < books.length; b++) {
     final book = books[b];
     if (!book.enabled) continue;
     for (var i = 0; i < book.entries.length; i++) {
       final entry = book.entries[i];
-      if (!entry.enabled || entry.content.trim().isEmpty) continue;
-      if (!worldBookTriggerAllows(entry, trigger)) continue;
-      if (!worldBookCharacterAllows(entry, character)) continue;
       final sticky = entry.sticky ?? 0;
       final cooldown = entry.cooldown ?? 0;
       final delay = entry.delay ?? 0;
-      // 延迟最先判断（ST：处于延迟的条目连持续也不看）。
-      if (delay > 0 && turn < delay) continue;
+      // 计时状态对绑定的书里**所有**条目都推进（ST checkTimedEffects 遍历全部
+      // 条目，含关闭的），之后才判断这一轮能不能参与；否则被跳过的条目会错过
+      // 「持续到期 → 开始冷却」的时刻。
       final timed = sticky > 0 || cooldown > 0;
       final key = jsonEncode([book.id, entry.id]);
       final signature = timed ? worldBookTimerSignature(entry) : '';
-      final carried = previous.effects[key];
+      final carried = effects.remove(key);
       final effect =
           timed && carried != null && carried.signature == signature
           ? carried
@@ -170,6 +193,11 @@ WorldBookTimedResult selectTimedWorldBookEntries({
           }
         }
       }
+      if (!entry.enabled || entry.content.trim().isEmpty) continue;
+      if (!worldBookTriggerAllows(entry, trigger)) continue;
+      if (!worldBookCharacterAllows(entry, character)) continue;
+      // 延迟优先于持续（ST：处于延迟的条目连持续也不看）。
+      if (delay > 0 && turn < delay) continue;
       if (isCooldown) continue;
       final parsed = parseWorldBookDecorators(entry.content);
       candidates.add(
@@ -191,6 +219,7 @@ WorldBookTimedResult selectTimedWorldBookEntries({
           sticky: isSticky,
           cooldown: isCooldown,
           content: sub(parsed.content),
+          bookName: book.name,
           activate: parsed.decorators.any((d) => d.startsWith('@@activate')),
           dontActivate: parsed.decorators.any(
             (d) => d.startsWith('@@dont_activate'),
@@ -281,19 +310,25 @@ WorldBookTimedResult selectTimedWorldBookEntries({
         continue;
       }
       if (c.activate) {
+        c.reason = '@@activate';
         now.add(c);
         continue;
       }
       if (c.dontActivate) continue;
-      if (e.constant || c.sticky) {
+      if (e.constant) {
+        c.reason = '常驻';
         now.add(c);
         continue;
       }
-      if (WorldBookActivation.matches(
-        c.probe,
-        contextFor(c, state),
-        settings: settings,
-      )) {
+      if (c.sticky) {
+        final at = previous.effects[c.key]?.activatedAt;
+        c.reason = at == null ? '持续中' : '持续中（第 $at 条消息时激活）';
+        now.add(c);
+        continue;
+      }
+      final context = contextFor(c, state);
+      if (WorldBookActivation.matches(c.probe, context, settings: settings)) {
+        c.reason = _keywordReason(c.probe, context, settings, state);
         now.add(c);
       }
     }
@@ -404,6 +439,10 @@ WorldBookTimedResult selectTimedWorldBookEntries({
     return byUid != 0 ? byUid : b.seq.compareTo(a.seq);
   });
   return (
+    reasons: [
+      for (final c in activated)
+        c.bookName.trim().isEmpty ? c.reason : '${c.reason} · 《${c.bookName.trim()}》',
+    ],
     entries: [
       for (final c in activated)
         c.content == c.entry.content ? c.entry : c.entry.copyWith(content: c.content),
@@ -495,6 +534,39 @@ void _filterByInclusionGroups(
     }
     if (winner != null) removeAllBut(alive, winner);
   }
+}
+
+/// 关键词激活的原因：命中的主关键词，次级逻辑为「且含任一 / 且含全部」时附上
+/// 命中的次级关键词；递归 / 扩大深度扫描时说明来源。
+String _keywordReason(
+  WorldBookEntry entry,
+  String context,
+  WorldBookSettings settings,
+  _ScanState state,
+) {
+  bool hit(String k) =>
+      k.trim().isNotEmpty &&
+      WorldBookActivation.matchKey(context, k, entry, settings: settings);
+  final primary = entry.keywords.firstWhere(hit, orElse: () => '');
+  final buf = StringBuffer('关键词「${primary.trim()}」');
+  if (entry.selective && entry.secondaryKeywords.isNotEmpty) {
+    final secondary = entry.secondaryKeywords.where(hit).toList();
+    switch (entry.secondaryLogic) {
+      case WorldBookSecondaryLogic.andAny || WorldBookSecondaryLogic.andAll:
+        if (secondary.isNotEmpty) {
+          buf.write(' + 次级「${secondary.map((k) => k.trim()).join('、')}」');
+        }
+      case WorldBookSecondaryLogic.notAny:
+        buf.write('，且不含任何次级关键词');
+      case WorldBookSecondaryLogic.notAll:
+        buf.write('，且未包含全部次级关键词');
+    }
+  }
+  return switch (state) {
+    _ScanState.recursion => '由其他条目内容触发：$buf',
+    _ScanState.minActivations => '扩大扫描范围后命中：$buf',
+    _ => buf.toString(),
+  };
 }
 
 /// 粗略 token 估算（约 4 个 ASCII 字符或 1 个汉字算 1 个 token）。

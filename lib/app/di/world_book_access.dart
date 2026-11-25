@@ -183,7 +183,11 @@ Future<WorldBookTurn> collectWorldBookTurn(
     // 预算按 ST 的方式计 token；上下文长度暂不可知，只受 budgetCap 约束。
     countTokens: estimateTokens,
   );
-  return WorldBookTurn(result.entries, state: result.state);
+  return WorldBookTurn(
+    result.entries,
+    state: result.state,
+    reasons: result.reasons,
+  );
 }
 
 /// [resolveWorldBookClock] over a path given as `(isUserTurn, isSummary,

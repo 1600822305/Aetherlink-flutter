@@ -191,6 +191,9 @@ class WorldBookRequestBuilder {
             e.name.trim().isEmpty ? '未命名条目' : e.name.trim(),
         ],
         estimatedTokens: estimateTokens(worldBookInjectedText(turn)),
+        reasons: [
+          for (var i = 0; i < turn.triggered.length; i++) turn.reasonAt(i),
+        ],
       ),
     ];
   }
