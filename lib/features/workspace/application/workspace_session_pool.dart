@@ -103,7 +103,15 @@ class PooledWorkspaceSession {
     required this.workspaceLabel,
     required this.workspaceId,
     required WorkspaceShellSession shell,
+    WorkspaceSessionPool? pool,
+    String? workingDirectory,
+    Map<String, String> environment = const {},
+    String? greeting,
   }) : _shell = shell,
+       _pool = pool,
+       _workingDirectory = workingDirectory,
+       _environment = environment,
+       _greeting = greeting,
        createdAt = DateTime.now(),
        lastUsedAt = DateTime.now() {
     // cast 到 List<int>：Utf8Decoder 的 StreamTransformer 反化是
@@ -130,6 +138,26 @@ class PooledWorkspaceSession {
   DateTime lastUsedAt;
 
   final WorkspaceShellSession _shell;
+
+  /// 克隆用：所属池 + 创建参数（起始目录 / 环境 / 欢迎语）。
+  final WorkspaceSessionPool? _pool;
+  final String? _workingDirectory;
+  final Map<String, String> _environment;
+  final String? _greeting;
+
+  /// 克隆终端：在同一个池里按相同的起始目录、环境变量、欢迎语新开一个
+  /// 会话（新 shell，不复制历史输出与运行中的进程）。
+  Future<PooledWorkspaceSession> clone() {
+    final pool = _pool;
+    if (pool == null) {
+      throw const WorkspaceSessionException('该会话不支持克隆');
+    }
+    return pool.create(
+      workingDirectory: _workingDirectory,
+      environment: _environment,
+      greeting: _greeting,
+    );
+  }
   StreamSubscription<String>? _outputSub;
   final StringBuffer _buffer = StringBuffer();
   final SentinelDisplayFilter _displayFilter = SentinelDisplayFilter();
@@ -578,6 +606,10 @@ class WorkspaceSessionPool {
       workspaceLabel: workspaceLabel,
       workspaceId: workspaceId,
       shell: shell,
+      pool: this,
+      workingDirectory: workingDirectory,
+      environment: environment,
+      greeting: greeting,
     );
     _sessions[id] = session;
     _ensureReaper();

@@ -14,8 +14,8 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 工具调用详情底部抽屉（UI 稿 §4.1）：完整参数 + 完整输出。
-/// 面板固定屏高 2/3，整体只有一个滚动容器：输出区不限高、不内嵌滚动，
-/// 避免嵌套滚动导致输出区底部被面板裁掉又滑不出来。参数区仍限高（通常很短）。
+/// 面板固定屏高 2/3：参数等固定在上方（最多占 45%，超出自身滚动），
+/// 输出区填满剩余高度并内部滚动，两块互不嵌套，输出再长参数也可见。
 /// 大输出默认显截断内容，「查看全文」从落盘文件回读。
 /// 传入 [taskId] 时抽屉订阅事件流，参数/状态/输出随执行实时更新。
 Future<void> showToolDetailSheet(
@@ -76,7 +76,7 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
   }
 
   bool _onScroll(ScrollNotification n) {
-    // 只看面板这一层（参数区内部滚动 depth > 0，不触发）。
+    // 只看输出区这一层。
     if (n.depth != 0) return false;
     if (n is ScrollUpdateNotification || n is ScrollEndNotification) {
       final farFromBottom = n.metrics.extentAfter > _kJumpThreshold;
@@ -246,88 +246,96 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
             ),
           ),
           const Divider(height: 1),
+          // 上半区（参数/变更文件/截图）固定在顶部，最多占 45% 且超出时自身滚动；
+          // 输出区填满剩余高度并内部滚动——输出再长参数也始终可见。
           Expanded(
-            child: Stack(
-              children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: _onScroll,
-              child: Padding(
+            child: Padding(
               padding: EdgeInsets.fromLTRB(
                 16,
                 12,
                 16,
                 bottomPad > 0 ? bottomPad : 12,
               ),
-              child: SingleChildScrollView(
-                controller: _scroll,
-                child: Column(
+              child: LayoutBuilder(
+                builder: (context, constraints) => Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _Section(
-                      title: '参数',
-                      body: argsText,
-                      maxHeight: 140,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (command != null)
-                            TextButton(
-                              onPressed: () => _copy(command),
-                              style: _headerButtonStyle,
-                              child: Text('复制命令', style: theme.textTheme.labelSmall),
-                            ),
-                          _CopyButton(
-                            tooltip: '复制参数',
-                            onPressed: () => _copy(argsText),
-                          ),
-                        ],
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: constraints.maxHeight * 0.45,
                       ),
-                    ),
-                    if (changedFiles.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      Text(
-                        '变更的文件',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: muted,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 120),
-                        child: SingleChildScrollView(
-                          child: Column(
-                            children: [
-                              for (final path in changedFiles)
-                                InkWell(
-                                  onTap: () => _openDiff(path),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 6),
-                                    child: Row(
-                                      children: [
-                                        Icon(LucideIcons.fileText, size: 14, color: muted),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(path, style: theme.textTheme.labelSmall),
-                                        ),
-                                        Icon(LucideIcons.chevronRight, size: 14, color: muted),
-                                      ],
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _Section(
+                              title: '参数',
+                              body: argsText,
+                              maxHeight: 140,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (command != null)
+                                    TextButton(
+                                      onPressed: () => _copy(command),
+                                      style: _headerButtonStyle,
+                                      child: Text('复制命令', style: theme.textTheme.labelSmall),
                                     ),
+                                  _CopyButton(
+                                    tooltip: '复制参数',
+                                    onPressed: () => _copy(argsText),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (changedFiles.isNotEmpty) ...[
+                              const SizedBox(height: 14),
+                              Text(
+                                '变更的文件',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: muted,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxHeight: 120),
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    children: [
+                                      for (final path in changedFiles)
+                                        InkWell(
+                                          onTap: () => _openDiff(path),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 6),
+                                            child: Row(
+                                              children: [
+                                                Icon(LucideIcons.fileText, size: 14, color: muted),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(path, style: theme.textTheme.labelSmall),
+                                                ),
+                                                Icon(LucideIcons.chevronRight, size: 14, color: muted),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
+                              ),
                             ],
-                          ),
+                            if (event.imagePath != null) ...[
+                              const SizedBox(height: 14),
+                              _ImageSection(path: event.imagePath!),
+                            ],
+                          ],
                         ),
                       ),
-                    ],
-                    if (event.imagePath != null) ...[
-                      const SizedBox(height: 14),
-                      _ImageSection(path: event.imagePath!),
-                    ],
+                    ),
                     const SizedBox(height: 14),
-                    _Section(
+                    _SectionHeader(
                       title: '输出',
-                      body: outputText,
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -347,34 +355,62 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: cs.onSurface.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Stack(
+                          children: [
+                            NotificationListener<ScrollNotification>(
+                              onNotification: _onScroll,
+                              child: SingleChildScrollView(
+                                controller: _scroll,
+                                padding: const EdgeInsets.all(10),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  child: SelectableText(
+                                    outputText,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      fontFamily: 'monospace',
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 10,
+                              bottom: 10,
+                              child: IgnorePointer(
+                                ignoring: !_showJump,
+                                child: AnimatedOpacity(
+                                  opacity: _showJump ? 1 : 0,
+                                  duration: const Duration(milliseconds: 160),
+                                  child: Material(
+                                    color: cs.surfaceContainerHigh,
+                                    elevation: 3,
+                                    shape: const CircleBorder(),
+                                    child: IconButton(
+                                      tooltip: '跳到底部',
+                                      onPressed: _jumpToBottom,
+                                      icon: const Icon(LucideIcons.arrowDown, size: 18),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
-            ),
-            Positioned(
-              right: 16,
-              bottom: (bottomPad > 0 ? bottomPad : 12) + 12,
-              child: IgnorePointer(
-                ignoring: !_showJump,
-                child: AnimatedOpacity(
-                  opacity: _showJump ? 1 : 0,
-                  duration: const Duration(milliseconds: 160),
-                  child: Material(
-                    color: cs.surfaceContainerHigh,
-                    elevation: 3,
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      tooltip: '跳到底部',
-                      onPressed: _jumpToBottom,
-                      icon: const Icon(LucideIcons.arrowDown, size: 18),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-              ],
-            )
           ),
         ],
       ),
@@ -447,6 +483,33 @@ class _ImageSection extends StatelessWidget {
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// 分区标题行：左标题 + 右侧动作。
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, this.trailing});
+
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+        ),
+        if (trailing != null) trailing!,
       ],
     );
   }

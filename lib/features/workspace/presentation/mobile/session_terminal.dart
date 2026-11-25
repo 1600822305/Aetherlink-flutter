@@ -261,13 +261,14 @@ class AiSessionStatusBar extends StatelessWidget {
 }
 
 /// 会话池会话的 tab chip：机器人图标（忙碌琥珀色 / 空闲绿色）+ 会话名；
-/// 长按可手动关闭会话（确认后释放池位）。
+/// 长按弹出菜单：克隆终端 / 复制全部输出 / 关闭会话（有命令在跑时再确认一次）。
 class SessionChip extends StatelessWidget {
   const SessionChip({
     required this.session,
     required this.selected,
     required this.onTap,
     this.onClose,
+    this.onCloned,
     super.key,
   });
 
@@ -275,14 +276,17 @@ class SessionChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  /// 非空时长按弹确认，确认后回调（调用方负责真正 close）。
+  /// 克隆成功后回调新会话（调用方切过去）。
+  final void Function(PooledWorkspaceSession clone)? onCloned;
+
+  /// 非空时菜单里出现「关闭会话」，选中后回调（调用方负责真正 close）。
   final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      onLongPress: onClose == null ? null : () => _confirmClose(context),
+      onLongPressStart: (d) => _showMenu(context, d.globalPosition),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
@@ -315,15 +319,82 @@ class SessionChip extends StatelessWidget {
     );
   }
 
+  Future<void> _showMenu(BuildContext context, Offset at) async {
+    HapticFeedback.selectionClick();
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(at.dx, at.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        const PopupMenuItem(
+          value: 'clone',
+          child: _MenuRow(icon: LucideIcons.copy, label: '克隆终端'),
+        ),
+        const PopupMenuItem(
+          value: 'output',
+          child: _MenuRow(icon: LucideIcons.clipboardCopy, label: '复制全部输出'),
+        ),
+        if (onClose != null)
+          const PopupMenuItem(
+            value: 'close',
+            child: _MenuRow(
+              icon: LucideIcons.x,
+              label: '关闭会话',
+              danger: true,
+            ),
+          ),
+      ],
+    );
+    if (!context.mounted) return;
+    switch (action) {
+      case 'clone':
+        try {
+          final clone = await session.clone();
+          if (!context.mounted) return;
+          onCloned?.call(clone);
+          AppToast.info(context, '已克隆为 ${clone.name}');
+        } on WorkspaceSessionException catch (e) {
+          if (context.mounted) AppToast.info(context, e.message);
+        } catch (e) {
+          if (context.mounted) AppToast.info(context, '克隆失败：$e');
+        }
+      case 'output':
+        final text = _plainText(session.snapshot());
+        if (text.trim().isEmpty) {
+          AppToast.info(context, '会话还没有输出');
+          return;
+        }
+        await Clipboard.setData(ClipboardData(text: text));
+        if (context.mounted) AppToast.info(context, '已复制全部输出');
+      case 'close':
+        // 空闲直接关；有命令在跑时关会终止它，再确认一次。
+        if (session.busy) {
+          await _confirmClose(context);
+        } else {
+          onClose!();
+        }
+    }
+  }
+
+  /// PTY 原始缓冲 → 纯文本：去 ANSI/OSC 控制序列，统一换行。
+  static String _plainText(String raw) => raw
+      .replaceAll(RegExp(r'\x1B\][^\x07\x1B]*(\x07|\x1B\\)'), '')
+      .replaceAll(RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'), '')
+      .replaceAll(RegExp(r'\x1B[@-Z\\-_]'), '')
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '');
+
   Future<void> _confirmClose(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('关闭会话'),
         content: Text(
-          session.busy
-              ? '会话「${session.name}」正有命令在跑，关闭会终止它并释放池位。确定关闭？'
-              : '关闭会话「${session.name}」并释放池位？',
+          '会话「${session.name}」正有命令在跑，关闭会终止它并释放池位。确定关闭？',
         ),
         actions: [
           TextButton(
@@ -338,5 +409,25 @@ class SessionChip extends StatelessWidget {
       ),
     );
     if (confirmed == true) onClose!();
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.icon, required this.label, this.danger = false});
+
+  final IconData icon;
+  final String label;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? Theme.of(context).colorScheme.error : null;
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(color: color)),
+      ],
+    );
   }
 }
