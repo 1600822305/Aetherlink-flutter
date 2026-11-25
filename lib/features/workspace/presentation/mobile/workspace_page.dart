@@ -99,11 +99,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       return;
     }
     _exitArmedAt = now;
-    AppToast.info(
-      context,
-      '再点一次返回退出工作区',
-      duration: _exitConfirmWindow,
-    );
+    AppToast.info(context, '再点一次返回退出工作区', duration: _exitConfirmWindow);
   }
 
   @override
@@ -125,7 +121,10 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     });
 
     // 页面锁开启时禁用横向翻页,避免编辑器内捏合缩放/拖动误触翻页。
-    final locked = ref.watch(workspacePageLockProvider);
+    // 终端选区激活（拖手柄/长按拖选）期间同样禁滑,否则会被抢成翻页。
+    final locked =
+        ref.watch(workspacePageLockProvider) ||
+        ref.watch(workspaceTerminalSelectingProvider);
 
     // Edge-to-edge: 页面铺满整屏(延伸到状态栏/导航栏后面)。每页头部行各自留安全区。
     return PopScope(
@@ -137,9 +136,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
         body: PageView.builder(
           controller: _controller,
           itemCount: _pageCount,
-          physics: locked
-              ? const NeverScrollableScrollPhysics()
-              : null,
+          physics: locked ? const NeverScrollableScrollPhysics() : null,
           onPageChanged: (i) => setState(() => _page = i),
           itemBuilder: (context, i) {
             switch (i) {
@@ -270,5 +267,3 @@ class _EmptyEditor extends ConsumerWidget {
     );
   }
 }
-
-

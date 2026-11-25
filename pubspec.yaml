@@ -155,9 +155,12 @@ dependencies:
   system_fonts: ^1.0.1
   flutter_foreground_task: ^9.2.2
   dartssh2: 2.18.0
-  # Terminal emulator widget for the SSH workspace PTY page (设计文档 §8.2),
-  # same publisher (terminal.studio) as dartssh2.
-  xterm: 4.0.0
+  # Terminal emulator widget for the SSH workspace PTY page (设计文档 §8.2).
+  # 原 xterm 4.0.0 已停更；xterm3 是其维护中 fork（AGPL）的超集：
+  # OSC 133/633 语义提示符、超链接、Unicode 17、paced 写入 75fps。
+  # vendored 进 packages/：方便直接改源码（选区交互/手柄等定制）。
+  xterm3:
+    path: packages/xterm3
   # Ed25519 keygen for the Termux one-tap setup (设计文档 §10.5 / Termux-A). This
   # is exactly the lib dartssh2 uses for ssh-ed25519 internally (already a
   # transitive dep), so generated keys are byte-compatible with SSHKeyPair.fromPem.

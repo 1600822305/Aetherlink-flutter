@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:xterm/xterm.dart';
+import 'package:xterm3/xterm.dart';
+import 'package:xterm3/flutter.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_terminal_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -157,12 +158,10 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
             ),
             AiSessionStatusBar(session: active),
             Expanded(
-              child: TerminalSelectionMenu(
-                terminal: view.terminal,
+              child: TerminalSelectionPageLock(
                 controller: view.controller,
-                builder: (viewKey) => TerminalView(
+                child: TerminalView(
                   view.terminal,
-                  key: viewKey,
                   controller: view.controller,
                   focusNode: view.focusNode,
                   textStyle: const TerminalStyle(fontSize: 13),

@@ -10,7 +10,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:xterm/xterm.dart';
+import 'package:xterm3/xterm.dart';
 
 /// Ctrl / Alt 粘滞键状态 + 软键盘输入的修饰转换。页面持有一个实例，接进
 /// 每个会话的 onOutput → write 路径。

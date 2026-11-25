@@ -1,0 +1,201 @@
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:xterm3/src/terminal.dart';
+import 'package:xterm3/src/ui/controller.dart';
+import 'package:xterm3/src/ui/selection_mode.dart';
+
+enum TerminalScrollTarget {
+  top,
+  bottom,
+  pageUp,
+  pageDown,
+}
+
+class TerminalScrollIntent extends Intent {
+  const TerminalScrollIntent(this.target);
+
+  final TerminalScrollTarget target;
+}
+
+enum TerminalPromptNavigationTarget {
+  previous,
+  next,
+}
+
+class TerminalPromptNavigationIntent extends Intent {
+  const TerminalPromptNavigationIntent(this.target);
+
+  final TerminalPromptNavigationTarget target;
+}
+
+class TerminalActions extends StatelessWidget {
+  const TerminalActions({
+    super.key,
+    required this.terminal,
+    required this.controller,
+    required this.getScrollPosition,
+    required this.getLineHeight,
+    required this.child,
+    this.beforePaste,
+    this.readOnly = false,
+  });
+
+  final Terminal terminal;
+
+  final TerminalController controller;
+
+  final ScrollPosition? Function() getScrollPosition;
+
+  final double Function() getLineHeight;
+
+  /// Called before a paste reads the clipboard, so that typed text the view is
+  /// still holding back reaches the terminal ahead of what is pasted.
+  final VoidCallback? beforePaste;
+
+  /// True if pasting should do nothing.
+  final bool readOnly;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: {
+        PasteTextIntent: CallbackAction<PasteTextIntent>(
+          onInvoke: (intent) async {
+            if (readOnly) return null;
+            beforePaste?.call();
+            final data = await Clipboard.getData(Clipboard.kTextPlain);
+            final text = data?.text;
+            if (text != null) {
+              terminal.paste(text);
+              controller.clearSelection();
+            }
+            return null;
+          },
+        ),
+        CopySelectionTextIntent: CallbackAction<CopySelectionTextIntent>(
+          onInvoke: (intent) async {
+            final selection = controller.selectionFor(terminal.buffer);
+
+            if (selection == null) {
+              return;
+            }
+
+            final text = terminal.buffer.getText(selection, true);
+
+            await Clipboard.setData(ClipboardData(text: text));
+
+            return null;
+          },
+        ),
+        SelectAllTextIntent: CallbackAction<SelectAllTextIntent>(
+          onInvoke: (intent) {
+            controller.setSelection(
+              terminal.buffer.createAnchor(0, 0),
+              terminal.buffer.createAnchor(
+                terminal.viewWidth,
+                terminal.buffer.height - 1,
+              ),
+              mode: SelectionMode.line,
+            );
+            return null;
+          },
+        ),
+        TerminalScrollIntent: _TerminalScrollAction(
+          terminal: terminal,
+          getScrollPosition: getScrollPosition,
+        ),
+        TerminalPromptNavigationIntent: _TerminalPromptNavigationAction(
+          terminal: terminal,
+          getScrollPosition: getScrollPosition,
+          getLineHeight: getLineHeight,
+        ),
+      },
+      child: child,
+    );
+  }
+}
+
+class _TerminalScrollAction extends Action<TerminalScrollIntent> {
+  _TerminalScrollAction({
+    required this.terminal,
+    required this.getScrollPosition,
+  });
+
+  final Terminal terminal;
+
+  final ScrollPosition? Function() getScrollPosition;
+
+  @override
+  bool isEnabled(TerminalScrollIntent intent) {
+    return !terminal.isUsingAltBuffer && getScrollPosition() != null;
+  }
+
+  @override
+  Object? invoke(TerminalScrollIntent intent) {
+    final position = getScrollPosition();
+    if (position == null) return null;
+
+    final target = switch (intent.target) {
+      TerminalScrollTarget.top => position.minScrollExtent,
+      TerminalScrollTarget.bottom => position.maxScrollExtent,
+      TerminalScrollTarget.pageUp =>
+        position.pixels - position.viewportDimension,
+      TerminalScrollTarget.pageDown =>
+        position.pixels + position.viewportDimension,
+    };
+    position.jumpTo(
+      target
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble(),
+    );
+    return null;
+  }
+}
+
+class _TerminalPromptNavigationAction
+    extends Action<TerminalPromptNavigationIntent> {
+  _TerminalPromptNavigationAction({
+    required this.terminal,
+    required this.getScrollPosition,
+    required this.getLineHeight,
+  });
+
+  final Terminal terminal;
+
+  final ScrollPosition? Function() getScrollPosition;
+
+  final double Function() getLineHeight;
+
+  @override
+  bool isEnabled(TerminalPromptNavigationIntent intent) {
+    return !terminal.isUsingAltBuffer && getScrollPosition() != null;
+  }
+
+  @override
+  Object? invoke(TerminalPromptNavigationIntent intent) {
+    final position = getScrollPosition();
+    if (position == null) return null;
+
+    final lineHeight = getLineHeight();
+    if (lineHeight <= 0) return null;
+
+    final currentLine = (position.pixels / lineHeight).floor();
+    final targetLine = switch (intent.target) {
+      TerminalPromptNavigationTarget.previous =>
+        terminal.semanticPromptLineBefore(currentLine),
+      TerminalPromptNavigationTarget.next =>
+        terminal.semanticPromptLineAfter(currentLine),
+    };
+    if (targetLine == null) return null;
+
+    final target = targetLine * lineHeight;
+    position.jumpTo(
+      target
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble(),
+    );
+    return null;
+  }
+}

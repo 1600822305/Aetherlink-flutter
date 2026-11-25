@@ -1,0 +1,476 @@
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:xterm3/src/core/buffer/line.dart';
+import 'package:xterm3/src/core/mouse/button.dart';
+import 'package:xterm3/src/core/mouse/button_state.dart';
+import 'package:xterm3/src/core/mouse/mode.dart';
+import 'package:xterm3/src/core/mouse/modifiers.dart';
+import 'package:xterm3/src/terminal_view.dart';
+import 'package:xterm3/src/ui/controller.dart';
+import 'package:xterm3/src/ui/gesture/gesture_detector.dart';
+import 'package:xterm3/src/ui/pointer_input.dart';
+import 'package:xterm3/src/ui/render.dart';
+import 'package:xterm3/src/ui/selection_mode.dart';
+
+class TerminalGestureHandler extends StatefulWidget {
+  const TerminalGestureHandler({
+    super.key,
+    required this.terminalView,
+    required this.terminalController,
+    this.child,
+    this.onTapUp,
+    this.onSingleTapUp,
+    this.onTapDown,
+    this.onSecondaryTapDown,
+    this.onSecondaryTapUp,
+    this.onTertiaryTapDown,
+    this.onTertiaryTapUp,
+    this.readOnly = false,
+  });
+
+  final TerminalViewState terminalView;
+
+  final TerminalController terminalController;
+
+  final Widget? child;
+
+  final GestureTapUpCallback? onTapUp;
+
+  final GestureTapUpCallback? onSingleTapUp;
+
+  final GestureTapDownCallback? onTapDown;
+
+  final GestureTapDownCallback? onSecondaryTapDown;
+
+  final GestureTapUpCallback? onSecondaryTapUp;
+
+  final GestureTapDownCallback? onTertiaryTapDown;
+
+  final GestureTapUpCallback? onTertiaryTapUp;
+
+  final bool readOnly;
+
+  @override
+  State<TerminalGestureHandler> createState() => _TerminalGestureHandlerState();
+}
+
+class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
+  static const _selectionScrollVelocity = 30.0;
+
+  static const _mouseButtons = [
+    (kPrimaryMouseButton, TerminalMouseButton.left),
+    (kSecondaryMouseButton, TerminalMouseButton.right),
+    (kMiddleMouseButton, TerminalMouseButton.middle),
+    (kBackMouseButton, TerminalMouseButton.back),
+    (kForwardMouseButton, TerminalMouseButton.forward),
+  ];
+
+  TerminalViewState get terminalView => widget.terminalView;
+
+  RenderTerminal get renderTerminal => terminalView.renderTerminal;
+
+  /// The cell a drag selection started on. Held as an anchor, not as the
+  /// press's pixel offset, so that scrolling during the drag — the wheel, or
+  /// the edge auto-scroller — does not move the start of the selection.
+  CellAnchor? _dragStartAnchor;
+
+  Offset? _lastDragPosition;
+
+  var _applicationOwnsPointerDrag = false;
+
+  final Map<int, int> _pressedMouseButtons = {};
+
+  final Map<int, int> _reportedMouseButtons = {};
+
+  /// The cell a long-press selection started on; see [_dragStartAnchor].
+  CellAnchor? _longPressStartAnchor;
+
+  EdgeDraggingAutoScroller? _selectionAutoScroller;
+
+  ScrollableState? _selectionAutoScrollerOwner;
+
+  @override
+  void dispose() {
+    _stopSelectionAutoScroll();
+    _dragStartAnchor?.dispose();
+    _longPressStartAnchor?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMotion,
+      onPointerHover: _onPointerMotion,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: TerminalGestureDetector(
+        child: widget.child,
+        onTapUp: widget.onTapUp,
+        onSingleTapUp: onSingleTapUp,
+        onRepeatedTapUp: onSingleTapUp,
+        onTapDown: onTapDown,
+        onSecondaryTapDown: onSecondaryTapDown,
+        onSecondaryTapUp: onSecondaryTapUp,
+        onTertiaryTapDown: onTertiaryTapDown,
+        onTertiaryTapUp: onTertiaryTapUp,
+        onLongPressStart: onLongPressStart,
+        onLongPressMoveUpdate: onLongPressMoveUpdate,
+        onLongPressUp: onLongPressUp,
+        onDragStart: onDragStart,
+        onDragUpdate: onDragUpdate,
+        onDragEnd: onDragEnd,
+        onDragCancel: onDragCancel,
+        onDoubleTapDown: onDoubleTapDown,
+        onTripleTapDown: onTripleTapDown,
+      ),
+    );
+  }
+
+  bool get _shouldSendTapEvent =>
+      !widget.readOnly &&
+      !_bypassesMouseReportingWithShift &&
+      widget.terminalController.shouldSendPointerInput(PointerInput.tap);
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse) return;
+
+    final previousButtons = _pressedMouseButtons[event.pointer] ?? 0;
+    final pressedButtons = event.buttons & ~previousButtons;
+    _pressedMouseButtons[event.pointer] = event.buttons;
+    if (!_shouldSendTapEvent) return;
+
+    var reportedButtons = _reportedMouseButtons[event.pointer] ?? 0;
+    for (final (buttonMask, terminalButton) in _mouseButtons) {
+      if (pressedButtons & buttonMask == 0) continue;
+      final handled = renderTerminal.mouseEvent(
+        terminalButton,
+        TerminalMouseButtonState.down,
+        event.localPosition,
+        modifiers: _currentModifiers(),
+      );
+      if (handled) reportedButtons |= buttonMask;
+    }
+    if (reportedButtons == 0) return;
+    _reportedMouseButtons[event.pointer] = reportedButtons;
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.kind != PointerDeviceKind.mouse) return;
+
+    final previousButtons = _pressedMouseButtons[event.pointer] ?? 0;
+    final releasedButtons = previousButtons & ~event.buttons;
+    _updatePressedMouseButtons(event.pointer, event.buttons);
+    _releaseMouseButtons(event.pointer, releasedButtons, event.localPosition);
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.kind != PointerDeviceKind.mouse) return;
+
+    _pressedMouseButtons.remove(event.pointer);
+    final reportedButtons = _reportedMouseButtons[event.pointer] ?? 0;
+    _releaseMouseButtons(
+      event.pointer,
+      reportedButtons,
+      event.localPosition,
+    );
+  }
+
+  void _updatePressedMouseButtons(int pointer, int buttons) {
+    if (buttons == 0) {
+      _pressedMouseButtons.remove(pointer);
+      return;
+    }
+    _pressedMouseButtons[pointer] = buttons;
+  }
+
+  void _releaseMouseButtons(int pointer, int buttons, Offset position) {
+    final reportedButtons = _reportedMouseButtons[pointer] ?? 0;
+    final buttonsToRelease = reportedButtons & buttons;
+    for (final (buttonMask, terminalButton) in _mouseButtons) {
+      if (buttonsToRelease & buttonMask == 0) continue;
+      renderTerminal.mouseEvent(
+        terminalButton,
+        TerminalMouseButtonState.up,
+        position,
+        modifiers: _currentModifiers(),
+      );
+    }
+
+    final remainingButtons = reportedButtons & ~buttonsToRelease;
+    if (remainingButtons == 0) {
+      _reportedMouseButtons.remove(pointer);
+      return;
+    }
+    _reportedMouseButtons[pointer] = remainingButtons;
+  }
+
+  void _onPointerMotion(PointerEvent event) {
+    final input = switch (event.buttons) {
+      0 => PointerInput.move,
+      _ => PointerInput.drag,
+    };
+    if (widget.readOnly ||
+        _bypassesMouseReportingWithShift ||
+        !widget.terminalController.shouldSendPointerInput(input)) {
+      return;
+    }
+
+    renderTerminal.mouseEvent(
+      _buttonForButtons(event.buttons),
+      TerminalMouseButtonState.down,
+      event.localPosition,
+      motion: true,
+      modifiers: _currentModifiers(),
+    );
+  }
+
+  TerminalMouseButton _buttonForButtons(int buttons) {
+    if (buttons & kPrimaryMouseButton != 0) return TerminalMouseButton.left;
+    if (buttons & kSecondaryMouseButton != 0) return TerminalMouseButton.right;
+    if (buttons & kMiddleMouseButton != 0) return TerminalMouseButton.middle;
+    if (buttons & kBackMouseButton != 0) return TerminalMouseButton.back;
+    if (buttons & kForwardMouseButton != 0) return TerminalMouseButton.forward;
+    return TerminalMouseButton.none;
+  }
+
+  void _tapDown(
+    GestureTapDownCallback? callback,
+    TapDownDetails details,
+    TerminalMouseButton button, {
+    bool forceCallback = false,
+  }) {
+    // Check if the terminal should and can handle the tap down event.
+    var handled = details.kind == PointerDeviceKind.mouse &&
+        _isMouseButtonReported(button);
+    if (details.kind != PointerDeviceKind.mouse && _shouldSendTapEvent) {
+      handled = renderTerminal.mouseEvent(
+        button,
+        TerminalMouseButtonState.down,
+        details.localPosition,
+        modifiers: _currentModifiers(),
+      );
+    }
+    // If the event was not handled by the terminal, use the supplied callback.
+    if (!handled || forceCallback) {
+      callback?.call(details);
+    }
+  }
+
+  void _tapUp(
+    GestureTapUpCallback? callback,
+    TapUpDetails details,
+    TerminalMouseButton button, {
+    bool forceCallback = false,
+  }) {
+    // Check if the terminal should and can handle the tap up event.
+    var handled =
+        details.kind == PointerDeviceKind.mouse && _applicationHandlesTap;
+    if (details.kind != PointerDeviceKind.mouse && _shouldSendTapEvent) {
+      handled = renderTerminal.mouseEvent(
+        button,
+        TerminalMouseButtonState.up,
+        details.localPosition,
+        modifiers: _currentModifiers(),
+      );
+    }
+    // If the event was not handled by the terminal, use the supplied callback.
+    if (!handled || forceCallback) {
+      callback?.call(details);
+    }
+  }
+
+  bool _isMouseButtonReported(TerminalMouseButton button) {
+    final buttonMask = switch (button) {
+      TerminalMouseButton.left => kPrimaryMouseButton,
+      TerminalMouseButton.right => kSecondaryMouseButton,
+      TerminalMouseButton.middle => kMiddleMouseButton,
+      TerminalMouseButton.back => kBackMouseButton,
+      TerminalMouseButton.forward => kForwardMouseButton,
+      _ => 0,
+    };
+    if (buttonMask == 0) return false;
+    return _reportedMouseButtons.values.any(
+      (reportedButtons) => reportedButtons & buttonMask != 0,
+    );
+  }
+
+  TerminalMouseModifiers _currentModifiers() {
+    final shift = _isShiftPressed;
+    final pressedKeys = HardwareKeyboard.instance.logicalKeysPressed;
+    return TerminalMouseModifiers(
+      shift: shift,
+      alt: pressedKeys.contains(LogicalKeyboardKey.altLeft) ||
+          pressedKeys.contains(LogicalKeyboardKey.altRight),
+      control: pressedKeys.contains(LogicalKeyboardKey.controlLeft) ||
+          pressedKeys.contains(LogicalKeyboardKey.controlRight),
+    );
+  }
+
+  bool get _isShiftPressed {
+    final pressedKeys = HardwareKeyboard.instance.logicalKeysPressed;
+    return pressedKeys.contains(LogicalKeyboardKey.shiftLeft) ||
+        pressedKeys.contains(LogicalKeyboardKey.shiftRight);
+  }
+
+  bool get _bypassesMouseReportingWithShift {
+    if (!_isShiftPressed) return false;
+    return !widget.terminalView.widget.terminal.mouseShiftCaptureMode;
+  }
+
+  void onTapDown(TapDownDetails details) {
+    // onTapDown is special, as it will always call the supplied callback.
+    // The TerminalView depends on it to bring the terminal into focus.
+    _tapDown(
+      widget.onTapDown,
+      details,
+      TerminalMouseButton.left,
+      forceCallback: true,
+    );
+  }
+
+  void onSingleTapUp(TapUpDetails details) {
+    _tapUp(widget.onSingleTapUp, details, TerminalMouseButton.left);
+  }
+
+  void onSecondaryTapDown(TapDownDetails details) {
+    _tapDown(widget.onSecondaryTapDown, details, TerminalMouseButton.right);
+  }
+
+  void onSecondaryTapUp(TapUpDetails details) {
+    _tapUp(widget.onSecondaryTapUp, details, TerminalMouseButton.right);
+  }
+
+  void onTertiaryTapDown(TapDownDetails details) {
+    _tapDown(widget.onTertiaryTapDown, details, TerminalMouseButton.middle);
+  }
+
+  void onTertiaryTapUp(TapUpDetails details) {
+    _tapUp(widget.onTertiaryTapUp, details, TerminalMouseButton.middle);
+  }
+
+  void onDoubleTapDown(TapDownDetails details) {
+    if (_applicationHandlesTap) return;
+    renderTerminal.selectWord(details.localPosition);
+  }
+
+  void onTripleTapDown(TapDownDetails details) {
+    if (_applicationHandlesTap) return;
+    renderTerminal.selectLine(details.localPosition);
+  }
+
+  bool get _applicationHandlesTap {
+    if (!_shouldSendTapEvent) return false;
+    return widget.terminalView.widget.terminal.mouseMode != MouseMode.none;
+  }
+
+  void onLongPressStart(LongPressStartDetails details) {
+    _longPressStartAnchor?.dispose();
+    _longPressStartAnchor = renderTerminal.createAnchorAt(
+      details.localPosition,
+    );
+    renderTerminal.selectWord(details.localPosition);
+  }
+
+  void onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    final startAnchor = _longPressStartAnchor;
+    if (startAnchor == null) return;
+    renderTerminal.selectWordFrom(startAnchor, details.localPosition);
+  }
+
+  void onLongPressUp() {
+    _longPressStartAnchor?.dispose();
+    _longPressStartAnchor = null;
+  }
+
+  void onDragStart(DragStartDetails details) {
+    _stopSelectionAutoScroll();
+    _dragStartAnchor?.dispose();
+    _dragStartAnchor = null;
+    _lastDragPosition = details.localPosition;
+    _applicationOwnsPointerDrag = _applicationHandlesTap;
+    if (_applicationOwnsPointerDrag) return;
+
+    _dragStartAnchor = renderTerminal.createAnchorAt(details.localPosition);
+
+    if (details.kind != PointerDeviceKind.mouse) {
+      renderTerminal.selectWord(details.localPosition);
+      return;
+    }
+
+    renderTerminal.selectCharacters(
+      details.localPosition,
+      null,
+      _dragSelectionMode,
+    );
+  }
+
+  void onDragUpdate(DragUpdateDetails details) {
+    _lastDragPosition = details.localPosition;
+    if (_applicationOwnsPointerDrag) return;
+    _updateDragSelection();
+    _startSelectionAutoScroll(details.globalPosition);
+  }
+
+  void onDragEnd(DragEndDetails details) {
+    _finishDragSelection();
+  }
+
+  void onDragCancel() {
+    _finishDragSelection();
+  }
+
+  void _updateDragSelection() {
+    final startAnchor = _dragStartAnchor;
+    final dragPosition = _lastDragPosition;
+    if (startAnchor == null || dragPosition == null) return;
+    renderTerminal.selectCharactersFrom(
+      startAnchor,
+      dragPosition,
+      _dragSelectionMode,
+    );
+  }
+
+  void _startSelectionAutoScroll(Offset dragPosition) {
+    final scrollable = terminalView.scrollableState;
+    if (scrollable == null) return;
+
+    if (_selectionAutoScrollerOwner != scrollable) {
+      _selectionAutoScroller?.stopAutoScroll();
+      _selectionAutoScrollerOwner = scrollable;
+      _selectionAutoScroller = EdgeDraggingAutoScroller(
+        scrollable,
+        velocityScalar: _selectionScrollVelocity,
+        onScrollViewScrolled: _updateDragSelection,
+      );
+    }
+
+    _selectionAutoScroller?.startAutoScrollIfNecessary(
+      Rect.fromCenter(center: dragPosition, width: 0, height: 0),
+    );
+  }
+
+  void _finishDragSelection() {
+    _stopSelectionAutoScroll();
+    _applicationOwnsPointerDrag = false;
+    _dragStartAnchor?.dispose();
+    _dragStartAnchor = null;
+    _lastDragPosition = null;
+  }
+
+  void _stopSelectionAutoScroll() {
+    _selectionAutoScroller?.stopAutoScroll();
+  }
+
+  SelectionMode get _dragSelectionMode {
+    final pressedKeys = HardwareKeyboard.instance.logicalKeysPressed;
+    final altPressed = pressedKeys.contains(LogicalKeyboardKey.altLeft) ||
+        pressedKeys.contains(LogicalKeyboardKey.altRight);
+    return switch (altPressed) {
+      true => SelectionMode.block,
+      false => SelectionMode.line,
+    };
+  }
+}

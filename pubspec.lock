@@ -1337,14 +1337,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.5.0"
-  quiver:
-    dependency: transitive
-    description:
-      name: quiver
-      sha256: ea0b925899e64ecdfbf9c7becb60d5b50e706ade44a85b2363be2a22d88117d2
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.2.2"
   recase:
     dependency: transitive
     description:
@@ -2078,14 +2070,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.6.1"
-  xterm:
+  xterm3:
     dependency: "direct main"
     description:
-      name: xterm
-      sha256: "168dfedca77cba33fdb6f52e2cd001e9fde216e398e89335c19b524bb22da3a2"
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.0.0"
+      path: "packages/xterm3"
+      relative: true
+    source: path
+    version: "6.5.0"
   yaml:
     dependency: transitive
     description:

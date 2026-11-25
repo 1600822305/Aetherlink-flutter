@@ -7,12 +7,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:xterm/xterm.dart';
+import 'package:xterm3/xterm.dart';
 
-import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
-import 'package:aetherlink_flutter/shared/domain/selection_menu_settings.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 复制当前选区（长按拖拽选中后点复制键）。
@@ -23,9 +23,7 @@ Future<void> copyTerminalSelection(
 ) async {
   final range = controller.selection;
   if (range == null) {
-    if (!TerminalSelectionMenu.enterSelectMode(controller)) {
-      AppToast.info(context, '先长按选中要复制的内容');
-    }
+    AppToast.info(context, '先长按选中要复制的内容');
     return;
   }
   final text = terminal.buffer.getText(range);
@@ -48,187 +46,74 @@ Future<void> pasteClipboardToTerminal(
   terminal.paste(text);
 }
 
-/// 终端「选择文本」模式：交互与聊天消息一致。
+/// 监听「当前可见终端」的选区状态，同步到 [workspaceTerminalSelectingProvider]
+/// 以临时锁死 workspace 外层横向翻页：选区存在期间，拖手柄 / 长按拖选不会
+/// 被外层 PageView 抢成左右翻页。透明包裹 child，不改变布局。
 ///
-/// xterm 是画布渲染，没有系统文本选区（手柄 / 放大镜 / 复制面板）。这里在
-/// 长按选中（或点快捷栏「复制」）时，把终端缓冲区转成等宽纯文本覆盖在终端
-/// 上，外面包聊天同款 [MessageSelectionArea]：系统选区手柄可拖、复制面板
-/// 完全复用（终端里只保留 复制 / 全选）。点「完成」或返回键退出。
-class TerminalSelectionMenu extends StatefulWidget {
-  const TerminalSelectionMenu({
+/// 只应包住可见终端的控制器——后台 tab 的残留选区不可交互，不该参与锁页。
+class TerminalSelectionPageLock extends ConsumerStatefulWidget {
+  const TerminalSelectionPageLock({
     super.key,
-    required this.terminal,
     required this.controller,
-    required this.builder,
-    this.fontSize = 13,
+    required this.child,
   });
 
-  final Terminal terminal;
-  final TerminalController controller;
-  final Widget Function(GlobalKey<TerminalViewState> viewKey) builder;
-  final double fontSize;
-
-  /// controller → 已挂载的选择层，供快捷栏「复制」键在无选区时进入选择模式。
-  static final Map<TerminalController, _TerminalSelectionMenuState>
-      _byController = {};
-
-  /// 进入选择模式；没有挂载对应选择层时返回 false。
-  static bool enterSelectMode(TerminalController controller) {
-    final state = _byController[controller];
-    if (state == null || !state.mounted) return false;
-    state._enter();
-    return true;
-  }
+  /// 当前可见终端的控制器；null 表示没有可交互终端（锁释放）。
+  final TerminalController? controller;
+  final Widget child;
 
   @override
-  State<TerminalSelectionMenu> createState() => _TerminalSelectionMenuState();
+  ConsumerState<TerminalSelectionPageLock> createState() =>
+      _TerminalSelectionPageLockState();
 }
 
-class _TerminalSelectionMenuState extends State<TerminalSelectionMenu> {
-  /// 选择模式最多展示的尾部行数（全量上万行的单个 Text 选区太重）。
-  static const _maxLines = 3000;
-
-  final _viewKey = GlobalKey<TerminalViewState>();
-  final _scroll = ScrollController();
-  String? _text; // 非 null 即处于选择模式
-
+class _TerminalSelectionPageLockState
+    extends ConsumerState<TerminalSelectionPageLock> {
   @override
   void initState() {
     super.initState();
-    _attach(widget.controller);
+    widget.controller?.addListener(_onSelection);
+    _syncDeferred();
   }
 
   @override
-  void didUpdateWidget(covariant TerminalSelectionMenu oldWidget) {
+  void didUpdateWidget(covariant TerminalSelectionPageLock oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      _detach(oldWidget.controller);
-      _attach(widget.controller);
-      _text = null;
+      oldWidget.controller?.removeListener(_onSelection);
+      widget.controller?.addListener(_onSelection);
     }
+    // 可见终端切换发生在 build 期间，provider 写入延到帧末。
+    _syncDeferred();
   }
 
   @override
   void dispose() {
-    _detach(widget.controller);
-    _scroll.dispose();
+    widget.controller?.removeListener(_onSelection);
+    // dispose 后不能再读 ref；锁的释放交给下一次同步或其他观看者。若整个
+    // workspace 页随之销毁，provider 状态也随之重置，无需强清。
     super.dispose();
   }
 
-  void _attach(TerminalController c) {
-    c.addListener(_onSelectionChanged);
-    TerminalSelectionMenu._byController[c] = this;
+  // 选区变化发生在手势回调里（非 build 阶段），可以直接写 provider——
+  // 必须赶在拖动继续之前落锁，不能等帧末。
+  void _onSelection() {
+    ref
+        .read(workspaceTerminalSelectingProvider.notifier)
+        .set(widget.controller?.selection != null);
   }
 
-  void _detach(TerminalController c) {
-    c.removeListener(_onSelectionChanged);
-    if (TerminalSelectionMenu._byController[c] == this) {
-      TerminalSelectionMenu._byController.remove(c);
-    }
-  }
-
-  // xterm 长按产生选区 → 转入选择模式（xterm 自己的选区随即清掉）。
-  void _onSelectionChanged() {
-    if (_text == null && widget.controller.selection != null) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _text == null) _enter();
-      });
-    }
-  }
-
-  void _enter() {
-    widget.controller.clearSelection();
-    var lines = widget.terminal.buffer.getText().split('\n');
-    // 去掉行尾补齐空格与末尾空行。
-    lines = [for (final l in lines) l.trimRight()];
-    while (lines.isNotEmpty && lines.last.isEmpty) {
-      lines.removeLast();
-    }
-    if (lines.length > _maxLines) {
-      lines = lines.sublist(lines.length - _maxLines);
-    }
-    HapticFeedback.selectionClick();
-    setState(() => _text = lines.join('\n'));
-    // 默认停在底部（与终端当前视口一致的最新输出）。
+  void _syncDeferred() {
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      if (!mounted) return;
+      ref
+          .read(workspaceTerminalSelectingProvider.notifier)
+          .set(widget.controller?.selection != null);
     });
   }
 
-  void _exit() => setState(() => _text = null);
-
   @override
-  Widget build(BuildContext context) {
-    final text = _text;
-    final terminalView = widget.builder(_viewKey);
-    if (text == null) return terminalView;
-    final theme = Theme.of(context);
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _exit();
-      },
-      child: Stack(
-        children: [
-          // 保留终端在下层（不销毁、不断开），只是被覆盖。
-          Positioned.fill(child: ExcludeFocus(child: terminalView)),
-          Positioned.fill(
-            child: ColoredBox(
-              color: const Color(0xFF000000),
-              child: Column(
-                children: [
-                  Container(
-                    height: 36,
-                    color: theme.colorScheme.surfaceContainerHigh,
-                    padding: const EdgeInsets.only(left: 12),
-                    child: Row(
-                      children: [
-                        Icon(LucideIcons.textSelect,
-                            size: 16, color: theme.colorScheme.onSurface),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            '选择文本 · 长按拖动选区',
-                            style: theme.textTheme.labelMedium,
-                          ),
-                        ),
-                        TextButton(onPressed: _exit, child: const Text('完成')),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Scrollbar(
-                      controller: _scroll,
-                      child: SingleChildScrollView(
-                        controller: _scroll,
-                        padding: const EdgeInsets.all(8),
-                        child: MessageSelectionArea(
-                          allowedItemIds: const {
-                            kSelectionMenuCopy,
-                            kSelectionMenuSelectAll,
-                          },
-                          child: Text(
-                            text,
-                            softWrap: true,
-                            style: TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: widget.fontSize,
-                              height: 1.25,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// 会话池会话的联动视图状态：接入会话回放历史缓冲 + 订阅实时输出，
@@ -246,8 +131,7 @@ class SessionTerminalAttachment {
         session.writeUserInput(transform == null ? data : transform(data));
       }
     };
-    terminal.onResize = (width, height, _, __) =>
-        session.resize(width, height);
+    terminal.onResize = (width, height, _, __) => session.resize(width, height);
     // 历史可达数百 KB，构造常发生在 build 里：推迟到事件循环下一轮再
     // 回放，期间到达的实时输出先暂存，保证与历史的先后顺序。
     ready = Future<void>(() {

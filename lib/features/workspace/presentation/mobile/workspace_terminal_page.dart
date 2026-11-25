@@ -17,7 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:xterm/xterm.dart';
+import 'package:xterm3/xterm.dart';
 
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
@@ -727,13 +727,10 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
         children: [
           AiSessionStatusBar(session: aiView.session),
           Expanded(
-            child: TerminalSelectionMenu(
-              terminal: aiView.terminal,
+            child: TerminalSelectionPageLock(
               controller: aiView.controller,
-              fontSize: fontSize,
-              builder: (viewKey) => TerminalView(
+              child: TerminalView(
                 aiView.terminal,
-                key: viewKey,
                 controller: aiView.controller,
                 focusNode: aiView.focusNode,
                 textStyle: textStyle,
@@ -764,24 +761,21 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
       return Column(
         children: [
           Expanded(
-            child: IndexedStack(
-              index: _active,
-              children: [
-                for (final t in _tabs)
-                  TerminalSelectionMenu(
-                    terminal: t.terminal,
-                    controller: t.controller,
-                    fontSize: fontSize,
-                    builder: (viewKey) => TerminalView(
+            child: TerminalSelectionPageLock(
+              controller: tab.controller,
+              child: IndexedStack(
+                index: _active,
+                children: [
+                  for (final t in _tabs)
+                    TerminalView(
                       t.terminal,
-                      key: viewKey,
                       controller: t.controller,
                       focusNode: t.focusNode,
                       textStyle: textStyle,
                       padding: const EdgeInsets.all(8),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
           TerminalExtraKeysBar(

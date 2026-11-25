@@ -98,12 +98,11 @@ final showHiddenFilesProvider = NotifierProvider<ShowHiddenFiles, bool>(
 class ShowHiddenFiles extends Notifier<bool> {
   @override
   bool build() {
-    ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kWorkspaceShowHiddenKey)
-        .then((raw) {
-      if (raw == 'true' && !state) state = true;
-    });
+    ref.read(appSettingsStoreProvider).getSetting(kWorkspaceShowHiddenKey).then(
+      (raw) {
+        if (raw == 'true' && !state) state = true;
+      },
+    );
     return false;
   }
 
@@ -118,16 +117,15 @@ class ShowHiddenFiles extends Notifier<bool> {
 /// 文件树排序方式，持久化于 [kWorkspaceTreeSortKey]；默认名称升序。
 final treeSortModeProvider =
     NotifierProvider<TreeSortModeNotifier, TreeSortMode>(
-  TreeSortModeNotifier.new,
-);
+      TreeSortModeNotifier.new,
+    );
 
 class TreeSortModeNotifier extends Notifier<TreeSortMode> {
   @override
   TreeSortMode build() {
-    ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kWorkspaceTreeSortKey)
-        .then((raw) {
+    ref.read(appSettingsStoreProvider).getSetting(kWorkspaceTreeSortKey).then((
+      raw,
+    ) {
       final mode = TreeSortMode.fromName(raw);
       if (mode != state) state = mode;
     });
@@ -149,16 +147,15 @@ const double kTerminalFontSizeMax = 28;
 
 final terminalFontSizeProvider =
     NotifierProvider<TerminalFontSizeNotifier, double>(
-  TerminalFontSizeNotifier.new,
-);
+      TerminalFontSizeNotifier.new,
+    );
 
 class TerminalFontSizeNotifier extends Notifier<double> {
   @override
   double build() {
-    ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kTerminalFontSizeKey)
-        .then((raw) {
+    ref.read(appSettingsStoreProvider).getSetting(kTerminalFontSizeKey).then((
+      raw,
+    ) {
       final size = double.tryParse(raw ?? '');
       if (size != null && size != state) {
         state = size.clamp(kTerminalFontSizeMin, kTerminalFontSizeMax);
@@ -229,30 +226,29 @@ class EditorSettings {
     bool? currentLineHighlight,
     bool? autoSave,
     int? autoSaveDelaySecs,
-  }) =>
-      EditorSettings(
-        fontSize: fontSize ?? this.fontSize,
-        tabWidth: tabWidth ?? this.tabWidth,
-        softWrap: softWrap ?? this.softWrap,
-        syntaxHighlight: syntaxHighlight ?? this.syntaxHighlight,
-        autoClosePairs: autoClosePairs ?? this.autoClosePairs,
-        autoIndent: autoIndent ?? this.autoIndent,
-        currentLineHighlight: currentLineHighlight ?? this.currentLineHighlight,
-        autoSave: autoSave ?? this.autoSave,
-        autoSaveDelaySecs: autoSaveDelaySecs ?? this.autoSaveDelaySecs,
-      );
+  }) => EditorSettings(
+    fontSize: fontSize ?? this.fontSize,
+    tabWidth: tabWidth ?? this.tabWidth,
+    softWrap: softWrap ?? this.softWrap,
+    syntaxHighlight: syntaxHighlight ?? this.syntaxHighlight,
+    autoClosePairs: autoClosePairs ?? this.autoClosePairs,
+    autoIndent: autoIndent ?? this.autoIndent,
+    currentLineHighlight: currentLineHighlight ?? this.currentLineHighlight,
+    autoSave: autoSave ?? this.autoSave,
+    autoSaveDelaySecs: autoSaveDelaySecs ?? this.autoSaveDelaySecs,
+  );
 
   String encode() => jsonEncode({
-        'fontSize': fontSize,
-        'tabWidth': tabWidth,
-        'softWrap': softWrap,
-        'syntaxHighlight': syntaxHighlight,
-        'autoClosePairs': autoClosePairs,
-        'autoIndent': autoIndent,
-        'currentLineHighlight': currentLineHighlight,
-        'autoSave': autoSave,
-        'autoSaveDelaySecs': autoSaveDelaySecs,
-      });
+    'fontSize': fontSize,
+    'tabWidth': tabWidth,
+    'softWrap': softWrap,
+    'syntaxHighlight': syntaxHighlight,
+    'autoClosePairs': autoClosePairs,
+    'autoIndent': autoIndent,
+    'currentLineHighlight': currentLineHighlight,
+    'autoSave': autoSave,
+    'autoSaveDelaySecs': autoSaveDelaySecs,
+  });
 
   static EditorSettings? decode(String? raw) {
     if (raw == null || raw.isEmpty) return null;
@@ -261,7 +257,8 @@ class EditorSettings {
       if (map is! Map<String, dynamic>) return null;
       final fontSize = (map['fontSize'] as num?)?.toDouble() ?? 13;
       final tabWidth = (map['tabWidth'] as num?)?.toInt() ?? 2;
-      final autoSaveDelay = (map['autoSaveDelaySecs'] as num?)?.toInt() ??
+      final autoSaveDelay =
+          (map['autoSaveDelaySecs'] as num?)?.toInt() ??
           kAutoSaveDefaultDelaySecs;
       return EditorSettings(
         fontSize: fontSize.clamp(8, 32).toDouble(),
@@ -284,16 +281,15 @@ class EditorSettings {
 
 final editorSettingsProvider =
     NotifierProvider<EditorSettingsNotifier, EditorSettings>(
-  EditorSettingsNotifier.new,
-);
+      EditorSettingsNotifier.new,
+    );
 
 class EditorSettingsNotifier extends Notifier<EditorSettings> {
   @override
   EditorSettings build() {
-    ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kEditorSettingsKey)
-        .then((raw) {
+    ref.read(appSettingsStoreProvider).getSetting(kEditorSettingsKey).then((
+      raw,
+    ) {
       final settings = EditorSettings.decode(raw);
       if (settings != null) state = settings;
     });
@@ -312,18 +308,16 @@ class EditorSettingsNotifier extends Notifier<EditorSettings> {
 /// [kEditorFindHistoryKey]。在提交查询（回车 / 上一个下一个）时记录。
 const int kMaxFindHistory = 20;
 
-final findHistoryProvider =
-    NotifierProvider<FindHistoryNotifier, List<String>>(
+final findHistoryProvider = NotifierProvider<FindHistoryNotifier, List<String>>(
   FindHistoryNotifier.new,
 );
 
 class FindHistoryNotifier extends Notifier<List<String>> {
   @override
   List<String> build() {
-    ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kEditorFindHistoryKey)
-        .then((raw) {
+    ref.read(appSettingsStoreProvider).getSetting(kEditorFindHistoryKey).then((
+      raw,
+    ) {
       if (raw == null || raw.isEmpty) return;
       try {
         final decoded = jsonDecode(raw);
@@ -339,10 +333,9 @@ class FindHistoryNotifier extends Notifier<List<String>> {
     final q = query.trim();
     if (q.isEmpty) return;
     final next = [q, ...state.where((e) => e != q)];
-    if (next.length > kMaxFindHistory) next.removeRange(kMaxFindHistory, next.length);
-    if (next.length == state.length &&
-        state.isNotEmpty &&
-        state.first == q) {
+    if (next.length > kMaxFindHistory)
+      next.removeRange(kMaxFindHistory, next.length);
+    if (next.length == state.length && state.isNotEmpty && state.first == q) {
       return;
     }
     state = next;
@@ -364,8 +357,8 @@ const int kMaxRecentFiles = 20;
 
 final recentFilesProvider =
     NotifierProvider<RecentFilesNotifier, List<WorkspaceEntry>>(
-  RecentFilesNotifier.new,
-);
+      RecentFilesNotifier.new,
+    );
 
 class RecentFilesNotifier extends Notifier<List<WorkspaceEntry>> {
   @override
@@ -376,9 +369,9 @@ class RecentFilesNotifier extends Notifier<List<WorkspaceEntry>> {
           .read(appSettingsStoreProvider)
           .getSetting(kWorkspaceRecentFilesKey)
           .then((raw) {
-        final entries = _decodeMap(raw)[workspace.id];
-        if (entries != null && entries.isNotEmpty) state = entries;
-      });
+            final entries = _decodeMap(raw)[workspace.id];
+            if (entries != null && entries.isNotEmpty) state = entries;
+          });
     }
     return const [];
   }
@@ -395,7 +388,10 @@ class RecentFilesNotifier extends Notifier<List<WorkspaceEntry>> {
     _persist(workspace.id, next);
   }
 
-  Future<void> _persist(String workspaceId, List<WorkspaceEntry> entries) async {
+  Future<void> _persist(
+    String workspaceId,
+    List<WorkspaceEntry> entries,
+  ) async {
     final store = ref.read(appSettingsStoreProvider);
     final map = _decodeMap(await store.getSetting(kWorkspaceRecentFilesKey));
     map[workspaceId] = entries;
@@ -435,8 +431,8 @@ const int kMaxPinnedFiles = 20;
 
 final pinnedFilesProvider =
     NotifierProvider<PinnedFilesNotifier, List<WorkspaceEntry>>(
-  PinnedFilesNotifier.new,
-);
+      PinnedFilesNotifier.new,
+    );
 
 class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
   /// 收藏条目的已知父目录（path → parent opaque path）。随收藏一起持久化，
@@ -453,18 +449,18 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
           .read(appSettingsStoreProvider)
           .getSetting(kWorkspacePinnedFilesKey)
           .then((raw) {
-        final items = _decodeRaw(raw)[workspace.id];
-        if (items == null || items.isEmpty) return;
-        final entries = <WorkspaceEntry>[];
-        for (final item in items) {
-          entries.add(WorkspaceEntry.fromJson(item));
-          final parent = item['parentPath'];
-          if (parent is String) {
-            _parents[item['path'] as String] = parent;
-          }
-        }
-        state = entries;
-      });
+            final items = _decodeRaw(raw)[workspace.id];
+            if (items == null || items.isEmpty) return;
+            final entries = <WorkspaceEntry>[];
+            for (final item in items) {
+              entries.add(WorkspaceEntry.fromJson(item));
+              final parent = item['parentPath'];
+              if (parent is String) {
+                _parents[item['path'] as String] = parent;
+              }
+            }
+            state = entries;
+          });
     }
     return const [];
   }
@@ -570,8 +566,8 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
         _parents[newPath] = oldParent != null && oldParent.startsWith(prefix)
             ? '$newBase/${oldParent.substring(prefix.length)}'
             : (oldParent == oldDirPath || oldParent == null
-                ? newDirPath
-                : oldParent);
+                  ? newDirPath
+                  : oldParent);
         next.add(
           WorkspaceEntry(
             name: e.name,
@@ -608,7 +604,10 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
     return false;
   }
 
-  Future<void> _persist(String workspaceId, List<WorkspaceEntry> entries) async {
+  Future<void> _persist(
+    String workspaceId,
+    List<WorkspaceEntry> entries,
+  ) async {
     final store = ref.read(appSettingsStoreProvider);
     final map = _decodeRaw(await store.getSetting(kWorkspacePinnedFilesKey));
     map[workspaceId] = [
@@ -644,14 +643,32 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
 /// Whether the three-page horizontal pager is locked. When `true` the shell
 /// disables page swiping so pinch-zoom / drag inside the editor can't
 /// accidentally flip pages. Toggled from the editor header's lock button.
-final workspacePageLockProvider =
-    NotifierProvider<WorkspacePageLock, bool>(WorkspacePageLock.new);
+final workspacePageLockProvider = NotifierProvider<WorkspacePageLock, bool>(
+  WorkspacePageLock.new,
+);
 
 class WorkspacePageLock extends Notifier<bool> {
   @override
   bool build() => false;
 
   void toggle() => state = !state;
+}
+
+/// 终端选区激活期间为 true：workspace 三页横向 pager 据此临时禁滑，避免
+/// 长按拖选 / 拖选区手柄时被抢成翻页。由终端页按「当前可见终端」的选区
+/// 状态同步（见 TerminalSelectionPageLock），与编辑器手动锁相互独立。
+final workspaceTerminalSelectingProvider =
+    NotifierProvider<WorkspaceTerminalSelecting, bool>(
+      WorkspaceTerminalSelecting.new,
+    );
+
+class WorkspaceTerminalSelecting extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool v) {
+    if (state != v) state = v;
+  }
 }
 
 /// Immutable state of the middle-page tab strip: the open file tabs and which
@@ -826,5 +843,5 @@ class FileTreeClipboard extends Notifier<FileClipboardState?> {
 /// 文件树的剪切/复制剪贴板（长按菜单「剪切/复制」→「粘贴到此」）。
 final fileTreeClipboardProvider =
     NotifierProvider<FileTreeClipboard, FileClipboardState?>(
-  FileTreeClipboard.new,
-);
+      FileTreeClipboard.new,
+    );

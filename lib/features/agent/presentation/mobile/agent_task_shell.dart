@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/event_stream_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_page.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 
 /// 任务工作台两页横滑壳（已拍板 2 页，工作区页同款 `PageView` 交互）：
 /// 左页=事件流（主视图，默认落这）、右页=工作台（UI 稿 §四）。
@@ -65,18 +67,27 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
     return Column(
       children: [
         Expanded(
-          child: PageView(
-            controller: _controller,
-            onPageChanged: (i) => setState(() => _page = i),
-            children: [
-              Column(
+          // 终端选区激活（拖手柄/长按拖选）期间禁滑，否则会被抢成翻页。
+          child: Consumer(
+            builder: (context, ref, _) {
+              final selecting = ref.watch(workspaceTerminalSelectingProvider);
+              return PageView(
+                controller: _controller,
+                physics: selecting
+                    ? const NeverScrollableScrollPhysics()
+                    : null,
+                onPageChanged: (i) => setState(() => _page = i),
                 children: [
-                  if (widget.topBar != null) widget.topBar!,
-                  Expanded(child: EventStreamPage(task: widget.task)),
+                  Column(
+                    children: [
+                      if (widget.topBar != null) widget.topBar!,
+                      Expanded(child: EventStreamPage(task: widget.task)),
+                    ],
+                  ),
+                  WorkbenchPage(task: widget.task, onBackToChat: _backToChat),
                 ],
-              ),
-              WorkbenchPage(task: widget.task, onBackToChat: _backToChat),
-            ],
+              );
+            },
           ),
         ),
         // 页指示器（工作区页同款的两点样式）。
