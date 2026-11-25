@@ -80,10 +80,10 @@ class WorkbenchContextTab extends ConsumerWidget {
 
         return ListView(
           padding: EdgeInsets.fromLTRB(
-            16,
-            8,
-            16,
-            16 + MediaQuery.paddingOf(context).bottom,
+            12,
+            6,
+            12,
+            12 + MediaQuery.paddingOf(context).bottom,
           ),
           children: [
             _GaugeCard(
@@ -99,7 +99,7 @@ class WorkbenchContextTab extends ConsumerWidget {
               stale: stale,
             ),
             if (task.contextHistory.length >= 2) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               _TrendCard(
                 history: task.contextHistory,
                 limit: limit,
@@ -107,7 +107,7 @@ class WorkbenchContextTab extends ConsumerWidget {
               ),
             ],
             Padding(
-              padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
+              padding: const EdgeInsets.fromLTRB(4, 10, 4, 4),
               child: Row(
                 children: [
                   Expanded(
@@ -149,7 +149,7 @@ class WorkbenchContextTab extends ConsumerWidget {
             ),
             if (data.bulkClearable.isNotEmpty ||
                 data.manuallyClearedIds.isNotEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               _ClearCard(
                 count: data.bulkClearable.length,
                 tokens: data.bulkClearableTokens,
@@ -162,11 +162,12 @@ class WorkbenchContextTab extends ConsumerWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: FilledButton.icon(
+                    style: _kCompactButton,
                     onPressed: task.status == AgentTaskStatus.draft
                         ? null
                         : () => confirmAndCompactNow(context, ref, task),
@@ -177,6 +178,7 @@ class WorkbenchContextTab extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton.tonalIcon(
+                    style: _kCompactButton,
                     onPressed: () => _copyReport(
                       context,
                       data,
@@ -290,6 +292,13 @@ class WorkbenchContextTab extends ConsumerWidget {
 }
 
 /// 「清理大输出」提示卡：有候选时给一键清理；有清理记录时可恢复。
+final ButtonStyle _kCompactButton = FilledButton.styleFrom(
+  minimumSize: const Size(0, 36),
+  padding: const EdgeInsets.symmetric(horizontal: 12),
+  visualDensity: VisualDensity.compact,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
+
 class _ClearCard extends StatelessWidget {
   const _ClearCard({
     required this.count,
@@ -311,7 +320,7 @@ class _ClearCard extends StatelessWidget {
     final cs = theme.colorScheme;
     return _Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
         child: Row(
           children: [
             Icon(LucideIcons.eraser, size: 18, color: cs.primary),
@@ -341,9 +350,17 @@ class _ClearCard extends StatelessWidget {
               ),
             ),
             if (clearedCount > 0)
-              TextButton(onPressed: onRestore, child: const Text('恢复')),
+              TextButton(
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                onPressed: onRestore,
+                child: const Text('恢复'),
+              ),
             if (count > 0)
-              FilledButton.tonal(onPressed: onClear, child: const Text('清理')),
+              FilledButton.tonal(
+                style: _kCompactButton,
+                onPressed: onClear,
+                child: const Text('清理'),
+              ),
           ],
         ),
       ),
@@ -441,12 +458,12 @@ class _GaugeCard extends StatelessWidget {
 
     return _Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         child: Column(
           children: [
             SizedBox(
-              width: 172,
-              height: 172,
+              width: 118,
+              height: 118,
               child: CustomPaint(
                 painter: _RingPainter(
                   segments: segments,
@@ -464,7 +481,7 @@ class _GaugeCard extends StatelessWidget {
                             : formatTokens(used),
                         style: theme.textTheme.headlineMedium?.copyWith(
                           fontWeight: FontWeight.w700,
-                          fontSize: 28,
+                          fontSize: 20,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -481,7 +498,7 @@ class _GaugeCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -508,7 +525,7 @@ class _GaugeCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
             Row(
               children: [
                 _Metric(label: '估算', value: formatTokens(estimated)),
@@ -551,7 +568,7 @@ class _Metric extends StatelessWidget {
     final cs = theme.colorScheme;
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: cs.onSurface.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(12),
@@ -599,7 +616,7 @@ class _RingPainter extends CustomPainter {
   /// 压缩线位置（占整圈比例），null 不画。
   final double? marker;
 
-  static const double _stroke = 14;
+  static const double _stroke = 10;
   static const double _gap = 0.004; // 段间留缝（占整圈比例）
 
   @override
@@ -688,7 +705,7 @@ class _TrendCard extends StatelessWidget {
 
     return _Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -728,9 +745,9 @@ class _TrendCard extends StatelessWidget {
                 color: cs.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 4),
             SizedBox(
-              height: 120,
+              height: 72,
               width: double.infinity,
               child: CustomPaint(
                 painter: _TrendPainter(
@@ -938,7 +955,7 @@ class _SectionTileState extends State<_SectionTile> {
         InkWell(
           onTap: expandable ? () => setState(() => _open = !_open) : null,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+            padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
             child: Row(
               children: [
                 Container(
@@ -954,8 +971,8 @@ class _SectionTileState extends State<_SectionTile> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(s.label, style: theme.textTheme.bodyMedium),
-                      const SizedBox(height: 6),
+                      Text(s.label, style: theme.textTheme.bodySmall?.copyWith(fontSize: 13)),
+                      const SizedBox(height: 3),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(2),
                         child: LinearProgressIndicator(
