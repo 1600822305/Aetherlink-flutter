@@ -26,9 +26,17 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 /// turning 自定义复制面板 off falls back to the system adaptive menu (which
 /// carries third-party Process Text entries like 问AI).
 class MessageSelectionArea extends ConsumerStatefulWidget {
-  const MessageSelectionArea({required this.child, super.key});
+  const MessageSelectionArea({
+    required this.child,
+    this.allowedItemIds,
+    super.key,
+  });
 
   final Widget child;
+
+  /// 限定复制面板可出现的操作 id（与用户配置取交集，顺序仍按用户配置）。
+  /// null 表示不限制。用于不适合「引用 / 分享」的场景（如终端选择模式）。
+  final Set<String>? allowedItemIds;
 
   static final Set<_MessageSelectionAreaState> _mounted =
       <_MessageSelectionAreaState>{};
@@ -118,9 +126,12 @@ class _MessageSelectionAreaState extends ConsumerState<MessageSelectionArea> {
         selectableRegionState: region,
       );
     }
+    final allowed = widget.allowedItemIds;
     final ids = [
       for (final id in settings.enabledItemIds ?? kDefaultSelectionMenuItemIds)
-        if (selectionMenuSpec(id) != null) id,
+        if (selectionMenuSpec(id) != null &&
+            (allowed == null || allowed.contains(id)))
+          id,
     ];
     if (ids.isEmpty) return const SizedBox.shrink();
     final anchors = region.contextMenuAnchors;

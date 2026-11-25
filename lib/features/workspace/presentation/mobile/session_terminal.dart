@@ -10,7 +10,9 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:xterm/xterm.dart';
 
+import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
+import 'package:aetherlink_flutter/shared/domain/selection_menu_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 复制当前选区（长按拖拽选中后点复制键）。
@@ -21,7 +23,9 @@ Future<void> copyTerminalSelection(
 ) async {
   final range = controller.selection;
   if (range == null) {
-    AppToast.info(context, '先长按选中要复制的内容');
+    if (!TerminalSelectionMenu.enterSelectMode(controller)) {
+      AppToast.info(context, '先长按选中要复制的内容');
+    }
     return;
   }
   final text = terminal.buffer.getText(range);
@@ -44,162 +48,185 @@ Future<void> pasteClipboardToTerminal(
   terminal.paste(text);
 }
 
-/// 终端选区浮动菜单：长按选中（或拖拽扩展选区）松手后，在手指附近弹出
-/// 「复制 / 粘贴 / 全选」。点按终端其他位置、选区被清空时自动收起。
+/// 终端「选择文本」模式：交互与聊天消息一致。
+///
+/// xterm 是画布渲染，没有系统文本选区（手柄 / 放大镜 / 复制面板）。这里在
+/// 长按选中（或点快捷栏「复制」）时，把终端缓冲区转成等宽纯文本覆盖在终端
+/// 上，外面包聊天同款 [MessageSelectionArea]：系统选区手柄可拖、复制面板
+/// （复制 / 全选 / 引用 / 分享，跟随 外观设置 → 复制面板 配置）完全复用。
+/// 点「完成」或返回键退出，回到正常终端。
 class TerminalSelectionMenu extends StatefulWidget {
   const TerminalSelectionMenu({
     super.key,
     required this.terminal,
     required this.controller,
-    required this.child,
+    required this.builder,
+    this.fontSize = 13,
   });
 
   final Terminal terminal;
   final TerminalController controller;
-  final Widget child;
+  final Widget Function(GlobalKey<TerminalViewState> viewKey) builder;
+  final double fontSize;
+
+  /// controller → 已挂载的选择层，供快捷栏「复制」键在无选区时进入选择模式。
+  static final Map<TerminalController, _TerminalSelectionMenuState> _byController =
+      {};
+
+  /// 进入选择模式；没有挂载对应选择层时返回 false。
+  static bool enterSelectMode(TerminalController controller) {
+    final state = _byController[controller];
+    if (state == null || !state.mounted) return false;
+    state._enter();
+    return true;
+  }
 
   @override
   State<TerminalSelectionMenu> createState() => _TerminalSelectionMenuState();
 }
 
 class _TerminalSelectionMenuState extends State<TerminalSelectionMenu> {
-  Offset? _menuAt;
-  Offset? _lastPointer;
+  /// 选择模式最多展示的尾部行数（全量上万行的单个 Text 选区太重）。
+  static const _maxLines = 3000;
+
+  final _viewKey = GlobalKey<TerminalViewState>();
+  final _scroll = ScrollController();
+  String? _text; // 非 null 即处于选择模式
 
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onSelectionChanged);
+    _attach(widget.controller);
   }
 
   @override
   void didUpdateWidget(covariant TerminalSelectionMenu oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onSelectionChanged);
-      widget.controller.addListener(_onSelectionChanged);
-      _menuAt = null;
+      _detach(oldWidget.controller);
+      _attach(widget.controller);
+      _text = null;
     }
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onSelectionChanged);
+    _detach(widget.controller);
+    _scroll.dispose();
     super.dispose();
   }
 
-  void _onSelectionChanged() {
-    if (widget.controller.selection == null && _menuAt != null) {
-      setState(() => _menuAt = null);
+  void _attach(TerminalController c) {
+    c.addListener(_onSelectionChanged);
+    TerminalSelectionMenu._byController[c] = this;
+  }
+
+  void _detach(TerminalController c) {
+    c.removeListener(_onSelectionChanged);
+    if (TerminalSelectionMenu._byController[c] == this) {
+      TerminalSelectionMenu._byController.remove(c);
     }
   }
 
-  void _onPointerDown(PointerDownEvent e) {
-    _lastPointer = e.localPosition;
-    if (_menuAt != null) setState(() => _menuAt = null);
+  // xterm 长按产生选区 → 转入选择模式（xterm 自己的选区随即清掉）。
+  void _onSelectionChanged() {
+    if (_text == null && widget.controller.selection != null) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _text == null) _enter();
+      });
+    }
   }
 
-  void _onPointerUp(PointerUpEvent e) {
-    _lastPointer = e.localPosition;
-    // 等 xterm 手势处理完本次抬起再判断是否留下了选区。
+  void _enter() {
+    widget.controller.clearSelection();
+    var lines = widget.terminal.buffer.getText().split('\n');
+    // 去掉行尾补齐空格与末尾空行。
+    lines = [for (final l in lines) l.trimRight()];
+    while (lines.isNotEmpty && lines.last.isEmpty) {
+      lines.removeLast();
+    }
+    if (lines.length > _maxLines) {
+      lines = lines.sublist(lines.length - _maxLines);
+    }
+    HapticFeedback.selectionClick();
+    setState(() => _text = lines.join('\n'));
+    // 默认停在底部（与终端当前视口一致的最新输出）。
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (widget.controller.selection != null) {
-        HapticFeedback.selectionClick();
-        setState(() => _menuAt = _lastPointer);
-      }
+      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
   }
 
-  Future<void> _copy() async {
-    setState(() => _menuAt = null);
-    await copyTerminalSelection(context, widget.terminal, widget.controller);
-  }
-
-  Future<void> _paste() async {
-    setState(() => _menuAt = null);
-    widget.controller.clearSelection();
-    await pasteClipboardToTerminal(context, widget.terminal);
-  }
-
-  void _selectAll() {
-    final buffer = widget.terminal.buffer;
-    widget.controller.setSelection(
-      buffer.createAnchor(0, 0),
-      buffer.createAnchor(widget.terminal.viewWidth, buffer.height - 1),
-    );
-    setState(() {}); // 菜单保持显示，位置不变。
-  }
+  void _exit() => setState(() => _text = null);
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final at = _menuAt;
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: Listener(
-                behavior: HitTestBehavior.translucent,
-                onPointerDown: _onPointerDown,
-                onPointerUp: _onPointerUp,
-                child: widget.child,
+    final text = _text;
+    final terminalView = widget.builder(_viewKey);
+    if (text == null) return terminalView;
+    final theme = Theme.of(context);
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _exit();
+      },
+      child: Stack(
+        children: [
+          // 保留终端在下层（不销毁、不断开），只是被覆盖。
+          Positioned.fill(child: ExcludeFocus(child: terminalView)),
+          Positioned.fill(
+            child: ColoredBox(
+              color: const Color(0xFF000000),
+              child: Column(
+                children: [
+                  Container(
+                    height: 36,
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Row(
+                      children: [
+                        Icon(LucideIcons.textSelect,
+                            size: 16, color: theme.colorScheme.onSurface),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '选择文本 · 长按拖动选区',
+                            style: theme.textTheme.labelMedium,
+                          ),
+                        ),
+                        TextButton(onPressed: _exit, child: const Text('完成')),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Scrollbar(
+                      controller: _scroll,
+                      child: SingleChildScrollView(
+                        controller: _scroll,
+                        padding: const EdgeInsets.all(8),
+                        child: MessageSelectionArea(
+                          allowedItemIds: const {
+                            kSelectionMenuCopy,
+                            kSelectionMenuSelectAll,
+                          },
+                          child: Text(
+                            text,
+                            softWrap: true,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: widget.fontSize,
+                              height: 1.25,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            if (at != null) _buildMenu(at, constraints.biggest),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildMenu(Offset at, Size size) {
-    const menuWidth = 216.0;
-    const menuHeight = 40.0;
-    const gap = 48.0; // 避开手指遮挡
-    final left = (at.dx - menuWidth / 2).clamp(4.0, size.width - menuWidth - 4);
-    var top = at.dy - menuHeight - gap;
-    if (top < 4) top = at.dy + gap; // 上方放不下则放到下方
-    top = top.clamp(4.0, size.height - menuHeight - 4);
-    return Positioned(
-      left: left.toDouble(),
-      top: top.toDouble(),
-      width: menuWidth,
-      height: menuHeight,
-      child: Material(
-        color: const Color(0xFF2C2C2E),
-        elevation: 6,
-        borderRadius: BorderRadius.circular(8),
-        child: Row(
-          children: [
-            _MenuItem(label: '复制', onTap: _copy),
-            _MenuItem(label: '粘贴', onTap: _paste),
-            _MenuItem(label: '全选', onTap: _selectAll),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MenuItem extends StatelessWidget {
-  const _MenuItem({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
-        ),
+        ],
       ),
     );
   }

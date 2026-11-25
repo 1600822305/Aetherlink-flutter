@@ -160,8 +160,9 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
               child: TerminalSelectionMenu(
                 terminal: view.terminal,
                 controller: view.controller,
-                child: TerminalView(
+                builder: (viewKey) => TerminalView(
                   view.terminal,
+                  key: viewKey,
                   controller: view.controller,
                   focusNode: view.focusNode,
                   textStyle: const TerminalStyle(fontSize: 13),

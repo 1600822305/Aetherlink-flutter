@@ -730,8 +730,10 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
             child: TerminalSelectionMenu(
               terminal: aiView.terminal,
               controller: aiView.controller,
-              child: TerminalView(
+              fontSize: fontSize,
+              builder: (viewKey) => TerminalView(
                 aiView.terminal,
+                key: viewKey,
                 controller: aiView.controller,
                 focusNode: aiView.focusNode,
                 textStyle: textStyle,
@@ -769,8 +771,10 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
                   TerminalSelectionMenu(
                     terminal: t.terminal,
                     controller: t.controller,
-                    child: TerminalView(
+                    fontSize: fontSize,
+                    builder: (viewKey) => TerminalView(
                       t.terminal,
+                      key: viewKey,
                       controller: t.controller,
                       focusNode: t.focusNode,
                       textStyle: textStyle,
