@@ -59,9 +59,9 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
   /// Already-added model ids the user toggled off for removal.
   final Set<String> _removed = {};
 
-  /// Browse-mode expansion choices. While searching, groups are force-expanded
-  /// and collapse is disabled, so these only ever reflect the user's explicit
-  /// browse-state preference — never polluted by the temporary search view.
+  /// Explicit per-group expansion overrides. Groups without an entry follow
+  /// the contextual default (expanded while searching or when it's the only
+  /// group); once the user taps a header, that choice always wins.
   final Map<String, bool> _expansionOverrides = {};
   final Map<String, ModelCapabilities?> _capsCache = {};
 
@@ -204,10 +204,10 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final grouped = _groupedModels;
-    final isSearching = _searchTerm.isNotEmpty;
-    // A lone group defaults to expanded so its models aren't hidden behind a
-    // collapsed header; searching force-expands everything (handled below).
-    final defaultExpanded = grouped.length == 1;
+    // Default to expanded while searching or when there's a single group, so
+    // results aren't hidden behind collapsed headers. An explicit tap on a
+    // group header overrides this default.
+    final defaultExpanded = _searchTerm.isNotEmpty || grouped.length == 1;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -264,10 +264,8 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
                             return _GroupSection(
                               groupName: groupName,
                               models: models,
-                              isExpanded: isSearching ||
-                                  (_expansionOverrides[groupName] ??
-                                      defaultExpanded),
-                              collapsible: !isSearching,
+                              isExpanded: _expansionOverrides[groupName] ??
+                                  defaultExpanded,
                               isFullySelected: _isGroupFullySelected(models),
                               isModelSelected: _isModelSelected,
                               isExisting: _isExisting,
@@ -478,7 +476,6 @@ class _GroupSection extends StatelessWidget {
     required this.groupName,
     required this.models,
     required this.isExpanded,
-    required this.collapsible,
     required this.isFullySelected,
     required this.isModelSelected,
     required this.isExisting,
@@ -491,11 +488,6 @@ class _GroupSection extends StatelessWidget {
   final String groupName;
   final List<LlmModelInfo> models;
   final bool isExpanded;
-
-  /// Whether the header responds to taps and shows a chevron. False while
-  /// searching: the filtered list is a flat result view, not a browsable tree,
-  /// so expansion is forced and the affordance is hidden.
-  final bool collapsible;
   final bool isFullySelected;
   final bool Function(String) isModelSelected;
   final bool Function(String) isExisting;
@@ -514,24 +506,22 @@ class _GroupSection extends StatelessWidget {
       children: [
         // Group header
         InkWell(
-          onTap: collapsible ? onToggleExpand : null,
+          onTap: onToggleExpand,
           borderRadius: BorderRadius.circular(10),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
             child: Row(
               children: [
-                if (collapsible) ...[
-                  AnimatedRotation(
-                    turns: isExpanded ? 0.25 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      Icons.chevron_right,
-                      size: 20,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+                AnimatedRotation(
+                  turns: isExpanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(width: 6),
-                ],
+                ),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text.rich(
                     TextSpan(
