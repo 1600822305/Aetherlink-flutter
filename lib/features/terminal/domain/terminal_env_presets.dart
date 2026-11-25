@@ -212,3 +212,91 @@ Set<String> parseBatchCheckOutput(String stdout) {
       .where((id) => id.isNotEmpty)
       .toSet();
 }
+
+// ===== 包管理扩展：升级 / 卸载 / 自定义包 / 系统维护 =====
+
+/// 合法的包名（apk / apt 通用）：字母数字开头，可含 . + _ - 。
+final RegExp kPackageNamePattern = RegExp(r'^[A-Za-z0-9][A-Za-z0-9.+_-]*$');
+
+/// 把用户输入的自定义包名拆分并校验；有非法项时返回 null。
+List<String>? parseCustomPackageNames(String input) {
+  final names = input
+      .split(RegExp(r'[\s,，;；]+'))
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
+  if (names.isEmpty) return null;
+  if (names.any((n) => !kPackageNamePattern.hasMatch(n))) return null;
+  return names;
+}
+
+/// 安装 [newNames]、升级 [upgradeNames] 合成一条命令（任一为空则省略）。
+String installOrUpgradeCommandFor(
+  TerminalDistro distro, {
+  List<String> newNames = const [],
+  List<String> upgradeNames = const [],
+}) {
+  final parts = <String>[];
+  switch (distro) {
+    case TerminalDistro.alpine:
+      if (newNames.isNotEmpty) parts.add('apk add ${newNames.join(' ')}');
+      if (upgradeNames.isNotEmpty) {
+        parts.add('apk add -u ${upgradeNames.join(' ')}');
+      }
+    case TerminalDistro.ubuntu:
+      parts.add('apt-get update');
+      if (newNames.isNotEmpty) {
+        parts.add('apt-get install -y ${newNames.join(' ')}');
+      }
+      if (upgradeNames.isNotEmpty) {
+        parts.add('apt-get install --only-upgrade -y ${upgradeNames.join(' ')}');
+      }
+  }
+  return parts.join(' && ');
+}
+
+/// 卸载命令。
+String uninstallCommandFor(TerminalDistro distro, List<String> names) =>
+    switch (distro) {
+      TerminalDistro.alpine => 'apk del ${names.join(' ')}',
+      TerminalDistro.ubuntu => 'apt-get remove -y ${names.join(' ')}',
+    };
+
+/// 升级整个系统。
+String systemUpgradeCommandFor(TerminalDistro distro) => switch (distro) {
+  TerminalDistro.alpine => 'apk update && apk upgrade',
+  TerminalDistro.ubuntu => 'apt-get update && apt-get upgrade -y',
+};
+
+/// 清理包管理器缓存（不联网，可静默执行）。
+String cleanCacheCommandFor(TerminalDistro distro) => switch (distro) {
+  TerminalDistro.alpine => 'apk cache clean >/dev/null 2>&1; rm -rf /var/cache/apk/*; true',
+  TerminalDistro.ubuntu => 'apt-get clean; rm -rf /var/lib/apt/lists/*; true',
+};
+
+/// 一次探测拿到概览信息：每行 `KEY=value`。
+String overviewProbeCommandFor(TerminalDistro distro) {
+  final upgradable = switch (distro) {
+    TerminalDistro.alpine =>
+      "apk version -l '<' 2>/dev/null | tail -n +2 | wc -l",
+    TerminalDistro.ubuntu =>
+      'apt list --upgradable 2>/dev/null | grep -c upgradable',
+  };
+  return [
+    r'. /etc/os-release 2>/dev/null; echo "OS=$PRETTY_NAME"',
+    'echo "ARCH=\$(uname -m)"',
+    'echo "UPGRADABLE=\$($upgradable)"',
+    r'echo "SDCARD=$( [ -d /sdcard ] && echo 1 || echo 0 )"',
+  ].join('; ');
+}
+
+/// 解析 [overviewProbeCommandFor] 输出。
+Map<String, String> parseOverviewOutput(String stdout) {
+  final map = <String, String>{};
+  for (final line in stdout.split('\n')) {
+    final i = line.indexOf('=');
+    if (i <= 0) continue;
+    map[line.substring(0, i).trim()] = line.substring(i + 1).trim();
+  }
+  return map;
+}
