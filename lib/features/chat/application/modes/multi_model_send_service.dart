@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/world_book_access.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
@@ -18,6 +19,7 @@ import 'package:aetherlink_flutter/features/chat/application/modes/chat_mode_con
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/chat_error_capture.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/llm_request_params.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/world_book_request_builder.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/chat_error.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
@@ -29,10 +31,12 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.
 import 'package:aetherlink_flutter/features/chat/domain/entities/multi_model_message_style.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message_segment.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/app/di/model_combo_access.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn.dart';
 
 /// One assistant sibling of a multi-model turn: the chosen model and the
 /// streaming message/block/view created for it. Used by [sendMultiModel] to
@@ -221,6 +225,13 @@ class MultiModelSendService {
         baseIds: _ctx.ref.read(mountedKnowledgeBasesProvider),
         query: trimmed,
       );
+      // 世界书: scanned + timer-advanced exactly once for the shared user turn;
+      // every sibling gets the same entries (fair comparison, one tick).
+      final worldBook = await _ctx.worldBook.evaluate(
+        contextViews,
+        topicId: topicId,
+        userMessageId: userMessageId,
+      );
 
       // 5. Stream every sibling in parallel; each keeps the turn alive
       //    (finalizeTurn: false) so the others stay visible until all settle.
@@ -238,6 +249,7 @@ class MultiModelSendService {
             contextViews: contextViews,
             memInjection: memInjection,
             kbInjection: kbInjection,
+            worldBook: worldBook,
           ),
       ]);
     } on Object catch (error, stackTrace) {
@@ -278,12 +290,14 @@ class MultiModelSendService {
     required ChatMemoryInjection memInjection,
     required ChatKnowledgeInjection kbInjection,
     required LlmParameterFields params,
+    required WorldBookTurn worldBook,
   }) async {
     try {
       final effective = sibling.effective;
       final provider = sibling.current.provider;
-      final messages = await _ctx.buildLlmMessages(
+      final messages = await _ctx.worldBook.inject(
         contextViews,
+        worldBook,
         chatModel: effective,
         regexRules: regexRules,
         toolMode: mcp.mode,
@@ -300,6 +314,7 @@ class MultiModelSendService {
             modelName: effective.name,
             modelId: effective.id,
             providerName: provider.name,
+            worldBook: worldBook,
           ),
         ),
         messages: messages,
@@ -352,6 +367,11 @@ class MultiModelSendService {
             messageId: sibling.assistantMessageId,
             createdAt: sibling.assistantTime,
             injection: kbInjection,
+          ),
+          ...WorldBookRequestBuilder.injectionBlocks(
+            worldBook,
+            messageId: sibling.assistantMessageId,
+            createdAt: sibling.assistantTime,
           ),
         ],
         finalizeTurn: false,
@@ -634,14 +654,24 @@ class MultiModelSendService {
       ctx.contextCount,
     );
     final regexRules = await _ctx.sendingRegexRules();
-    final llmMessages = [
+    final worldBook = await _ctx.worldBook.evaluate(
+      contextViews,
+      topicId: topicId,
+      userMessageId: userMessageId,
+    );
+    final llmMessages = applyWorldBookMessages([
       for (final view in contextViews)
         if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-          LlmMessage(
+          LlmMessageSegment(
             role: view.role,
-            content: _ctx.requestContent(view, regexRules: regexRules),
+            messages: [
+              LlmMessage(
+                role: view.role,
+                content: _ctx.requestContent(view, regexRules: regexRules),
+              ),
+            ],
           ),
-    ];
+    ], worldBook);
 
     final gatewayFactory = _ctx.ref.read(llmGatewayFactoryProvider);
     final thinkingGateway = gatewayFactory.forModel(thinking.model);
@@ -653,6 +683,7 @@ class MultiModelSendService {
         modelName: comboLabel,
         modelId: comboModel.id,
         providerName: '模型组合',
+        worldBook: worldBook,
       ),
     );
 

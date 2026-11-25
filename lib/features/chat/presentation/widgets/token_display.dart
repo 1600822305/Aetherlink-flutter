@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/token_estimate.dart';
 
@@ -52,7 +53,7 @@ class _TokenDisplayState extends ConsumerState<TokenDisplay> {
     }
     var total = 0;
     for (final message in messages) {
-      total += estimateTokens(message.text);
+      total += estimateTokens(message.text) + _injectedTokens(message);
     }
     return total;
   }
@@ -60,7 +61,17 @@ class _TokenDisplayState extends ConsumerState<TokenDisplay> {
   int _currentMessageTokens() {
     final usage = widget.view.usage;
     if (usage != null && usage.totalTokens > 0) return usage.totalTokens;
-    return estimateTokens(widget.view.text);
+    return estimateTokens(widget.view.text) + _injectedTokens(widget.view);
+  }
+
+  /// 世界书 text injected into [view]'s request (provider usage already counts
+  /// it; this only feeds the estimate fallback).
+  static int _injectedTokens(ChatMessageView view) {
+    var tokens = 0;
+    for (final block in view.blocks) {
+      if (block is WorldBookInjectionBlock) tokens += block.estimatedTokens;
+    }
+    return tokens;
   }
 
   /// 1K/1.2K/1.0M-style abbreviation, matching the web `formatTokenCount`.

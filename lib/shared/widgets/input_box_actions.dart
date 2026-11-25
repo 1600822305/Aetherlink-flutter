@@ -42,6 +42,11 @@ abstract class InputBoxActions {
   /// run-time state (e.g. 思考程度 shows the current effort level's icon).
   /// `null` keeps the static catalog glyph.
   IconData? iconOverride(InputBoxAction action);
+
+  /// Optional run-time secondary text for a menu row (e.g. the 世界书 row's
+  /// 「2 本 · 15 条」 count). `null` keeps the catalog subtitle. The menu rows
+  /// have no badge slot, so counts surface here.
+  String? subtitleOverride(InputBoxAction action) => null;
 }
 
 /// The inert port used by hosts with no wired behavior — the appearance
@@ -61,4 +66,7 @@ class NoInputBoxActions implements InputBoxActions {
 
   @override
   IconData? iconOverride(InputBoxAction action) => null;
+
+  @override
+  String? subtitleOverride(InputBoxAction action) => null;
 }

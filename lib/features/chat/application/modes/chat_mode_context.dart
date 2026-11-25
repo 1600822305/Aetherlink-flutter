@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/llm_request_params.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/send/world_book_request_builder.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
@@ -15,6 +16,7 @@ import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_reposi
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn.dart';
 
 /// Signature of [TurnStreamBinder.streamInto] as exposed by the controller:
 /// drives one assistant reply's gateway stream + MCP tool-call loop.
@@ -63,6 +65,7 @@ class ChatModeContext {
     required this.systemFor,
     required this.buildSystemPrompt,
     required this.buildSystemPromptWith,
+    required WorldBookRequestBuilder Function() worldBook,
     required this.joinInjectionSections,
     required this.knowledgeReferenceBlocks,
     required this.memoryInjectionBlocks,
@@ -82,6 +85,7 @@ class ChatModeContext {
     required this.deleteMessage,
     required this.regenerate,
   }) : _repoOf = repo,
+       _worldBookOf = worldBook,
        _assistantIdOf = assistantId,
        _topicIdOf = topicId,
        _snapshotOf = snapshot;
@@ -91,8 +95,13 @@ class ChatModeContext {
   final String Function() _assistantIdOf;
   final String? Function() _topicIdOf;
   final ChatState? Function() _snapshotOf;
+  final WorldBookRequestBuilder Function() _worldBookOf;
 
   Ref get ref => _refOf();
+
+  /// 世界书 evaluation + injection, shared so a multi-model turn is evaluated
+  /// once and every sibling receives the same entries.
+  WorldBookRequestBuilder get worldBook => _worldBookOf();
   ChatRepository get repo => _repoOf();
   String get assistantId => _assistantIdOf();
   String? get topicId => _topicIdOf();
@@ -135,6 +144,7 @@ class ChatModeContext {
     required String modelName,
     required String modelId,
     required String providerName,
+    WorldBookTurn worldBook,
   })
   buildSystemPrompt;
   final Future<String?> Function(
@@ -142,6 +152,7 @@ class ChatModeContext {
     required String modelName,
     required String modelId,
     required String providerName,
+    WorldBookTurn worldBook,
   })
   buildSystemPromptWith;
   final String? Function(String? a, String? b) joinInjectionSections;
