@@ -16,6 +16,12 @@ import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.d
 ///
 /// [entries] must already be priority-sorted; that order is kept inside every
 /// merged message. Nothing triggered → inputs come back unchanged.
+///
+/// [kWorldBookMergeAdjacentUser] is the production default for
+/// `mergeAdjacentUser` (some legacy OpenAI-compatible endpoints reject two
+/// consecutive user turns); the pure function itself defaults to `false`.
+const bool kWorldBookMergeAdjacentUser = true;
+
 abstract final class WorldBookInjector {
   /// [system] with the before / after-system entries joined in. A null or
   /// empty [system] yields just the world book text.
@@ -43,10 +49,15 @@ abstract final class WorldBookInjector {
   ///   clamped to slot 0 when the history has fewer user turns.
   ///
   /// Within one slot: top, then at-depth (deeper first), then bottom.
+  ///
+  /// [mergeAdjacentUser] folds each injected user message into the plain user
+  /// turn right after it (or, failing that, right before it) when that turn is
+  /// a user-role segment — never into a tool segment, never into an assistant.
   static List<LlmMessage> injectMessages(
     List<LlmMessageSegment> segments,
-    List<WorldBookEntry> entries,
-  ) {
+    List<WorldBookEntry> entries, {
+    bool mergeAdjacentUser = false,
+  }) {
     final chat = [
       for (final e in entries)
         if (_isChatPosition(e.position) && e.content.trim().isNotEmpty) e,
@@ -90,10 +101,69 @@ abstract final class WorldBookInjector {
       _merge(_at(chat, WorldBookInjectionPosition.bottomOfChat)),
     );
 
+    if (!mergeAdjacentUser) {
+      return [
+        for (var i = 0; i <= length; i++) ...[
+          ...slots[i],
+          if (i < length) ...segments[i].messages,
+        ],
+      ];
+    }
+    return _fold(segments, slots);
+  }
+
+  /// Folds a slot's injected user messages (joined in order) into the
+  /// neighbouring plain user segment: prepended to the next segment's first
+  /// message, else — only when the slot holds no assistant injection, so the
+  /// relative order is kept — appended to the previous segment's last message,
+  /// else kept standalone. Tool-result segments are never touched.
+  static List<LlmMessage> _fold(
+    List<LlmMessageSegment> segments,
+    List<List<LlmMessage>> slots,
+  ) {
+    final length = segments.length;
+    final bodies = [for (final s in segments) List<LlmMessage>.of(s.messages)];
+    bool isPlainUser(int i) =>
+        i >= 0 &&
+        i < length &&
+        segments[i].role == MessageRole.user &&
+        bodies[i].isNotEmpty &&
+        bodies[i].every((m) => m.toolCallId == null);
+    final standalone = List<List<LlmMessage>>.generate(
+      length + 1,
+      (_) => <LlmMessage>[],
+    );
+    for (var slot = 0; slot <= length; slot++) {
+      final users = [
+        for (final m in slots[slot])
+          if (m.role == MessageRole.user) m.content,
+      ];
+      final others = [
+        for (final m in slots[slot])
+          if (m.role != MessageRole.user) m,
+      ];
+      final joined = users.join('\n\n');
+      if (users.isEmpty) {
+        standalone[slot].addAll(others);
+      } else if (isPlainUser(slot)) {
+        standalone[slot].addAll(others);
+        final first = bodies[slot].first;
+        bodies[slot][0] = first.copyWith(
+          content: '$joined\n\n${first.content}',
+        );
+      } else if (others.isEmpty && isPlainUser(slot - 1)) {
+        final prev = bodies[slot - 1];
+        prev[prev.length - 1] = prev.last.copyWith(
+          content: '${prev.last.content}\n\n$joined',
+        );
+      } else {
+        standalone[slot].addAll(slots[slot]);
+      }
+    }
     return [
       for (var i = 0; i <= length; i++) ...[
-        ...slots[i],
-        if (i < length) ...segments[i].messages,
+        ...standalone[i],
+        if (i < length) ...bodies[i],
       ],
     ];
   }

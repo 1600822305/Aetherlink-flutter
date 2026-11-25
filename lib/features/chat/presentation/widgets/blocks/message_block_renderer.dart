@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/ref
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/tool_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/media_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/summary_blocks.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/world_book_injection_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_changeset_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/thinking_block_view.dart';
@@ -190,6 +191,8 @@ class MessageBlockRenderer extends ConsumerWidget {
         return ContextSummaryBlockView(block: block);
       case MemoryInjectionBlock():
         return MemoryInjectionBlockView(block: block);
+      case WorldBookInjectionBlock():
+        return WorldBookInjectionBlockView(block: block);
     }
   }
 

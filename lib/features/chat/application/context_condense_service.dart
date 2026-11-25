@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/world_book_access.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
@@ -362,6 +363,11 @@ class ContextCondenseService {
       metadata: {'originalMessages': originalMessagesData},
     );
 
+    // 世界书 timers live on user-message metadata; carry the newest state of
+    // the compressed turns onto the summary so the clock does not reset.
+    final carried = worldBookStateToCarry([
+      for (final m in messagesToCompress) m.metadata,
+    ]);
     final summaryMessage = Message(
       id: summaryMessageId,
       role: MessageRole.assistant,
@@ -370,7 +376,9 @@ class ContextCondenseService {
       createdAt: summaryTime,
       status: MessageStatus.success,
       blocks: [summaryBlockId],
-      metadata: {'isSummary': true},
+      metadata: carried == null
+          ? {'isSummary': true}
+          : carried.writeTo({'isSummary': true}),
     );
 
     // Atomic transaction: delete old messages + save summary

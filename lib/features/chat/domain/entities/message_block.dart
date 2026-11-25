@@ -16,7 +16,7 @@ part 'message_block.g.dart';
 /// The message block discriminated union.
 ///
 /// One-to-one translation of `MessageBlock` (`src/shared/types/newMessage.ts`),
-/// a `BaseMessageBlock` plus its 15 variants. Modelled as a `sealed` union so
+/// a `BaseMessageBlock` plus its 15 variants (+ the app-only 世界书注入 block). Modelled as a `sealed` union so
 /// rendering is exhaustively checked at compile time. The `type` field is the
 /// JSON discriminator (wire values pinned via [FreezedUnionValue]); unknown
 /// wire types fall back to [UnknownBlock].
@@ -312,6 +312,26 @@ sealed class MessageBlock with _$MessageBlock {
     required int count,
     @Default(<String>[]) List<String> memories,
   }) = MemoryInjectionBlock;
+
+  /// 世界书 entries injected into this turn's request (`WORLD_BOOK_INJECTION`).
+  /// Like [MemoryInjectionBlock], an app-generated info block prepended to the
+  /// assistant message — the 对话内「本轮注入 N 条世界书」可展开块. [entries] holds
+  /// the triggered entry names in injection order; [estimatedTokens] is the
+  /// heuristic token cost of the injected text. Never sent to the model.
+  @FreezedUnionValue('world_book_injection')
+  const factory MessageBlock.worldBookInjection({
+    required String id,
+    required String messageId,
+    required MessageBlockStatus status,
+    @IsoDateTimeConverter() required DateTime createdAt,
+    @IsoDateTimeConverter() DateTime? updatedAt,
+    Model? model,
+    Map<String, dynamic>? metadata,
+    Map<String, dynamic>? error,
+    required int count,
+    @Default(<String>[]) List<String> entries,
+    @Default(0) int estimatedTokens,
+  }) = WorldBookInjectionBlock;
 
   factory MessageBlock.fromJson(Map<String, dynamic> json) =>
       _$MessageBlockFromJson(json);

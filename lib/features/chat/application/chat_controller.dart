@@ -29,6 +29,7 @@ import 'package:aetherlink_flutter/features/chat/application/modes/translate_sen
 import 'package:aetherlink_flutter/features/chat/application/send/turn_finisher.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/turn_stream_binder.dart';
 import 'package:aetherlink_flutter/features/chat/application/send/world_book_request_builder.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
@@ -172,6 +173,7 @@ class ChatController extends _$ChatController {
     systemFor: _systemFor,
     buildSystemPrompt: _buildSystemPrompt,
     buildSystemPromptWith: _buildSystemPromptWith,
+    worldBook: () => _worldBookRequest,
     joinInjectionSections: _joinInjectionSections,
     knowledgeReferenceBlocks: _knowledgeReferenceBlocks,
     memoryInjectionBlocks: _memoryInjectionBlocks,
@@ -569,6 +571,7 @@ class ChatController extends _$ChatController {
     final worldBook = await _worldBookRequest.build(
       contextViews,
       topicId: topicId,
+      userMessageId: userMessageId,
       chatModel: effective,
       regexRules: regexRules,
       toolMode: mcp.mode,
@@ -588,13 +591,12 @@ class ChatController extends _$ChatController {
       model: effective,
       system: _systemFor(
         mcp,
-        worldBook.system(
-          await _buildSystemPromptWith(
-            _joinInjectionSections(memInjection.section, kbInjection.section),
-            modelName: effective.name,
-            modelId: effective.id,
-            providerName: current.provider.name,
-          ),
+        await _buildSystemPromptWith(
+          _joinInjectionSections(memInjection.section, kbInjection.section),
+          modelName: effective.name,
+          modelId: effective.id,
+          providerName: current.provider.name,
+          worldBook: worldBook.turn,
         ),
       ),
       messages: messages,
@@ -648,6 +650,11 @@ class ChatController extends _$ChatController {
           messageId: assistantMessageId,
           createdAt: assistantTime,
           injection: kbInjection,
+        ),
+        ...WorldBookRequestBuilder.injectionBlocks(
+          worldBook.turn,
+          messageId: assistantMessageId,
+          createdAt: assistantTime,
         ),
       ],
     );
@@ -859,6 +866,8 @@ class ChatController extends _$ChatController {
     final worldBook = await _worldBookRequest.build(
       contextViews,
       topicId: target.topicId,
+      userMessageId: target.askId ??
+          WorldBookRequestBuilder.ownerUserId(views.sublist(0, index)),
       chatModel: effective,
       regexRules: regexRules,
       toolMode: mcp.mode,
@@ -868,12 +877,11 @@ class ChatController extends _$ChatController {
       model: effective,
       system: _systemFor(
         mcp,
-        worldBook.system(
-          await _buildSystemPrompt(
-            modelName: effective.name,
-            modelId: effective.id,
-            providerName: current.provider.name,
-          ),
+        await _buildSystemPrompt(
+          modelName: effective.name,
+          modelId: effective.id,
+          providerName: current.provider.name,
+          worldBook: worldBook.turn,
         ),
       ),
       messages: messages,
@@ -917,6 +925,11 @@ class ChatController extends _$ChatController {
       views: views,
       assistantView: assistantView,
       mcp: mcp,
+      leadingBlocks: WorldBookRequestBuilder.injectionBlocks(
+        worldBook.turn,
+        messageId: messageId,
+        createdAt: now,
+      ),
     );
   }
 
@@ -1046,6 +1059,7 @@ class ChatController extends _$ChatController {
     final worldBook = await _worldBookRequest.build(
       contextViews,
       topicId: userMessage.topicId,
+      userMessageId: messageId,
       chatModel: effective,
       regexRules: regexRules,
       toolMode: mcp.mode,
@@ -1055,12 +1069,11 @@ class ChatController extends _$ChatController {
       model: effective,
       system: _systemFor(
         mcp,
-        worldBook.system(
-          await _buildSystemPrompt(
-            modelName: effective.name,
-            modelId: effective.id,
-            providerName: current.provider.name,
-          ),
+        await _buildSystemPrompt(
+          modelName: effective.name,
+          modelId: effective.id,
+          providerName: current.provider.name,
+          worldBook: worldBook.turn,
         ),
       ),
       messages: messages,
@@ -1104,6 +1117,11 @@ class ChatController extends _$ChatController {
       views: views,
       assistantView: assistantView,
       mcp: mcp,
+      leadingBlocks: WorldBookRequestBuilder.injectionBlocks(
+        worldBook.turn,
+        messageId: assistantMessageId,
+        createdAt: now,
+      ),
     );
   }
 
@@ -1157,13 +1175,30 @@ class ChatController extends _$ChatController {
       ctx.contextCount,
     );
     final regexRules = await _sendingRegexRules();
-    final messages = await _buildLlmMessages(
+    // 世界书 is woven into the history only; the partial reply stays last so
+    // nothing is ever injected after the text being continued.
+    final worldBook = await _worldBookRequest.evaluate(
       [...history, views[msgIndex]],
-      chatModel: effective,
-      regexRules: regexRules,
-      dropEmptyAssistant: false,
-      toolMode: mcp.mode,
+      topicId: message.topicId,
+      userMessageId: message.askId ?? WorldBookRequestBuilder.ownerUserId(history),
     );
+    final messages = [
+      ...await _worldBookRequest.inject(
+        history,
+        worldBook,
+        chatModel: effective,
+        regexRules: regexRules,
+        toolMode: mcp.mode,
+        dropEmptyAssistant: false,
+      ),
+      ...await _buildLlmMessages(
+        [views[msgIndex]],
+        chatModel: effective,
+        regexRules: regexRules,
+        dropEmptyAssistant: false,
+        toolMode: mcp.mode,
+      ),
+    ];
 
     // Create a new block id for the continuation segment.
     final continuationBlockId = generateId('block');
@@ -1196,6 +1231,17 @@ class ChatController extends _$ChatController {
     await _streamInto(
       request: LlmChatRequest(
         model: effective,
+        // Continue used to send no system prompt at all (skills / memory /
+        // 世界书 were silently dropped); assemble it like regenerate does.
+        system: _systemFor(
+          mcp,
+          await _buildSystemPrompt(
+            modelName: effective.name,
+            modelId: effective.id,
+            providerName: current.provider.name,
+            worldBook: worldBook,
+          ),
+        ),
         messages: messages,
         maxTokens: ctx.maxTokens,
         temperature: params.temperature,
@@ -1635,10 +1681,12 @@ class ChatController extends _$ChatController {
     required String modelName,
     required String modelId,
     required String providerName,
+    WorldBookTurn worldBook = WorldBookTurn.none,
   }) => _systemPromptBuilder.buildSystemPrompt(
     modelName: modelName,
     modelId: modelId,
     providerName: providerName,
+    worldBook: worldBook,
   );
 
   /// Like [_buildSystemPrompt] but reuses a pre-resolved memory section;
@@ -1648,11 +1696,13 @@ class ChatController extends _$ChatController {
     required String modelName,
     required String modelId,
     required String providerName,
+    WorldBookTurn worldBook = WorldBookTurn.none,
   }) => _systemPromptBuilder.buildSystemPromptWith(
     memorySection,
     modelName: modelName,
     modelId: modelId,
     providerName: providerName,
+    worldBook: worldBook,
   );
 
   /// Assembles the [McpSetup] for the current turn (see [buildMcpSetup]);

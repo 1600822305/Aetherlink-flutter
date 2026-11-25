@@ -36,4 +36,6 @@ enum MessageBlockType {
   contextSummary,
   @JsonValue('memory_injection')
   memoryInjection,
+  @JsonValue('world_book_injection')
+  worldBookInjection,
 }

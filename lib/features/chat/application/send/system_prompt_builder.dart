@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
+import 'package:aetherlink_flutter/app/di/world_book_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
@@ -10,6 +11,7 @@ import 'package:aetherlink_flutter/shared/config/skill_prompt_builder.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn.dart';
 
 /// Assembles the system prompt for a conversation turn (the port of the web
 /// `apiPreparation` prompt pipeline): assistant 系统提示词 + 话题提示词 +
@@ -48,6 +50,7 @@ class SystemPromptBuilder {
     required String modelName,
     required String modelId,
     required String providerName,
+    WorldBookTurn worldBook = WorldBookTurn.none,
   }) async {
     final memorySection = await buildChatMemoryInjection(
       _ref,
@@ -58,16 +61,23 @@ class SystemPromptBuilder {
       modelName: modelName,
       modelId: modelId,
       providerName: providerName,
+      worldBook: worldBook,
     );
   }
 
   /// Like [buildSystemPrompt] but reuses a pre-resolved [memorySection] (from
   /// [collectChatMemoryInjection]) so the memory store is read once per turn.
+  ///
+  /// [worldBook]'s before / after-system entries wrap the persona (助手 + 话题 +
+  /// 技能) *before* placeholder substitution — so `{model_name}` etc. resolve
+  /// inside entries — and *before* the variables / memory sections, so
+  /// 「系统提示词之后」 sits right after the persona.
   Future<String?> buildSystemPromptWith(
     String? memorySection, {
     required String modelName,
     required String modelId,
     required String providerName,
+    WorldBookTurn worldBook = WorldBookTurn.none,
   }) async {
     final assistant = await _repo.getAssistant(_assistantIdOf());
     final assistantPrompt = assistant?.systemPrompt ?? '';
@@ -92,7 +102,7 @@ class SystemPromptBuilder {
 
     return _composeSystemPrompt(
       replaceSystemPromptPlaceholders(
-        base,
+        applyWorldBookSystem(base, worldBook) ?? '',
         modelName: modelName,
         modelId: modelId,
         assistantName: assistant?.name ?? '',

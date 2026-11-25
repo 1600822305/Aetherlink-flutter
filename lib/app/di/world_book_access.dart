@@ -8,8 +8,11 @@ import 'package:aetherlink_flutter/features/world_book/data/repositories/world_b
 import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_binding.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_repository.dart';
-import 'package:aetherlink_flutter/features/world_book/domain/world_book_selection.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_activation_state.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_entry.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_timed_selection.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_turn_state.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
@@ -36,14 +39,17 @@ WorldBookBinding worldBookBindingFor(Assistant? assistant, Topic? topic) =>
       topicBookIds: topic?.worldBookIds,
     );
 
-/// The entries one request triggers (P2：无计时器). [scanTexts] are the
-/// request's user / assistant view texts, oldest first. Returns
-/// [WorldBookTurn.none] without touching the store when nothing is bound.
+/// The entries one request triggers, with sticky / cooldown / delay applied
+/// (P3). [scanTexts] are the request's user / assistant view texts, oldest
+/// first; [clock] is this turn's inherited state + turn number (see
+/// [resolveWorldBookClock]). Returns [WorldBookTurn.none] without touching the
+/// store when nothing is bound.
 Future<WorldBookTurn> collectWorldBookTurn(
   Ref ref, {
   required Assistant? assistant,
   required Topic? topic,
   required List<String> scanTexts,
+  WorldBookClock? clock,
 }) async {
   final binding = worldBookBindingFor(assistant, topic);
   if (binding.ids.isEmpty) return WorldBookTurn.none;
@@ -52,20 +58,75 @@ Future<WorldBookTurn> collectWorldBookTurn(
     await ref.read(worldBookRepositoryProvider).getAll(),
   );
   if (books.isEmpty) return WorldBookTurn.none;
-  return WorldBookTurn(
-    selectTriggeredWorldBookEntries(books: books, scanTexts: scanTexts),
+  final result = selectTimedWorldBookEntries(
+    books: books,
+    scanTexts: scanTexts,
+    turn: clock?.turn ?? 1,
+    previous: clock?.previous ?? WorldBookActivationState.empty,
   );
+  return WorldBookTurn(result.entries, state: result.state);
 }
+
+/// [resolveWorldBookClock] over a path given as `(isUserTurn, isSummary,
+/// metadata)` nodes — re-exported so chat need not import world_book domain
+/// internals beyond the record type.
+WorldBookClock worldBookClockFor(List<WorldBookPathNode> ancestors) =>
+    resolveWorldBookClock(ancestors);
+
+/// [metadata] with [turn]'s timer state written under the activation key, or
+/// null when the turn carries no state (nothing bound → metadata untouched).
+Map<String, dynamic>? worldBookMetadataFor(
+  Map<String, dynamic>? metadata,
+  WorldBookTurn turn,
+) => turn.state?.writeTo(metadata);
+
+/// The newest timer state among compressed messages (oldest first), so the
+/// compression summary can inherit it.
+WorldBookActivationState? worldBookStateToCarry(
+  List<Map<String, dynamic>?> metadataOldestFirst,
+) => latestWorldBookState(metadataOldestFirst);
+
+/// The text a turn injects (system + chat positions), for token estimates and
+/// the 本轮注入 block.
+String worldBookInjectedText(WorldBookTurn turn) => [
+  for (final WorldBookEntry e in turn.triggered)
+    if (e.content.trim().isNotEmpty) e.content.trim(),
+].join('\n');
 
 /// [WorldBookInjector.injectSystem] for chat, which may not import the
 /// world_book application layer directly.
 String? applyWorldBookSystem(String? system, WorldBookTurn turn) =>
     turn.isEmpty ? system : WorldBookInjector.injectSystem(system, turn.triggered);
 
-/// [WorldBookInjector.injectMessages]; an empty [turn] just flattens.
+/// [WorldBookInjector.injectMessages]; an empty [turn] just flattens. Adjacent
+/// plain user turns are merged per [kWorldBookMergeAdjacentUser].
 List<LlmMessage> applyWorldBookMessages(
   List<LlmMessageSegment> segments,
   WorldBookTurn turn,
 ) => turn.isEmpty
     ? [for (final segment in segments) ...segment.messages]
-    : WorldBookInjector.injectMessages(segments, turn.triggered);
+    : WorldBookInjector.injectMessages(
+        segments,
+        turn.triggered,
+        mergeAdjacentUser: kWorldBookMergeAdjacentUser,
+      );
+
+/// The 扩展 menu's 世界书 status for a binding: whether any book is in effect,
+/// how many books, and how many of their entries are enabled.
+typedef WorldBookMenuStatus = ({bool isOn, int bookCount, int entryCount});
+
+/// Computes [WorldBookMenuStatus] for [assistant] / [topic] against the
+/// library [books]. Pure, so the chat-side provider (which owns the current
+/// topic / assistant) can derive it synchronously from loaded values.
+WorldBookMenuStatus worldBookMenuStatusOf(
+  Assistant? assistant,
+  Topic? topic,
+  List<WorldBook> books,
+) {
+  final active = activeWorldBooks(worldBookBindingFor(assistant, topic), books);
+  var entries = 0;
+  for (final book in active) {
+    entries += book.enabledEntryCount;
+  }
+  return (isOn: active.isNotEmpty, bookCount: active.length, entryCount: entries);
+}

@@ -214,6 +214,7 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
     final active = isClear ? _clearConfirm : widget.actions.isActive(action);
 
     final label = confirm ? '确认清空' : info.label;
+    final subtitle = widget.actions.subtitleOverride(action) ?? info.subtitle;
     final base = confirm
         ? kInputBoxClearConfirmColor
         : (info.color ?? theme.colorScheme.onSurface);
@@ -233,10 +234,10 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
         active: confirm,
       ),
       title: Text(label, style: const TextStyle(fontSize: 14)),
-      subtitle: info.subtitle == null
+      subtitle: subtitle == null
           ? null
           : Text(
-              info.subtitle!,
+              subtitle,
               style: TextStyle(
                 fontSize: 12,
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.6),

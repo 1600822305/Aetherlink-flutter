@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/chat/application/multi_model_mention
 import 'package:aetherlink_flutter/features/chat/application/composer/long_text_paste.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_actions.dart';
+import 'package:aetherlink_flutter/features/chat/application/world_book_menu_status.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -296,6 +297,9 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
       chatControllerProvider.select((a) => a.value?.isStreaming ?? false),
     );
     final attachments = ref.watch(composerAttachmentsProvider);
+    // Keeps the 世界书 menu status alive + fresh so ChatInputActions can read it
+    // synchronously for the 扩展 menu's 高亮 / 徽标.
+    ref.watch(worldBookMenuStatusProvider);
     // 建议模型 follow-up suggestions for the latest reply; tap sends, long-press
     // fills the field. Hidden while streaming (also cleared in state then).
     final suggestions = isStreaming

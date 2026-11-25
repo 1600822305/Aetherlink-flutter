@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/application/parameter_settings_
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/application/world_book_menu_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/knowledge_mount_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_panel/mcp_quick_panel_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sheets/multi_model_selector_sheet.dart';
@@ -72,6 +73,9 @@ class ChatInputActions implements InputBoxActions {
     InputBoxAction.reasoningEffort => isReasoningEffortActive(_ref),
     InputBoxAction.knowledge =>
       _ref.read(mountedKnowledgeBasesProvider).isNotEmpty,
+    // Synchronous read of a derived provider (loaded values only) — never
+    // awaits the async current topic in build.
+    InputBoxAction.worldBook => _ref.read(worldBookMenuStatusProvider).isOn,
     _ => false,
   };
 
@@ -84,6 +88,17 @@ class ChatInputActions implements InputBoxActions {
         (params.getParameterValue('reasoningEffort') as String?) ?? 'medium';
     final enabled = params.isParameterEnabled('reasoningEffort');
     return reasoningEffortIcon(enabled ? value : 'off');
+  }
+
+  /// 世界书 row: the 激活条目数徽标 as subtitle text (menu rows have no badge
+  /// slot). Shows the effective books / enabled entries, or 未启用.
+  @override
+  String? subtitleOverride(InputBoxAction action) {
+    if (action != InputBoxAction.worldBook) return null;
+    final status = _ref.read(worldBookMenuStatusProvider);
+    return status.isOn
+        ? '已启用 ${status.bookCount} 本 · ${status.entryCount} 条'
+        : '未启用';
   }
 
   /// Every action the chat host knows about is interactive: it either runs (open
