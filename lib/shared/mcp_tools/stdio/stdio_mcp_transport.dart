@@ -51,8 +51,13 @@ class StdioMcpTransport implements McpTransport {
       if (_closed) return;
       _closed = true;
       final code = _session.exitCode;
-      _onLog?.call('[进程退出${code != null ? '，退出码 $code' : ''}]');
-      if (!_controller.isClosed) _controller.close();
+      final reason = '进程退出${code != null ? '，退出码 $code' : ''}';
+      _onLog?.call('[$reason]');
+      if (!_controller.isClosed) {
+        // 先报错再关流：在途请求立即带着退出原因失败，而不是干等到超时。
+        _controller.addError(McpTransportException('stdio MCP $reason'));
+        _controller.close();
+      }
     }));
   }
 

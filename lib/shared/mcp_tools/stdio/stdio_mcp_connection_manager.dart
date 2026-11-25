@@ -43,6 +43,8 @@ class StdioMcpConnectionManager {
   final _status = <String, StdioMcpStatus>{};
   final _errors = <String, String>{};
   final _logs = <String, Queue<String>>{};
+  final _generations = <String, int>{};
+  bool _isDisposed = false;
   final _changes = StreamController<String>.broadcast();
 
   /// Whether [server] runs over stdio.
@@ -84,6 +86,9 @@ class StdioMcpConnectionManager {
 
   /// Stops [server]'s process and drops it from the cache.
   Future<void> closeServer(McpServer server) async {
+    // 作废进行中的启动：它完成后自行关掉进程，不会再被缓存。
+    _generations[server.id] = (_generations[server.id] ?? 0) + 1;
+    _pending.remove(server.id);
     final client = _clients.remove(server.id);
     await client?.close();
     _setStatus(server.id, StdioMcpStatus.stopped);
@@ -98,6 +103,7 @@ class StdioMcpConnectionManager {
 
   /// Closes every cached connection (owning provider disposes).
   Future<void> dispose() async {
+    _isDisposed = true;
     final clients = _clients.values.toList();
     _clients.clear();
     _pending.clear();
@@ -114,20 +120,23 @@ class StdioMcpConnectionManager {
     if (pending != null) return pending;
     final future = _connect(server);
     _pending[server.id] = future;
-    return future.whenComplete(() => _pending.remove(server.id));
+    return future.whenComplete(() {
+      if (identical(_pending[server.id], future)) _pending.remove(server.id);
+    });
   }
 
   Future<RemoteMcpClient> _connect(McpServer server) async {
-    final command = server.command?.trim();
-    if (command == null || command.isEmpty) {
-      throw const McpTransportException('stdio MCP 服务器缺少启动命令');
-    }
-    final workspaceId = server.workspaceId?.trim();
-    if (workspaceId == null || workspaceId.isEmpty) {
-      throw const McpTransportException('stdio MCP 服务器未选择运行环境（工作区）');
-    }
+    final generation = _generations[server.id] ?? 0;
     _setStatus(server.id, StdioMcpStatus.starting);
     try {
+      final command = server.command?.trim();
+      if (command == null || command.isEmpty) {
+        throw const McpTransportException('stdio MCP 服务器缺少启动命令');
+      }
+      final workspaceId = server.workspaceId?.trim();
+      if (workspaceId == null || workspaceId.isEmpty) {
+        throw const McpTransportException('stdio MCP 服务器未选择运行环境（工作区）');
+      }
       final backend = await resolveWorkspaceById(_ref, workspaceId);
       if (!backend.capabilities.canExec) {
         throw const McpTransportException('所选工作区后端不支持执行命令（如 SAF）');
@@ -156,20 +165,29 @@ class StdioMcpConnectionManager {
         await client.close();
         rethrow;
       }
+      if (_isDisposed || (_generations[server.id] ?? 0) != generation) {
+        await client.close();
+        throw const McpTransportException('stdio MCP 服务器已停止');
+      }
       _clients[server.id] = client;
       _setStatus(server.id, StdioMcpStatus.running);
-      // 进程意外退出（被系统杀掉、npx 报错）→ 状态回落，下次调用重连。
+      // 进程意外退出（被系统杀掉、npx 报错）→ 标错误并带退出码，下次调用重连。
       unawaited(session.done.whenComplete(() {
         if (_clients[server.id] != client) return;
         _clients.remove(server.id);
         if (_status[server.id] == StdioMcpStatus.running) {
-          _setStatus(server.id, StdioMcpStatus.stopped);
+          final code = session.exitCode;
+          _errors[server.id] =
+              '进程意外退出${code != null ? '，退出码 $code' : ''}';
+          _setStatus(server.id, StdioMcpStatus.error);
         }
       }));
       return client;
     } on Object catch (e) {
-      _errors[server.id] = e.toString();
-      _setStatus(server.id, StdioMcpStatus.error);
+      if ((_generations[server.id] ?? 0) == generation) {
+        _errors[server.id] = e.toString();
+        _setStatus(server.id, StdioMcpStatus.error);
+      }
       rethrow;
     }
   }
