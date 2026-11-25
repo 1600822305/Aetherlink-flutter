@@ -276,19 +276,21 @@ class ControlToolFlow {
     Future<void> Function() failPendingToolEvents,
   ) async {
     final current = tx.current;
-    if (!guards.finishGuardFired &&
-        !FinishGuards.hasFinalReply(await store.getEvents(current.id))) {
-      guards.finishGuardFired = true;
+    final result = stringArgOf(call, 'result')?.trim() ?? '';
+    final events = await store.getEvents(current.id);
+    // 对标 Roo attempt_completion：交付物就是 result 参数。兼容旧调用
+    // （只传 summary）：本条回复正文已有最终答复时照样放行。
+    if (result.isEmpty && !FinishGuards.hasFinalReply(events)) {
       await _logControlResult(
         call,
         ok: false,
-        summary: '收尾被拒：缺少正文回复',
+        summary: '收尾被拒：result 为空',
         detail:
-            '你还没有输出面向用户的正文回复。分析、调研、解答类'
-            '任务的正文就是交付物：请先把最终结论/报告作为正文完整'
-            '输出，再调用 finish_task；summary 只是一句话标题，'
-            '不能替代正文。',
+            'finish_task 的 result 参数为空。请把交付给用户的最终答复/报告'
+            '完整写进 result 后重新调用 finish_task；若工作尚未完成，继续调用'
+            '工具执行。',
       );
+      // 计入连续失败熔断：反复空提交会按预算规则暂停，不会死循环。
       budget.recordToolResult(ok: false);
       return ControlToolOutcome.nextCall;
     }
@@ -297,9 +299,15 @@ class ControlToolFlow {
       await store.appendUserMessage(current.id, '[stop hook 阻止收尾] $blocked');
       return ControlToolOutcome.nextTurn;
     }
-    // summary 只进任务列表（lastEventSummary）；事件流里正文
-    // 就是结束语，状态行只留元信息，不再重复展示 summary。
-    final summary = stringArgOf(call, 'summary') ?? '任务完成';
+    // result 落成助手正文（完成结果）；与本轮已输出的正文相同则不重复。
+    if (result.isNotEmpty &&
+        FinishGuards.lastReplyText(events)?.trim() != result) {
+      await store.appendAssistantText(current.id, result, streaming: false);
+    }
+    final summaryArg = stringArgOf(call, 'summary')?.trim() ?? '';
+    final summary = summaryArg.isNotEmpty
+        ? summaryArg
+        : (result.isNotEmpty ? _firstLine(result) : '任务完成');
     await failPendingToolEvents();
     await store.appendStatusChange(current.id, '任务完成 · ${current.rounds} 轮');
     await tx.save(
@@ -311,5 +319,10 @@ class ControlToolFlow {
     );
     onTaskEnd?.call();
     return ControlToolOutcome.stopRun;
+  }
+
+  static String _firstLine(String text) {
+    final line = text.trim().split('\n').first.trim();
+    return line.length > 60 ? '${line.substring(0, 60)}…' : line;
   }
 }

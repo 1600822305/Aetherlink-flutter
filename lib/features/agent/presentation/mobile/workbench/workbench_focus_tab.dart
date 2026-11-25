@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish_guards.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
@@ -327,7 +328,9 @@ class _FocusView extends StatelessWidget {
       ),
       final UserMessageEvent u => _TextFocus(
         icon: LucideIcons.user,
-        title: u.queued ? '用户指令（排队追加）' : '用户指令',
+        title: FinishGuards.isEngineInjected(u.text)
+            ? '系统提示（发给模型）'
+            : (u.queued ? '用户指令（排队追加）' : '用户指令'),
         text: u.text,
       ),
       final PlanUpdateEvent p => _PlanFocus(event: p),

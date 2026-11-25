@@ -144,6 +144,12 @@ class AgentEngine {
   static const int _kMaxEmptyRetries = 2;
   int _emptyRetries = 0;
 
+  /// 有正文但无工具调用的 turn 追问次数（对标 Cline noToolsUsed /
+  /// consecutiveMistakeLimit）：纯文本不再直接判 done，注入提醒续跑；
+  /// 按「连续」计，调用过工具即归零；耗尽后转 paused 交给用户。
+  static const int _kMaxNoToolNudges = 2;
+  int _noToolNudges = 0;
+
   /// 上下文超限恢复第一级（对标 CC collapse drain）：不调 LLM，把重放
   /// 视图的 microcompact 阈值降到 drain 档强制折叠更多旧工具输出后重试；
   /// 生效后本次运行保持 drain 档（上下文已贴近上限，回档只会再超）。
@@ -477,6 +483,9 @@ class AgentEngine {
         if (turn.toolCalls.isNotEmpty || turn.text.trim().isNotEmpty) {
           _emptyRetries = 0;
         }
+        if (turn.toolCalls.isNotEmpty) {
+          _noToolNudges = 0;
+        }
 
         budget.recordTurnUsage(
           totalTokens: turn.tokensUsed,
@@ -575,6 +584,44 @@ class AgentEngine {
               '[stop hook 阻止收尾] $blocked',
             );
             continue;
+          }
+          // 对标 Roo Code / Cline：收尾只认 finish_task，提问只认
+          // ask_user。有正文但无工具调用一律视为「未按协议结束」，
+          // 注入 noToolsUsed 式提醒续跑；不猜正文语义。
+          if (!turn.truncated && turn.text.trim().isNotEmpty) {
+            final pendingPlan = _pendingPlanItems(
+              await store.getEvents(current.id),
+            );
+            if (_noToolNudges < _kMaxNoToolNudges) {
+              _noToolNudges++;
+              final planHint = pendingPlan.isEmpty
+                  ? ''
+                  : '\n计划中还有 ${pendingPlan.length} 项未完成：'
+                        '${pendingPlan.map((i) => '「${i.content}」').join('、')}。';
+              await store.appendUserMessage(
+                current.id,
+                '[系统] 回复未调用工具，提醒继续（$_noToolNudges/$_kMaxNoToolNudges）。'
+                '你上一条回复没有调用任何工具，任务不会因此结束。$planHint\n'
+                '- 如果还有工作要做：直接调用相应工具继续执行，不要只描述打算；\n'
+                '- 如果需要用户回答或做决定（包括问「还需要什么」）：调用 ask_user，不要只在正文里提问；\n'
+                '- 如果任务确实已全部完成：调用 finish_task，把最终答复写进 result（上一条回复已是完整答复的话 result 写一句确认即可）。',
+              );
+              continue;
+            }
+            // 追问额度耗尽仍不调工具：顶层任务不静默判 done，暂停交还
+            // 用户（对标 Cline 连续错误上限后请求用户介入）。子代理
+            // （subagents == null）没有用户可交还、paused 会被父任务当
+            // 失败，故落到下方旧逻辑按当前正文收尾。
+            if (subagents != null) {
+              final reason = pendingPlan.isEmpty
+                  ? '模型连续 $_kMaxNoToolNudges 次回复未调用工具，已暂停：'
+                        '任务已完成可直接结束，否则请补充指示后继续'
+                  : '计划还有 ${pendingPlan.length} 项未完成，但模型连续 '
+                        '$_kMaxNoToolNudges 次未调用工具，已暂停等待你的指示';
+              current = await transition(AgentTaskStatus.paused, reason);
+              onNotification?.call(reason, 'paused');
+              return;
+            }
           }
           // 截断续跑额度耗尽后走到这里的是断尾正文：不能静默判 done，
           // 明确告知用户内容可能不完整（能到此处说明上方续跑分支
@@ -835,4 +882,17 @@ class AgentEngine {
       onTaskFailed?.call('$e');
     }
   }
+}
+
+/// 最新计划快照里未完成（pending / inProgress）的条目；无计划或已
+/// 全部完成（allDone 时计划被清空）返回空列表。
+List<AgentPlanItem> _pendingPlanItems(List<AgentEvent> events) {
+  for (final event in events.reversed) {
+    if (event is PlanUpdateEvent) {
+      return event.items
+          .where((i) => i.status != AgentPlanItemStatus.completed)
+          .toList();
+    }
+  }
+  return const [];
 }
