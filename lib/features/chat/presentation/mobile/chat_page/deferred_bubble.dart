@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
+import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
 
 /// Defers a whole message row's first build behind a skeleton bubble.
 ///

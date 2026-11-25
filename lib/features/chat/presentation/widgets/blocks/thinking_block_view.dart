@@ -11,7 +11,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/mes
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/tool_renderer_registry.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
+import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/markdown_body.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';

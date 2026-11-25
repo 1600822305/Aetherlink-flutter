@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/app/di/markdown_access.dart';
 import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
 
 /// 助手叙述行：无气泡、贴左正文段落，Markdown 渲染（与聊天页同一套）；
 /// 流式中走 [StreamingMarkdownBody]（块级记忆化，每个增量只重解析尾块）
@@ -16,6 +17,8 @@ class AssistantTextTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final style = theme.textTheme.bodyMedium?.copyWith(height: 1.5);
+    final lineHeight = (style?.fontSize ?? 14) * 1.5;
     return EventRail(
       node: Container(
         width: 10,
@@ -27,14 +30,12 @@ class AssistantTextTile extends StatelessWidget {
         ),
       ),
       child: event.streaming
-          ? StreamingMarkdownBody(
-              content: '${event.text}▍',
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-            )
-          : SettingAwareMessageSelectionArea(
-              child: AppMarkdown(
-                content: event.text,
-                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+          ? StreamingMarkdownBody(content: '${event.text}▍', style: style)
+          : DeferredContent(
+              cost: event.text.length,
+              estimatedHeight: event.text.length / 22 * lineHeight,
+              builder: (_) => SettingAwareMessageSelectionArea(
+                child: AppMarkdown(content: event.text, style: style),
               ),
             ),
     );

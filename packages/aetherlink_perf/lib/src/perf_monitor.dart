@@ -103,6 +103,11 @@ class PerfMonitor {
   /// Number of messages in the visible conversation.
   void setMessages(int? count) => _update((c) => c.copyWith(messages: count));
 
+  /// Clears the page-scoped context (messages / streaming / scrolling) while
+  /// keeping the route — pages only report on change, so a value left by the
+  /// previous screen or conversation would otherwise be attributed to the next.
+  void resetPageContext() => _update((c) => PerfContext(route: c.route));
+
   /// Optional device model string (the host has device_info; the package does
   /// not, to stay dependency-free).
   void setDeviceModel(String? model) => _deviceModel = model;

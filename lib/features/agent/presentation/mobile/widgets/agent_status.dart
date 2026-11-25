@@ -77,12 +77,26 @@ String formatElapsed(Duration d) {
 /// 顶栏下的常驻状态条：`● 运行中 · 第12轮 · 累计8.4k · 上下文12k/128k · 6m`
 /// （UI 稿 §4.1）。
 class AgentStatusLine extends ConsumerWidget {
-  const AgentStatusLine({required this.task, super.key});
+  const AgentStatusLine({required this.taskId, super.key});
 
-  final AgentTask task;
+  final String taskId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final task = ref.watch(
+      agentTaskProvider(taskId).select(
+        (t) => t == null
+            ? null
+            : (
+                status: t.status,
+                mode: t.mode,
+                rounds: t.rounds,
+                contextTokens: t.contextTokens,
+                elapsed: t.elapsed,
+              ),
+      ),
+    );
+    if (task == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final color = agentStatusColor(context, task.status);
     final limit = ref.watch(
