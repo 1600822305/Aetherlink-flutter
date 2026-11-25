@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/world_book/application/world_book_io_service.dart';
 import 'package:aetherlink_flutter/features/world_book/application/world_books_controller.dart';
 import 'package:aetherlink_flutter/features/world_book/domain/world_book.dart';
+import 'package:aetherlink_flutter/features/world_book/domain/world_book_st_export.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/sheets/world_book_edit_sheet.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/sheets/world_book_group_sheets.dart';
 import 'package:aetherlink_flutter/features/world_book/presentation/mobile/widgets/world_book_common.dart';
@@ -171,10 +172,117 @@ Future<void> importWorldBook(BuildContext context, WidgetRef ref) async {
   }
 }
 
+/// 导出：先选格式（本应用 JSON / SillyTavern），ST 格式有降级时导出后列出说明。
 Future<void> exportWorldBook(BuildContext context, WorldBook book) async {
+  final format = await showModalBottomSheet<WorldBookExportFormat>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      final theme = Theme.of(ctx);
+      Widget item(
+        WorldBookExportFormat value,
+        IconData icon,
+        String title,
+        String subtitle,
+      ) => ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+        horizontalTitleGap: 12,
+        minLeadingWidth: 20,
+        leading: Icon(icon, size: 18, color: theme.colorScheme.primary),
+        title: Text(
+          title,
+          style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        onTap: () => Navigator.of(ctx).pop(value),
+      );
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                '导出格式',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            item(
+              WorldBookExportFormat.native,
+              LucideIcons.fileJson,
+              'AetherLink JSON',
+              '可无损导回本应用，也兼容 RikkaHub',
+            ),
+            item(
+              WorldBookExportFormat.sillyTavern,
+              LucideIcons.share2,
+              'SillyTavern 世界书',
+              '可直接导入酒馆分享给 ST 用户，部分设置会降级',
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
+  if (format == null || !context.mounted) return;
   try {
-    final saved = await exportWorldBookFile(book);
-    if (saved && context.mounted) AppToast.success(context, '已导出「${book.name}」');
+    final outcome = await exportWorldBookFile(book, format: format);
+    if (!outcome.saved || !context.mounted) return;
+    if (outcome.issues.isEmpty) {
+      AppToast.success(context, '已导出「${book.name}」');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          title: const Text('已导出为 SillyTavern 格式'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '以下设置在 SillyTavern 中没有完全对应的写法，已做转换：',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 10),
+              for (final MapEntry(key: issue, value: count)
+                  in outcome.issues.entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    issue == WorldBookStExportIssue.bookDisabled
+                        ? '· ${worldBookStExportIssueLabel(issue)}'
+                        : '· ${worldBookStExportIssueLabel(issue)}（$count 条）',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12.5,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        );
+      },
+    );
   } catch (e) {
     if (context.mounted) AppToast.error(context, '导出失败：$e');
   }
