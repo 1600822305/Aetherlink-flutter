@@ -6,6 +6,7 @@ import 'dart:ui' show FrameTiming;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show WidgetsBinding;
 
+import 'context_log.dart';
 import 'diagnoser.dart';
 import 'frame_collector.dart';
 import 'memory_collector.dart';
@@ -47,6 +48,7 @@ class PerfMonitor {
   final FrameCollector _frames = FrameCollector();
   final MemoryCollector _memory = MemoryCollector();
   final Diagnoser _diagnoser = const Diagnoser();
+  final PerfContextLog _contextLog = PerfContextLog();
 
   final ValueNotifier<PerfContext> _context =
       ValueNotifier<PerfContext>(PerfContext.empty);
@@ -63,6 +65,9 @@ class PerfMonitor {
 
   bool get isRunning => _running;
 
+  /// The context last reported by the host.
+  PerfContext get context => _context.value;
+
   /// Per-frame budget in ms, derived from the display refresh rate.
   double get budgetMs => _refreshRate <= 0 ? 16.7 : 1000 / _refreshRate;
 
@@ -72,18 +77,23 @@ class PerfMonitor {
     _running = true;
     _refreshRate = _detectRefreshRate();
     _frames.reset(budgetMs);
+    _contextLog
+      ..clear()
+      ..record(_frames.epochUs, _context.value);
     _memory.reset();
     WidgetsBinding.instance.addTimingsCallback(_onTimings);
     _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
   }
 
-  /// Stops collection and clears buffers.
+  /// Stops collection and clears buffers and the reported context.
   void stop() {
     if (!_running) return;
     _running = false;
     WidgetsBinding.instance.removeTimingsCallback(_onTimings);
     _timer?.cancel();
     _timer = null;
+    _context.value = PerfContext.empty;
+    _contextLog.clear();
     _live.value = const PerfLiveMetrics();
   }
 
@@ -112,16 +122,18 @@ class PerfMonitor {
   /// not, to stay dependency-free).
   void setDeviceModel(String? model) => _deviceModel = model;
 
+  // Context tracks the host even while stopped (the toggle hydrates
+  // asynchronously, after the first route report); only frames gate on running.
   void _update(PerfContext Function(PerfContext) f) {
-    if (!_running) return;
     _context.value = f(_context.value);
+    if (_running) _contextLog.record(_frames.nowUs(), _context.value);
   }
 
   // --- Collection ------------------------------------------------------------
 
   void _onTimings(List<FrameTiming> timings) {
     if (!_running) return;
-    _frames.addTimings(timings, _context.value);
+    _frames.addTimings(timings, _contextLog.at);
   }
 
   void _tick() {

@@ -18,7 +18,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_followup_panel.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
 import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';
-import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
+import 'package:aetherlink_flutter/shared/widgets/list_scroll_state.dart';
 import 'package:aetherlink_flutter/shared/widgets/no_implicit_scroll_physics.dart';
 
 /// 左页：事件流主视图（UI 稿 §4.1）——计划纪要条 + 时间线 + 底部输入区。
@@ -47,6 +47,10 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   /// 上次键盘 inset，用于换算滚动补偿（与聊天页 bottomReserve 同一机制）。
   double _lastKeyboardInset = 0;
 
+  /// 挂载时的路由：卸载若是因为切走路由，路由监听已重置过页面上下文，
+  /// 这里再重置会抹掉新页面刚上报的值。
+  String? _perfRoute;
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +58,7 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
       scrollController: _scrollController,
       isEnabled: () => true,
     );
+    _perfRoute = PerfMonitor.instance.context.route;
     // 进入页面钉到底部（最新事件）。
     _autoScroll.pinToBottom();
   }
@@ -71,6 +76,10 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   void dispose() {
     _autoScroll.dispose();
     _scrollController.dispose();
+    if (PerfMonitor.instance.context.route == _perfRoute) {
+      PerfMonitor.instance.resetPageContext();
+    }
+    resetHostScrolling();
     super.dispose();
   }
 
@@ -91,6 +100,15 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
       },
     );
 
+    ref.listen(
+      agentTimelineProvider(widget.taskId)
+          .select((v) => (v.blocks.length, v.hasLiveEvent)),
+      (_, next) => PerfMonitor.instance
+        ..setMessages(next.$1)
+        ..setStreaming(next.$2),
+      fireImmediately: true,
+    );
+
     // 键盘弹出/收起时 Scaffold 会缩放 body（adjustResize），普通列表锚点在
     // 顶部，视口底部内容会被键盘盖住。这里按 inset 变化量做同帧滚动补偿
     // （聊天页 bottomReserve 同一机制）：整体内容跟着键盘顶起/落下。
@@ -109,9 +127,6 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
     final (status, mode) = ref.watch(
       agentTaskProvider(widget.taskId).select((t) => (t?.status, t?.mode)),
     );
-    PerfMonitor.instance
-      ..setMessages(blocks.length)
-      ..setStreaming(timeline.hasLiveEvent);
     final showWorking =
         status == AgentTaskStatus.running && !timeline.hasLiveEvent;
     // Plan 模式收尾（方案已出完）→ 事件流末尾出「方案已就绪」卡，
@@ -138,13 +153,7 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                     MessageSelectionArea.clearOutside(event.position),
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (n) {
-                    if (n is ScrollStartNotification) {
-                      PerfMonitor.instance.setScrolling(true);
-                      DeferredContentScheduler.instance.setScrolling(true);
-                    } else if (n is ScrollEndNotification) {
-                      PerfMonitor.instance.setScrolling(false);
-                      DeferredContentScheduler.instance.setScrolling(false);
-                    }
+                    reportHostScrolling(n);
                     _syncJumpButton();
                     return false;
                   },

@@ -210,6 +210,9 @@ class DeferredContentScheduler {
   bool _pumpScheduled = false;
   bool _scrolling = false;
 
+  @visibleForTesting
+  bool get isScrolling => _scrolling;
+
   /// Live scroll state of the hosting list. While true the pump runs under
   /// [_scrollingFrameBudget]; flipping back to false resumes any queued work.
   void setScrolling(bool value) {
