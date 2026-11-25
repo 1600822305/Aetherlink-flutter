@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -13,7 +14,8 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 工具调用详情底部抽屉（UI 稿 §4.1）：完整参数 + 完整输出。
-/// 面板固定屏高 2/3；各分区限高、内部滑动，面板也可整体滚动。
+/// 面板固定屏高 2/3，整体只有一个滚动容器：输出区不限高、不内嵌滚动，
+/// 避免嵌套滚动导致输出区底部被面板裁掉又滑不出来。参数区仍限高（通常很短）。
 /// 大输出默认显截断内容，「查看全文」从落盘文件回读。
 /// 传入 [taskId] 时抽屉订阅事件流，参数/状态/输出随执行实时更新。
 Future<void> showToolDetailSheet(
@@ -57,6 +59,55 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
       if (e is ToolCallEvent && e.id == widget.event.id) return e;
     }
     return widget.event;
+  }
+
+  /// 面板整体滚动；「跳到底部」按钮只在滑动时浮现，停手后自动隐藏。
+  final ScrollController _scroll = ScrollController();
+  bool _showJump = false;
+  Timer? _hideJump;
+
+  static const double _kJumpThreshold = 48;
+
+  @override
+  void dispose() {
+    _hideJump?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  bool _onScroll(ScrollNotification n) {
+    // 只看面板这一层（参数区内部滚动 depth > 0，不触发）。
+    if (n.depth != 0) return false;
+    if (n is ScrollUpdateNotification || n is ScrollEndNotification) {
+      final farFromBottom = n.metrics.extentAfter > _kJumpThreshold;
+      if (!farFromBottom) {
+        _setJump(false);
+      } else if (n is ScrollUpdateNotification) {
+        _setJump(true);
+        _hideJump?.cancel();
+        _hideJump = Timer(
+          const Duration(milliseconds: 1500),
+          () => _setJump(false),
+        );
+      }
+    }
+    return false;
+  }
+
+  void _setJump(bool v) {
+    if (!mounted || v == _showJump) return;
+    setState(() => _showJump = v);
+  }
+
+  void _jumpToBottom() {
+    _hideJump?.cancel();
+    _setJump(false);
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      _scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   /// 落盘全文（点「查看全文」后加载，替换输出区内容）。
@@ -196,7 +247,11 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
           ),
           const Divider(height: 1),
           Expanded(
-            child: Padding(
+            child: Stack(
+              children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: Padding(
               padding: EdgeInsets.fromLTRB(
                 16,
                 12,
@@ -204,6 +259,7 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
                 bottomPad > 0 ? bottomPad : 12,
               ),
               child: SingleChildScrollView(
+                controller: _scroll,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -272,7 +328,6 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
                     _Section(
                       title: '输出',
                       body: outputText,
-                      maxHeight: 320,
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -296,6 +351,30 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
                 ),
               ),
             ),
+            ),
+            Positioned(
+              right: 16,
+              bottom: (bottomPad > 0 ? bottomPad : 12) + 12,
+              child: IgnorePointer(
+                ignoring: !_showJump,
+                child: AnimatedOpacity(
+                  opacity: _showJump ? 1 : 0,
+                  duration: const Duration(milliseconds: 160),
+                  child: Material(
+                    color: cs.surfaceContainerHigh,
+                    elevation: 3,
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: '跳到底部',
+                      onPressed: _jumpToBottom,
+                      icon: const Icon(LucideIcons.arrowDown, size: 18),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+              ],
+            )
           ),
         ],
       ),
@@ -373,7 +452,7 @@ class _ImageSection extends StatelessWidget {
   }
 }
 
-/// 内容块：按 [maxHeight] 限高并内部滑动，内容不足时自适应。
+/// 内容块：给了 [maxHeight] 时限高并内部滑动；不给则按内容全高展开。
 class _Section extends StatelessWidget {
   const _Section({
     required this.title,
@@ -393,29 +472,36 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    Widget box = Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: cs.onSurface.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(10),
-        child: SelectableText(
-          body,
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontFamily: 'monospace',
-            height: 1.4,
-          ),
-        ),
+    final text = SelectableText(
+      body,
+      style: theme.textTheme.bodySmall?.copyWith(
+        fontFamily: 'monospace',
+        height: 1.4,
       ),
     );
-    if (maxHeight != null) {
-      box = ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight!),
-        child: box,
-      );
-    }
+    final decoration = BoxDecoration(
+      color: cs.onSurface.withValues(alpha: 0.04),
+      borderRadius: BorderRadius.circular(8),
+    );
+    // 限高时内部滑动；不限高时随面板整体滚动（不嵌套滚动）。
+    final Widget box = maxHeight == null
+        ? Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: decoration,
+            child: text,
+          )
+        : ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight!),
+            child: Container(
+              width: double.infinity,
+              decoration: decoration,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(10),
+                child: text,
+              ),
+            ),
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
