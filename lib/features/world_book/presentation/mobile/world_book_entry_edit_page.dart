@@ -1068,25 +1068,19 @@ class _WorldBookEntryEditPageState
           context,
           title: _isNew ? '新建条目' : '编辑条目',
           onBack: _back,
+          // 与其他编辑页（钩子编辑、模型组合编辑）一致：AppBar 右侧的文字按钮。
           actions: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                ),
-                onPressed: _canSave ? _save : null,
-                child: _saving
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('保存'),
-              ),
+            TextButton(
+              onPressed: _canSave ? _save : null,
+              child: _saving
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('保存'),
             ),
+            const SizedBox(width: 4),
           ],
         ),
         body: GestureDetector(

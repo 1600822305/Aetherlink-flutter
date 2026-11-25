@@ -107,6 +107,7 @@ Future<void> renameWorldBook(
       title: '编辑世界书',
       initialName: book.name,
       initialDescription: book.description,
+      entryCount: book.entries.length,
     ),
   );
   if (result == null) return;
