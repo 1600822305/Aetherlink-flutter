@@ -30,7 +30,7 @@ class MobileBackgroundSettings {
       (value) => value.name == json['completionVisibility'],
       orElse: () => BackgroundCompletionVisibility.oneMinute,
     );
-    final kind = json['overlayIconKind'];
+    final kind = json['overlayIconKind'] as String?;
     return MobileBackgroundSettings(
       androidEnabled: json['androidEnabled'] != false,
       notificationsEnabled: json['notificationsEnabled'] != false,
@@ -38,7 +38,7 @@ class MobileBackgroundSettings {
       overlayEnabled: json['overlayEnabled'] == true,
       liveUpdatesEnabled: json['liveUpdatesEnabled'] == true,
       completionVisibility: visibility,
-      overlayIconKind: kind == 'image' || kind == 'emoji' ? kind : 'app',
+      overlayIconKind: kind == 'image' || kind == 'emoji' ? kind! : 'app',
       overlayIconValue: json['overlayIconValue'] as String? ?? '',
       overlayAppearance: BackgroundOverlayAppearance.fromJson(
         (json['overlayAppearance'] as Map?)?.cast<String, dynamic>() ??

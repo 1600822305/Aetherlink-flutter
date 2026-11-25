@@ -100,14 +100,13 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
       },
     );
 
-    ref.listen(
+    final perfTags = ref.watch(
       agentTimelineProvider(widget.taskId)
           .select((v) => (v.blocks.length, v.hasLiveEvent)),
-      (_, next) => PerfMonitor.instance
-        ..setMessages(next.$1)
-        ..setStreaming(next.$2),
-      fireImmediately: true,
     );
+    PerfMonitor.instance
+      ..setMessages(perfTags.$1)
+      ..setStreaming(perfTags.$2);
 
     // 键盘弹出/收起时 Scaffold 会缩放 body（adjustResize），普通列表锚点在
     // 顶部，视口底部内容会被键盘盖住。这里按 inset 变化量做同帧滚动补偿

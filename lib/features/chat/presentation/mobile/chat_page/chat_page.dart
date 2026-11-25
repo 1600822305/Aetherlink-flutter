@@ -57,11 +57,10 @@ class ChatPage extends ConsumerWidget {
     // streaming response is attributed correctly. Fires immediately because the
     // router resets page context on entering /chat, and an unchanged value
     // would never re-report.
-    ref.listen(
+    final streamingNow = ref.watch(
       chatControllerProvider.select((s) => s.value?.isStreaming ?? false),
-      (_, streaming) => PerfMonitor.instance.setStreaming(streaming),
-      fireImmediately: true,
     );
+    PerfMonitor.instance.setStreaming(streamingNow);
 
     // The sidebar is hosted by [SidebarHost] (not `Scaffold.drawer`) so its
     // display style can switch between overlay and push (侧边栏显示方式); the

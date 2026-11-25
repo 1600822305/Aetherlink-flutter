@@ -317,7 +317,9 @@ class MobileBackgroundCoordinator extends ChangeNotifier
       final ids = (args['ids'] as List? ?? []).cast<String>().toSet();
       final tasks = _tasks.values.where((t) => ids.contains(t.id)).toList();
       if (call.method == 'interrupted') {
-        _recordError(args['reason'] ?? 'background_interrupted');
+        _recordError(
+          (args['reason'] as Object?) ?? 'background_interrupted',
+        );
         for (final task in tasks) {
           task.interrupted = true;
         }
