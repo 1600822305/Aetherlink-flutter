@@ -7,7 +7,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
 /// 演示用假 LLM（接真模型前跑通状态机/落库/流式管道）：
-/// 第 1 轮出计划 + 读文件；第 2 轮更新计划 + finish_task。
+/// 第 1 轮出计划 + 读文件；第 2 轮更新计划 + attempt_completion。
 class FakeAgentLlmClient implements AgentLlmClient {
   const FakeAgentLlmClient({this.chunkDelay = const Duration(milliseconds: 60)});
 
@@ -81,8 +81,8 @@ class FakeAgentLlmClient implements AgentLlmClient {
         ),
         AgentToolCallRequest(
           id: 'call-finish-1',
-          name: kToolFinishTask,
-          argsJson: jsonEncode({'summary': '演示任务完成：循环/事件流/落库已验证'}),
+          name: kToolAttemptCompletion,
+          argsJson: jsonEncode({'result': '演示任务完成：循环/事件流/落库已验证'}),
           argSummary: '收尾',
         ),
       ],

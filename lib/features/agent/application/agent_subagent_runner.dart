@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/agent/application/agent_providers.da
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish_result_streamer.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
@@ -66,26 +67,26 @@ class AgentSubagentRunner implements AgentSubagentLauncher {
   /// 子代理专属提示（系统提示第 3 层）：强调独立上下文 + 结论自包含。
   static const String _kExploreSubagentPrompt =
       '你是一个探索子代理：在独立上下文里完成父任务派发的只读调研/搜索子任务。'
-      '你看不到父任务的对话，指令里的信息就是全部上下文。完成时调用 finish_task，'
+      '你看不到父任务的对话，指令里的信息就是全部上下文。完成时调用 attempt_completion，'
       '把结论完整写进 result：结论是父任务唯一能看到的内容，必须自包含'
       '（关键发现、文件路径、结论依据），不要只说“已完成”。不要用 ask_user 提问。';
 
   static const String _kBashSubagentPrompt =
       '你是一个终端子代理：在独立上下文里执行父任务派发的命令型子任务。'
-      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task 的 '
+      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 attempt_completion 的 '
       'result 返回结论：提炼关键输出和结论，不要长篇粘贴原始输出。不要用 ask_user 提问。';
 
   /// 自定义档案子代理的通用后缀（拼在档案正文之后）。
   static const String _kCustomSubagentSuffix =
       '你是一个子代理，在独立上下文里完成父任务派发的子任务：'
-      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task 的 '
+      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 attempt_completion 的 '
       'result 返回自包含的结论（父任务只能看到结论）。不要用 ask_user 提问。';
 
   /// fork 分身子代理（对标 Claude Code fork）：首条消息带父对话摘录。
   static const String _kForkSubagentPrompt =
       '你是主任务的一个分身子代理：首条消息里的「父任务对话摘录」是你与'
       '主任务共享的背景，指令在摘录之后——直接按指令干活，不要重新调研背景。'
-      '完成时调用 finish_task，把结论完整写进 result：结论是父任务唯一'
+      '完成时调用 attempt_completion，把结论完整写进 result：结论是父任务唯一'
       '能看到的内容，必须自包含。不要用 ask_user 提问。';
 
   /// 派生一个子代理（初稿 §5.5 P2，对标 Cursor）：独立事件流/预算，
@@ -456,8 +457,19 @@ class AgentSubagentRunner implements AgentSubagentLauncher {
             .firstOrNull ??
         child;
     final events = await _store().getEvents(child.id);
-    final finalText =
-        events.whereType<AssistantTextEvent>().lastOrNull?.text.trim() ?? '';
+    // 结论优先取 attempt_completion 卡片的 result；没有（异常收尾）
+    // 才回退到最后一段助手正文。
+    final completion = events
+        .whereType<ToolCallEvent>()
+        .where(
+          (e) =>
+              e.toolName == kToolAttemptCompletion &&
+              e.state == AgentToolCallState.success,
+        )
+        .lastOrNull;
+    final finalText = completion != null
+        ? completionResultOf(completion)
+        : events.whereType<AssistantTextEvent>().lastOrNull?.text.trim() ?? '';
     final ok = finalChild.status == AgentTaskStatus.done;
     final statusLabel = switch (finalChild.status) {
       AgentTaskStatus.done => '完成',
@@ -466,7 +478,7 @@ class AgentSubagentRunner implements AgentSubagentLauncher {
       AgentTaskStatus.paused => '已暂停（预算耗尽或被暂停）',
       _ => finalChild.status.name,
     };
-    // finish_task 的 result 已落成最后一段助手文本（完成结果）；summary 落在 lastEventSummary。
+    // attempt_completion 的 result 已落成最后一段助手文本（完成结果）；summary 落在 lastEventSummary。
     final finishSummary = ok ? finalChild.lastEventSummary.trim() : '';
     final detail = [
       if (finalText.isNotEmpty) finalText,

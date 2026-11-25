@@ -4,7 +4,13 @@ library;
 
 import 'dart:convert';
 
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart'
+    show kToolAttemptCompletion;
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+
+/// attempt_completion 卡片：单独成块，不折进工作段。
+bool isCompletionCard(AgentEvent e) =>
+    e is ToolCallEvent && e.toolName == kToolAttemptCompletion;
 
 sealed class TimelineBlock {
   const TimelineBlock();
@@ -172,6 +178,7 @@ List<TimelineBlock> buildTimelineBlocks(
   for (final e in events) {
     final finishedTool =
         e is ToolCallEvent &&
+        !isCompletionCard(e) &&
         (e.state == AgentToolCallState.success ||
             e.state == AgentToolCallState.failure ||
             e.state == AgentToolCallState.denied);
@@ -186,6 +193,8 @@ List<TimelineBlock> buildTimelineBlocks(
       // 正文/用户消息/状态变化收尾段 → 折叠；执行中工具、流式
       // 文本等实况事件只是暂断，段保持展开。
       final closes = (e is AssistantTextEvent && !e.streaming) ||
+          (isCompletionCard(e) &&
+              (e as ToolCallEvent).state != AgentToolCallState.running) ||
           e is UserMessageEvent ||
           e is StatusChangeEvent;
       flush(closed: closes);

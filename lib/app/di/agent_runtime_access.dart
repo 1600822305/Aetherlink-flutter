@@ -293,7 +293,7 @@ const Set<String> _kReadOnlyToolNames = {
 };
 
 /// 档案工具分组 → 模型可见工具定义 + 名称到 [ToolRoute] 的分发表。
-/// 控制工具（update_plan/ask_user/finish_task）恒在，由引擎内部处理。
+/// 控制工具（update_plan/ask_user/attempt_completion）恒在，由引擎内部处理。
 /// Ask/Plan 模式只保留只读工具（见 [_kReadOnlyToolNames]）；
 /// Auto 与 Code 同样全能力，差别只在审批门。
 DynamicToolCatalog _catalogFor(
@@ -630,6 +630,18 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     // 不进 system prompt，前缀缓存友好）。
     final planReminder = _planReminderMessage(context);
     if (planReminder != null) messages.add(planReminder);
+    // 结束协议每轮置尾提醒（对标 Roo 反复强调 attempt_completion）：
+    // 只进本轮上下文不落事件流，防长任务/弱模型忘了用完成工具收尾。
+    messages.add(
+      const LlmMessage(
+        role: MessageRole.user,
+        content:
+            '<system-reminder>每条回复都必须调用工具。任务完成时调用 '
+            'attempt_completion，把最终答复写进 result（不要先在正文写一遍）；'
+            '需要用户回答时调用 ask_user。本提醒由系统注入，与用户消息无关，'
+            '不要回应它。</system-reminder>',
+      ),
+    );
     // Plan 模式每轮置尾提醒（对标 CC plan_mode attachment）：只进本轮
     // 上下文不落事件流，长任务中防模型"忘了"自己在计划模式。
     if (context.task.mode == AgentSessionMode.plan) {

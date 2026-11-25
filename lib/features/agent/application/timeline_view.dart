@@ -110,6 +110,8 @@ class _Acc {
 /// 改折叠规则两处要同步）。
 bool _closesSegment(AgentEvent e) =>
     (e is AssistantTextEvent && !e.streaming) ||
+    (isCompletionCard(e) &&
+        (e as ToolCallEvent).state != AgentToolCallState.running) ||
     e is UserMessageEvent ||
     e is StatusChangeEvent;
 
@@ -259,9 +261,11 @@ class AgentTimelineFold {
   }
 
   /// 事件是否随段内联（与 [buildTimelineBlocks] 的分支保持一致）：
-  /// 已完结工具、已定稿思考、计划更新。
+  /// 已完结工具、已定稿思考、计划更新。完成卡片（attempt_completion）
+  /// 永远单独成块，不折进工作段。
   static bool _isSegmentInline(AgentEvent e) {
     if (e is ToolCallEvent) {
+      if (isCompletionCard(e)) return false;
       return e.state == AgentToolCallState.success ||
           e.state == AgentToolCallState.failure ||
           e.state == AgentToolCallState.denied;

@@ -454,8 +454,8 @@ class BigOutputLlm implements AgentLlmClient {
         toolCalls: [
           AgentToolCallRequest(
             id: 'call-finish',
-            name: kToolFinishTask,
-            argsJson: jsonEncode({'summary': '完成'}),
+            name: kToolAttemptCompletion,
+            argsJson: jsonEncode({'result': '完成'}),
             argSummary: '收尾',
           ),
         ],
@@ -508,8 +508,8 @@ class ContextCapturingLlm implements AgentLlmClient {
       toolCalls: [
         AgentToolCallRequest(
           id: 'finish-1',
-          name: kToolFinishTask,
-          argsJson: jsonEncode({'summary': '完成'}),
+          name: kToolAttemptCompletion,
+          argsJson: jsonEncode({'result': '完成'}),
           argSummary: '收尾',
         ),
       ],
@@ -570,8 +570,8 @@ class StructuredAskUserLlm implements AgentLlmClient {
         toolCalls: [
           AgentToolCallRequest(
             id: 'finish-1',
-            name: kToolFinishTask,
-            argsJson: jsonEncode({'summary': '已收到回答'}),
+            name: kToolAttemptCompletion,
+            argsJson: jsonEncode({'result': '已收到回答'}),
             argSummary: '完成',
           ),
         ],
@@ -600,7 +600,7 @@ class StructuredAskUserLlm implements AgentLlmClient {
   }) async => '摘要';
 }
 
-/// 发一次工具调用，下一轮 finish_task 收尾。
+/// 发一次工具调用，下一轮 attempt_completion 收尾。
 class OneToolThenFinishLlm implements AgentLlmClient {
   var _round = 0;
 
@@ -626,8 +626,8 @@ class OneToolThenFinishLlm implements AgentLlmClient {
         toolCalls: [
           AgentToolCallRequest(
             id: 'finish-1',
-            name: kToolFinishTask,
-            argsJson: jsonEncode({'summary': '完成'}),
+            name: kToolAttemptCompletion,
+            argsJson: jsonEncode({'result': '完成'}),
             argSummary: '完成',
           ),
         ],
@@ -653,7 +653,7 @@ class OneToolThenFinishLlm implements AgentLlmClient {
   }) async => '摘要';
 }
 
-/// 同一轮先 finish_task 再跟一个普通工具，且普通工具经 onToolCall
+/// 同一轮先 attempt_completion 再跟一个普通工具，且普通工具经 onToolCall
 /// 预建事件（测收尾时剩余预建事件的回填）。
 class FinishWithTrailingToolLlm implements AgentLlmClient {
   @override
@@ -683,8 +683,8 @@ class FinishWithTrailingToolLlm implements AgentLlmClient {
       toolCalls: [
         AgentToolCallRequest(
           id: 'finish-1',
-          name: kToolFinishTask,
-          argsJson: jsonEncode({'summary': '完成'}),
+          name: kToolAttemptCompletion,
+          argsJson: jsonEncode({'result': '完成'}),
           argSummary: '完成',
         ),
         trailing,
@@ -700,7 +700,7 @@ class FinishWithTrailingToolLlm implements AgentLlmClient {
   }) async => '摘要';
 }
 
-/// 一轮发两个只读工具调用，下一轮 finish_task 收尾（测只读并发段）。
+/// 一轮发两个只读工具调用，下一轮 attempt_completion 收尾（测只读并发段）。
 class TwoReadToolsThenFinishLlm implements AgentLlmClient {
   var _round = 0;
 
@@ -726,8 +726,8 @@ class TwoReadToolsThenFinishLlm implements AgentLlmClient {
         toolCalls: [
           AgentToolCallRequest(
             id: 'finish-1',
-            name: kToolFinishTask,
-            argsJson: jsonEncode({'summary': '完成'}),
+            name: kToolAttemptCompletion,
+            argsJson: jsonEncode({'result': '完成'}),
             argSummary: '完成',
           ),
         ],
@@ -833,8 +833,8 @@ class OverflowThenFinishLlm implements AgentLlmClient {
       toolCalls: [
         AgentToolCallRequest(
           id: 'finish-1',
-          name: kToolFinishTask,
-          argsJson: jsonEncode({'summary': '完成'}),
+          name: kToolAttemptCompletion,
+          argsJson: jsonEncode({'result': '完成'}),
           argSummary: '收尾',
         ),
       ],
@@ -1144,7 +1144,7 @@ void main() {
     );
   });
 
-  test('finish_task 收尾时同轮剩余预建工具事件按中断回填，不留永久 running', () async {
+  test('attempt_completion 收尾时同轮剩余预建工具事件按中断回填，不留永久 running', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
     final engine = AgentEngine(
@@ -1164,7 +1164,7 @@ void main() {
     final toolEvents = (await store.getEvents(
       task.id,
     )).whereType<ToolCallEvent>().toList();
-    // 跟在 finish_task 后面的预建工具事件被回填为失败，而不是永久 running。
+    // 跟在 attempt_completion 后面的预建工具事件被回填为失败，而不是永久 running。
     expect(
       toolEvents.map((e) => e.state),
       isNot(contains(AgentToolCallState.running)),
@@ -1301,8 +1301,8 @@ void main() {
           toolCalls: [
             AgentToolCallRequest(
               id: 'finish-1',
-              name: kToolFinishTask,
-              argsJson: jsonEncode({'summary': '完成'}),
+              name: kToolAttemptCompletion,
+              argsJson: jsonEncode({'result': '完成'}),
               argSummary: '收尾',
             ),
           ],
@@ -1366,8 +1366,8 @@ void main() {
           toolCalls: [
             AgentToolCallRequest(
               id: 'finish-1',
-              name: kToolFinishTask,
-              argsJson: jsonEncode({'summary': '完成'}),
+              name: kToolAttemptCompletion,
+              argsJson: jsonEncode({'result': '完成'}),
               argSummary: '收尾',
             ),
           ],
@@ -2133,7 +2133,7 @@ void main() {
         AgentLlmTurn(toolCalls: [planCall(kToolEnterPlanMode)]),
         AgentLlmTurn(
           toolCalls: [
-            planCall(kToolFinishTask, {'summary': '规划完成'}),
+            planCall(kToolAttemptCompletion, {'result': '规划完成'}),
           ],
         ),
       ]);
@@ -2174,7 +2174,7 @@ void main() {
           AgentLlmTurn(
             text: '规划完成。',
             toolCalls: [
-              planCall(kToolFinishTask, {'summary': '完成'}),
+              planCall(kToolAttemptCompletion, {'result': '完成'}),
             ],
           ),
         ]),
@@ -2208,7 +2208,7 @@ void main() {
         ),
         AgentLlmTurn(
           toolCalls: [
-            planCall(kToolFinishTask, {'summary': '完成'}),
+            planCall(kToolAttemptCompletion, {'result': '完成'}),
           ],
         ),
       ]);
@@ -2255,7 +2255,7 @@ void main() {
           ),
           AgentLlmTurn(
             toolCalls: [
-              planCall(kToolFinishTask, {'summary': '修订中'}),
+              planCall(kToolAttemptCompletion, {'result': '修订中'}),
             ],
           ),
         ]),
@@ -2292,7 +2292,7 @@ void main() {
           ),
           AgentLlmTurn(
             toolCalls: [
-              planCall(kToolFinishTask, {'summary': '完成'}),
+              planCall(kToolAttemptCompletion, {'result': '完成'}),
             ],
           ),
         ]),
@@ -2331,7 +2331,7 @@ void main() {
         ),
         AgentLlmTurn(
           toolCalls: [
-            planCall(kToolFinishTask, {'summary': '完成'}),
+            planCall(kToolAttemptCompletion, {'result': '完成'}),
           ],
         ),
       ]);
@@ -2378,7 +2378,7 @@ void main() {
       final llm = ScriptedLlm([
         AgentLlmTurn(
           toolCalls: [
-            planCall(kToolFinishTask, {'summary': '完成'}),
+            planCall(kToolAttemptCompletion, {'result': '完成'}),
           ],
         ),
       ]);
@@ -2418,7 +2418,7 @@ void main() {
         llm: ScriptedLlm([
           AgentLlmTurn(
             toolCalls: [
-              planCall(kToolFinishTask, {'summary': '修订中'}),
+              planCall(kToolAttemptCompletion, {'result': '修订中'}),
             ],
           ),
         ]),
@@ -2452,7 +2452,7 @@ void main() {
           ),
           AgentLlmTurn(
             toolCalls: [
-              planCall(kToolFinishTask, {'summary': '完成'}),
+              planCall(kToolAttemptCompletion, {'result': '完成'}),
             ],
           ),
         ]),

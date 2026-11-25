@@ -1,4 +1,4 @@
-/// 引擎控制工具的参数解析（update_plan / ask_user / finish_task /
+/// 引擎控制工具的参数解析（update_plan / ask_user / attempt_completion /
 /// exit_plan_mode）：纯函数，容错解析，失败时给安全的兜底值。
 library;
 

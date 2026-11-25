@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/approval_card.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/assistant_text_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/checkpoint_tile.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/completion_card.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/compaction_divider.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/plan_approval_card.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/plan_update_tile.dart';
@@ -43,6 +44,8 @@ class AgentEventTile extends StatelessWidget {
       final ToolCallEvent e
           when e.state == AgentToolCallState.waitingApproval =>
         ApprovalCard(event: e, taskId: taskId),
+      final ToolCallEvent e when e.toolName == kToolAttemptCompletion =>
+        CompletionCard(event: e),
       final ToolCallEvent e when e.toolName == kToolSpawnSubagent =>
         SubagentTile(event: e),
       final ToolCallEvent e => ToolRow(event: e, taskId: taskId),

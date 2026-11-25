@@ -67,8 +67,8 @@ class TwoSpawnLlm implements AgentLlmClient {
       toolCalls: [
         AgentToolCallRequest(
           id: 'call-finish',
-          name: kToolFinishTask,
-          argsJson: jsonEncode({'summary': '完成'}),
+          name: kToolAttemptCompletion,
+          argsJson: jsonEncode({'result': '完成'}),
           argSummary: '收尾',
         ),
       ],

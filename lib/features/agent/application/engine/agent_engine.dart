@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/loop/compac
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/control_tool_flow.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/control_tool_parsing.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish_guards.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish_result_streamer.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/interrupted_backfill.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/plan_approval_flow.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/streaming_event_writer.dart';
@@ -32,7 +33,7 @@ abstract class AgentTaskGateway {
 /// agent 专属控制工具（初稿 §5.4）：引擎内部处理，不进 executor。
 const String kToolUpdatePlan = 'update_plan';
 const String kToolAskUser = 'ask_user';
-const String kToolFinishTask = 'finish_task';
+const String kToolAttemptCompletion = 'attempt_completion';
 
 /// 计划模式控制工具（对标 CC EnterPlanMode/ExitPlanMode）：引擎内部处理，
 /// 模式落库后回到循环顶部继续跑——工具目录/系统提示由 LLM 客户端
@@ -138,17 +139,10 @@ class AgentEngine {
   /// max_tokens escalation），避免续跑轮次在同一上限反复截断。
   bool _outputTokensEscalated = false;
 
-  /// 空回复（无正文无工具调用）重试次数（对标 CC withheld/empty
-  /// response 重试）：供应商偶发地返回全空 turn 时注入提示重试
-  /// 而非判收尾；有界，防持续空回复死循环。
-  static const int _kMaxEmptyRetries = 2;
-  int _emptyRetries = 0;
-
-  /// 有正文但无工具调用的 turn 追问次数（对标 Cline noToolsUsed /
-  /// consecutiveMistakeLimit）：纯文本不再直接判 done，注入提醒续跑；
-  /// 按「连续」计，调用过工具即归零；耗尽后转 paused 交给用户。
-  static const int _kMaxNoToolNudges = 2;
-  int _noToolNudges = 0;
+  /// 连续「未调用工具」的回复次数（对标 Cline consecutiveMistakeLimit，
+  /// 含空回复）：调用过工具即归零；超过上限暂停交给用户。
+  static const int _kMaxNoToolMistakes = 3;
+  int _noToolMistakes = 0;
 
   /// 上下文超限恢复第一级（对标 CC collapse drain）：不调 LLM，把重放
   /// 视图的 microcompact 阈值降到 drain 档强制折叠更多旧工具输出后重试；
@@ -299,12 +293,18 @@ class AgentEngine {
         onTurnStart?.call();
         final events = await store.getEvents(current.id);
         final writer = StreamingEventWriter(store, current.id);
+        // attempt_completion 的 result 参数边生成边显示（控制工具不走预建事件）。
+        final finishStream = FinishResultStreamer(
+          store,
+          current.id,
+          kToolAttemptCompletion,
+        );
         // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
         // UI 实时看到块；后续执行循环按 id 复用预建事件。
         const engineTools = {
           kToolUpdatePlan,
           kToolAskUser,
-          kToolFinishTask,
+          kToolAttemptCompletion,
           kToolEnterPlanMode,
           kToolExitPlanMode,
         };
@@ -404,6 +404,7 @@ class AgentEngine {
 
         failTurnArtifacts = () async {
           await writer.finish('');
+          await finishStream.abort();
           await binder.failStreaming();
           await failPendingToolEvents();
         };
@@ -431,10 +432,16 @@ class AgentEngine {
           onToolCallDelta: (streamKey, toolName, argsTextSoFar) async {
             await writer.sealSegments();
             await binder.onToolCallDelta(streamKey, toolName, argsTextSoFar);
+            await finishStream.onToolCallDelta(
+              streamKey,
+              toolName,
+              argsTextSoFar,
+            );
           },
           onToolCall: (call, streamKey) async {
             await writer.sealSegments();
             await binder.onToolCall(call, streamKey);
+            await finishStream.onToolCall(call, streamKey);
             await maybeStartEager(call);
           },
         );
@@ -450,6 +457,7 @@ class AgentEngine {
           // 本轮已流式预建/已提前执行的工具按中断回填收敛，
           // 避免永久 running。
           await writer.finish('');
+          await finishStream.abort();
           await binder.failStreaming();
           await failPendingToolEvents();
           if (!_overflowDrainAttempted) {
@@ -469,6 +477,11 @@ class AgentEngine {
           continue;
         }
         await writer.finish(turn.text);
+        await finishStream.finish();
+        // 完成卡片流了但调用没随 turn 返回（中断/被停）：按中断回填。
+        if (!turn.toolCalls.any((c) => c.name == kToolAttemptCompletion)) {
+          await finishStream.abort();
+        }
         // 流中断时未闭合/未回到 turn 的预建事件按失败回填；已提前
         // 执行但未回到 turn 的调用按兄弟中止收敛，避免永久 running。
         final returnedIds = {for (final c in turn.toolCalls) c.id};
@@ -477,15 +490,7 @@ class AgentEngine {
             await binder.failUnreturned(returnedIds) +
             await eager.drainUnreturned(returnedIds);
 
-        // 空回复重试额度按「连续空 turn」计：产出过正文或工具调用就
-        // 归零，否则长任务里早年的两次偶发空回复会永久吃掉额度，
-        // 后面一出现空 turn 就直接判收尾（看起来像误报）。
-        if (turn.toolCalls.isNotEmpty || turn.text.trim().isNotEmpty) {
-          _emptyRetries = 0;
-        }
-        if (turn.toolCalls.isNotEmpty) {
-          _noToolNudges = 0;
-        }
+        if (turn.toolCalls.isNotEmpty) _noToolMistakes = 0;
 
         budget.recordTurnUsage(
           totalTokens: turn.tokensUsed,
@@ -523,141 +528,47 @@ class AgentEngine {
           continue;
         }
 
-        // ⑤ 无工具调用 → 兜底判收尾（L1）。
+        // ⑤ 无工具调用（对标 Roo Code / Cline）：任务只能经 attempt_completion
+        // 结束、经 ask_user 等待用户；没调工具的回复一律不结束任务。
         if (turn.toolCalls.isEmpty) {
-          // 模型发过工具调用但没流完（截断/网关丢块）：意图是继续
-          // 干活，不是收尾。失败回填已让模型下轮看到「已中断 ✗」
-          // 重发；计入连续失败熔断，极端反复时停在 paused。
+          // 模型发过工具调用但没流完（截断/网关丢块）：失败回填已让
+          // 模型下轮看到「已中断 ✗」重发；计入连续失败熔断。
           if (interruptedToolAttempts > 0) {
             budget.recordToolResult(ok: false);
             continue;
           }
-          // 输出因 token 上限被截断：不是模型自主停止，注入续跑
-          // 指令后回到循环顶部，而不是把半成品判 done。
+          // 输出因 token 上限被截断：注入续跑指令（有界）。
           if (turn.truncated && _lengthContinues < _kMaxLengthContinues) {
             _lengthContinues++;
             _outputTokensEscalated = true;
-            await store.appendStatusChange(
-              current.id,
-              '输出达 token 上限被截断，自动续跑'
-              '（$_lengthContinues/$_kMaxLengthContinues）',
-            );
             await store.appendUserMessage(
               current.id,
-              '[系统] 上一条回复因达到输出 token 上限被截断，任务尚未'
-              '结束。请从截断处继续完成剩余工作。',
+              '[系统] 输出被截断，自动续跑（$_lengthContinues/$_kMaxLengthContinues）。'
+              '上一条回复因达到输出 token 上限被截断，任务尚未结束。'
+              '请从截断处继续完成剩余工作。',
             );
             continue;
           }
-          // 全空 turn（无正文、无工具调用、非截断）：多半是供应商
-          // 偶发异常（withheld/网关丢块）而非模型自主收尾，注入
-          // 提示重试而不是把零产出判 done。
-          if (turn.text.trim().isEmpty && _emptyRetries < _kMaxEmptyRetries) {
-            _emptyRetries++;
-            await store.appendStatusChange(
-              current.id,
-              '模型返回空回复，自动重试'
-              '（$_emptyRetries/$_kMaxEmptyRetries）',
-            );
+          // 未按协议结束（对标 Cline noToolsUsed + consecutiveMistakeLimit）：
+          // 回灌错误要求使用工具；连续达到上限后暂停交给用户。
+          _noToolMistakes++;
+          if (_noToolMistakes <= _kMaxNoToolMistakes) {
             await store.appendUserMessage(
               current.id,
-              '[系统] 上一条回复为空（既无正文也无工具调用），可能是'
-              '供应商异常。任务尚未结束，请继续推进；若任务已完成，'
-              '请输出面向用户的最终结论后再结束。',
+              '[系统] 回复未调用工具（$_noToolMistakes/$_kMaxNoToolMistakes）。'
+              '[ERROR] 你上一条回复没有调用任何工具，任务不会因此结束。'
+              '每条回复都必须调用工具：\n'
+              '- 还有工作要做：直接调用相应工具继续执行；\n'
+              '- 需要用户回答或做决定：调用 ask_user；\n'
+              '- 任务已全部完成：调用 attempt_completion，把最终答复写进 result。',
             );
             continue;
           }
-          if (!_guards.finishGuardFired &&
-              !FinishGuards.hasFinalReply(await store.getEvents(current.id))) {
-            _guards.finishGuardFired = true;
-            await store.appendUserMessage(
-              current.id,
-              '[系统] 你还没有输出面向用户的正文回复。请先把最终结论/报告'
-              '作为正文完整输出，再结束任务。',
-            );
-            continue;
-          }
-          final blocked = await _guards.checkStopGuard();
-          if (blocked != null) {
-            await store.appendUserMessage(
-              current.id,
-              '[stop hook 阻止收尾] $blocked',
-            );
-            continue;
-          }
-          // 对标 Roo Code / Cline：收尾只认 finish_task，提问只认
-          // ask_user。有正文但无工具调用一律视为「未按协议结束」，
-          // 注入 noToolsUsed 式提醒续跑；不猜正文语义。
-          if (!turn.truncated && turn.text.trim().isNotEmpty) {
-            final pendingPlan = _pendingPlanItems(
-              await store.getEvents(current.id),
-            );
-            if (_noToolNudges < _kMaxNoToolNudges) {
-              _noToolNudges++;
-              final planHint = pendingPlan.isEmpty
-                  ? ''
-                  : '\n计划中还有 ${pendingPlan.length} 项未完成：'
-                        '${pendingPlan.map((i) => '「${i.content}」').join('、')}。';
-              await store.appendUserMessage(
-                current.id,
-                '[系统] 回复未调用工具，提醒继续（$_noToolNudges/$_kMaxNoToolNudges）。'
-                '你上一条回复没有调用任何工具，任务不会因此结束。$planHint\n'
-                '- 如果还有工作要做：直接调用相应工具继续执行，不要只描述打算；\n'
-                '- 如果需要用户回答或做决定（包括问「还需要什么」）：调用 ask_user，不要只在正文里提问；\n'
-                '- 如果任务确实已全部完成：调用 finish_task，把最终答复写进 result（上一条回复已是完整答复的话 result 写一句确认即可）。',
-              );
-              continue;
-            }
-            // 追问额度耗尽仍不调工具：顶层任务不静默判 done，暂停交还
-            // 用户（对标 Cline 连续错误上限后请求用户介入）。子代理
-            // （subagents == null）没有用户可交还、paused 会被父任务当
-            // 失败，故落到下方旧逻辑按当前正文收尾。
-            if (subagents != null) {
-              final reason = pendingPlan.isEmpty
-                  ? '模型连续 $_kMaxNoToolNudges 次回复未调用工具，已暂停：'
-                        '任务已完成可直接结束，否则请补充指示后继续'
-                  : '计划还有 ${pendingPlan.length} 项未完成，但模型连续 '
-                        '$_kMaxNoToolNudges 次未调用工具，已暂停等待你的指示';
-              current = await transition(AgentTaskStatus.paused, reason);
-              onNotification?.call(reason, 'paused');
-              return;
-            }
-          }
-          // 截断续跑额度耗尽后走到这里的是断尾正文：不能静默判 done，
-          // 明确告知用户内容可能不完整（能到此处说明上方续跑分支
-          // 未命中，即额度已用尽）。
-          if (turn.truncated) {
-            await store.appendStatusChange(
-              current.id,
-              '输出因 token 上限被截断，自动续跑额度已用尽'
-              '（$_kMaxLengthContinues/$_kMaxLengthContinues），'
-              '以上内容可能不完整',
-            );
-          } else if (turn.text.trim().isEmpty &&
-              _emptyRetries >= _kMaxEmptyRetries) {
-            // 空回复重试额度耗尽后收尾：同样明确告知，避免用户以为
-            // 模型正常完成却拿不到结论。
-            await store.appendStatusChange(
-              current.id,
-              '模型持续返回空回复，重试额度已用尽'
-              '（$_kMaxEmptyRetries/$_kMaxEmptyRetries），任务以当前进度结束',
-            );
-          }
-          // 正文就是结束语；状态行只留元信息，避免重复。
-          await store.appendStatusChange(
-            current.id,
-            '任务完成 · ${current.rounds} 轮',
-          );
-          current = await save(
-            current.copyWith(
-              status: AgentTaskStatus.done,
-              updatedAt: DateTime.now(),
-              lastEventSummary: turn.text.isNotEmpty
-                  ? turn.text
-                  : current.lastEventSummary,
-            ),
-          );
-          onTaskEnd?.call();
+          final reason =
+              '模型连续 $_kMaxNoToolMistakes 次回复未调用工具，已暂停。'
+              '可补充指示后继续';
+          current = await transition(AgentTaskStatus.paused, reason);
+          onNotification?.call(reason, 'paused');
           return;
         }
 
@@ -882,17 +793,4 @@ class AgentEngine {
       onTaskFailed?.call('$e');
     }
   }
-}
-
-/// 最新计划快照里未完成（pending / inProgress）的条目；无计划或已
-/// 全部完成（allDone 时计划被清空）返回空列表。
-List<AgentPlanItem> _pendingPlanItems(List<AgentEvent> events) {
-  for (final event in events.reversed) {
-    if (event is PlanUpdateEvent) {
-      return event.items
-          .where((i) => i.status != AgentPlanItemStatus.completed)
-          .toList();
-    }
-  }
-  return const [];
 }

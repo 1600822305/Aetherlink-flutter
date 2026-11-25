@@ -45,7 +45,7 @@ enum ControlToolOutcome {
 }
 
 /// agent 专属控制工具的引擎内处理（初稿 §5.4）：update_plan /
-/// ask_user / enter_plan_mode / exit_plan_mode / finish_task。
+/// ask_user / enter_plan_mode / exit_plan_mode / attempt_completion。
 /// 状态迁移经 [tx] 写回，调用方处理完从 `tx.current` 取最新任务快照。
 class ControlToolFlow {
   ControlToolFlow({
@@ -87,7 +87,7 @@ class ControlToolFlow {
         failPendingToolEvents,
         resolvePlanApproval,
       ),
-      kToolFinishTask => _finishTask(call, failPendingToolEvents),
+      kToolAttemptCompletion => _attemptCompletion(call, failPendingToolEvents),
       _ => Future.value(null),
     };
   }
@@ -271,50 +271,83 @@ class ControlToolFlow {
     return ControlToolOutcome.nextCall;
   }
 
-  Future<ControlToolOutcome> _finishTask(
+  Future<ControlToolOutcome> _attemptCompletion(
     AgentToolCallRequest call,
     Future<void> Function() failPendingToolEvents,
   ) async {
     final current = tx.current;
     final result = stringArgOf(call, 'result')?.trim() ?? '';
-    final events = await store.getEvents(current.id);
-    // 对标 Roo attempt_completion：交付物就是 result 参数。兼容旧调用
-    // （只传 summary）：本条回复正文已有最终答复时照样放行。
-    if (result.isEmpty && !FinishGuards.hasFinalReply(events)) {
-      await _logControlResult(
-        call,
-        ok: false,
-        summary: '收尾被拒：result 为空',
-        detail:
-            'finish_task 的 result 参数为空。请把交付给用户的最终答复/报告'
-            '完整写进 result 后重新调用 finish_task；若工作尚未完成，继续调用'
-            '工具执行。',
+    // 流式阶段已建好的完成卡片（FinishResultStreamer）；非流式路径为 null。
+    final card = (await store.getEvents(current.id))
+        .whereType<ToolCallEvent>()
+        .where(
+          (e) =>
+              e.toolName == kToolAttemptCompletion &&
+              e.state == AgentToolCallState.running,
+        )
+        .lastOrNull;
+
+    Future<void> settle({
+      required bool ok,
+      required String summary,
+      required String detail,
+    }) async {
+      if (card == null) {
+        await _logControlResult(
+          call,
+          ok: ok,
+          summary: summary,
+          detail: detail,
+          argSummary: '提交完成结果',
+        );
+        return;
+      }
+      await store.updateToolCall(
+        current.id,
+        card,
+        state: ok ? AgentToolCallState.success : AgentToolCallState.failure,
+        argsDetail: call.argsJson,
+        resultSummary: summary,
+        resultDetail: detail,
       );
-      // 计入连续失败熔断：反复空提交会按预算规则暂停，不会死循环。
+    }
+
+    // 对标 Roo attempt_completion：缺 result 报错，任务继续（计入熔断）。
+    if (result.isEmpty) {
+      await settle(
+        ok: false,
+        summary: '完成被拒：缺少 result',
+        detail:
+            'attempt_completion 的 result 参数为空。请把交付给用户的最终答复/'
+            '报告完整写进 result 后重新调用；若工作尚未完成，继续调用工具执行。',
+      );
       budget.recordToolResult(ok: false);
       return ControlToolOutcome.nextCall;
     }
     final blocked = await guards.checkStopGuard();
     if (blocked != null) {
+      await settle(
+        ok: false,
+        summary: '完成被 stop hook 拦下',
+        detail: blocked,
+      );
       await store.appendUserMessage(current.id, '[stop hook 阻止收尾] $blocked');
       return ControlToolOutcome.nextTurn;
     }
-    // result 落成助手正文（完成结果）；与本轮已输出的正文相同则不重复。
-    if (result.isNotEmpty &&
-        FinishGuards.lastReplyText(events)?.trim() != result) {
-      await store.appendAssistantText(current.id, result, streaming: false);
-    }
+    // 完成卡片本身就是「任务完成」标记：结果在卡片里，轮数进卡片角标，
+    // 不再另落助手正文和「任务完成 · N 轮」状态行（避免重复）。
+    await settle(
+      ok: true,
+      summary: '${current.rounds} 轮',
+      detail: '任务已完成，用户已看到结果。',
+    );
     final summaryArg = stringArgOf(call, 'summary')?.trim() ?? '';
-    final summary = summaryArg.isNotEmpty
-        ? summaryArg
-        : (result.isNotEmpty ? _firstLine(result) : '任务完成');
     await failPendingToolEvents();
-    await store.appendStatusChange(current.id, '任务完成 · ${current.rounds} 轮');
     await tx.save(
       current.copyWith(
         status: AgentTaskStatus.done,
         updatedAt: DateTime.now(),
-        lastEventSummary: summary,
+        lastEventSummary: summaryArg.isNotEmpty ? summaryArg : _firstLine(result),
       ),
     );
     onTaskEnd?.call();
