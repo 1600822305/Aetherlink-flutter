@@ -4,7 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
-import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
+import 'package:aetherlink_flutter/shared/services/mobile_background.dart';
 
 part 'streaming_registry.g.dart';
 
@@ -48,21 +48,25 @@ class StreamingRegistry extends _$StreamingRegistry {
   final Map<String, List<LlmCancelToken>> _tokens =
       <String, List<LlmCancelToken>>{};
 
+  /// Worst outcome reported by the topic's streams, reported to the background
+  /// runtime once the whole turn ends.
+  final Map<String, BackgroundTaskOutcome> _outcomes =
+      <String, BackgroundTaskOutcome>{};
+
+  static String backgroundTaskId(String topicId) => 'chat:$topicId';
+
   @override
   StreamingRegistryState build() => const StreamingRegistryState();
 
   /// Records the latest live [views] for [topicId], marking it as streaming.
-  /// Starts the background keep-alive service when the first topic begins.
   void update(String topicId, List<ChatMessageView> views) {
-    final wasIdle = state.liveByTopic.isEmpty;
     final next = Map<String, List<ChatMessageView>>.of(state.liveByTopic);
     next[topicId] = List<ChatMessageView>.of(views);
     state = StreamingRegistryState(liveByTopic: next);
-    if (wasIdle) unawaited(StreamingKeepAliveService.begin());
   }
 
-  /// Clears [topicId]'s streaming state (it finished, was stopped, or errored).
-  /// Stops the keep-alive service once no topic is streaming.
+  /// Clears [topicId]'s streaming state (it finished, was stopped, or errored)
+  /// and ends its background task.
   ///
   /// A no-op while the topic still has a live request bound: a topic can carry
   /// more than one in-flight turn (multi-model siblings, or two turns racing
@@ -72,17 +76,50 @@ class StreamingRegistry extends _$StreamingRegistry {
   void finish(String topicId) {
     if (_tokens[topicId]?.isNotEmpty ?? false) return;
     _tokens.remove(topicId);
+    final outcome = _outcomes.remove(topicId);
+    unawaited(
+      MobileBackgroundCoordinator.instance.finish(
+        backgroundTaskId(topicId),
+        outcome ?? BackgroundTaskOutcome.completed,
+      ),
+    );
     if (!state.liveByTopic.containsKey(topicId)) return;
     final next = Map<String, List<ChatMessageView>>.of(state.liveByTopic)
       ..remove(topicId);
     state = StreamingRegistryState(liveByTopic: next);
-    if (next.isEmpty) unawaited(StreamingKeepAliveService.end());
   }
 
   /// Binds a cancellation handle for an in-flight request on [topicId] so
-  /// [cancel] can abort it. Multi-model turns bind one token per sibling.
+  /// [cancel] can abort it. Multi-model turns bind one token per sibling. The
+  /// first bind registers the topic with the background runtime, so the
+  /// request keeps running before the first chunk arrives too.
   void bindToken(String topicId, LlmCancelToken token) {
     (_tokens[topicId] ??= <LlmCancelToken>[]).add(token);
+    unawaited(
+      MobileBackgroundCoordinator.instance.start(
+        id: backgroundTaskId(topicId),
+        conversationId: backgroundTaskId(topicId),
+        title: '正在生成回复',
+        cancel: () async => cancel(topicId),
+      ),
+    );
+  }
+
+  /// Reports what [topicId]'s stream is doing to the background notification.
+  void reportPhase(
+    String topicId,
+    BackgroundTaskPhase phase, {
+    String toolName = '',
+  }) => MobileBackgroundCoordinator.instance.update(
+    backgroundTaskId(topicId),
+    phase: phase,
+    toolName: toolName,
+  );
+
+  /// Records how one of [topicId]'s streams ended; a failure outranks a stop.
+  void reportOutcome(String topicId, BackgroundTaskOutcome outcome) {
+    if (_outcomes[topicId] == BackgroundTaskOutcome.failed) return;
+    _outcomes[topicId] = outcome;
   }
 
   /// Releases [token] once its stream is over. Idempotent. The topic stays

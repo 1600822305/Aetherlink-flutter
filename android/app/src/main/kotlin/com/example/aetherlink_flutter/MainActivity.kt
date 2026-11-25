@@ -3,11 +3,14 @@ package com.example.aetherlink_flutter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private val backgroundRuntime get() = (application as AetherlinkApplication).backgroundRuntime
+
     // Termux one-tap setup (设计文档 §10.5 / Termux-A): the Dart side
     // (core/platform/impl/termux_impl.dart) asks whether Termux is installed and
     // from where, so it can warn about the deprecated Play build. Requires the
@@ -23,8 +26,31 @@ class MainActivity : FlutterActivity() {
     // in onRequestPermissionsResult.
     private var pendingRunCommand: Pair<String, MethodChannel.Result>? = null
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        backgroundRuntime.receiveConversation(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        backgroundRuntime.receiveConversation(intent)
+        setIntent(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        backgroundRuntime.setForeground(true)
+    }
+
+    override fun onStop() {
+        backgroundRuntime.setForeground(false)
+        super.onStop()
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        backgroundRuntime.configure(flutterEngine.dartExecutor.binaryMessenger)
+        backgroundRuntime.attachActivity(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, termuxChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -34,6 +60,12 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        backgroundRuntime.detachActivity(this)
+        backgroundRuntime.detach()
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     private fun detectTermux(): Map<String, Any?> {
@@ -113,6 +145,7 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (backgroundRuntime.permissionResult(requestCode)) return
         if (requestCode != runCommandPermissionRequestCode) return
         val pending = pendingRunCommand ?: return
         pendingRunCommand = null

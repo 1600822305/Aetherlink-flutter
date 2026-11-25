@@ -143,6 +143,14 @@ const List<SettingsSearchEntry> kSettingsSearchIndex = <SettingsSearchEntry>[
       '输入法',
     ],
   ),
+  SettingsSearchEntry(
+    icon: LucideIcons.activity,
+    title: '后台执行',
+    description: '切后台/息屏继续生成、完成通知与悬浮窗',
+    route: AppRouter.backgroundExecutionPath,
+    group: '基本设置',
+    keywords: ['background', '后台', '保活', '息屏', '悬浮窗', '前台服务', '电池优化'],
+  ),
 
   // ── 模型服务 ──
   SettingsSearchEntry(

@@ -22,7 +22,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
+import 'package:aetherlink_flutter/shared/services/mobile_background.dart';
 
 export 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart'
     show AgentRollbackResult, RollbackFileChange, RollbackFileKind;
@@ -57,6 +57,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     onBackgroundChildStarted: (taskId, token) {
       _tokens[taskId] = token;
       state = {...state, taskId};
+      _startBackgroundTask(taskId);
     },
     onBackgroundChildFinished: (taskId) {
       _tokens.remove(taskId);
@@ -64,9 +65,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         for (final id in state)
           if (id != taskId) id,
       };
-      if (state.isEmpty) {
-        unawaited(StreamingKeepAliveService.release('agent'));
-      }
+      _finishBackgroundTask(taskId);
     },
   );
 
@@ -448,15 +447,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     final token = AgentCancellationToken();
     _tokens[task.id] = token;
     state = {...state, task.id};
-    // 前台服务保活（初稿 §5.5 P1）：切后台任务继续跑，常驻通知展示运行中。
-    // 每个任务启动都 acquire（幂等）：上次启动失败时这里是重试点。
-    unawaited(
-      StreamingKeepAliveService.acquire(
-        'agent',
-        title: '智能体任务运行中…',
-        text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
-      ),
-    );
+    // 后台执行（初稿 §5.5 P1）：登记到原生后台运行时，有活跃任务才持锁跑
+    // 前台服务，切后台/息屏任务继续跑。
+    _startBackgroundTask(task.id, title: task.title);
 
     // 档案已删的孤儿话题兜底：空专长 + 全工具组，任务仍可继续。
     final profile =
@@ -498,8 +491,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.stopGuard,
       hookStopSignal: runtime.hookStopSignal,
-      onTurnStart: () =>
-          unawaited(runtime.lifecycleHooks(AgentHookEvent.turnStart)),
+      onTurnStart: () {
+        MobileBackgroundCoordinator.instance.update(
+          _backgroundTaskId(task.id),
+          phase: BackgroundTaskPhase.requesting,
+        );
+        unawaited(runtime.lifecycleHooks(AgentHookEvent.turnStart));
+      },
       onTurnEnd: () =>
           unawaited(runtime.lifecycleHooks(AgentHookEvent.turnEnd)),
       onTaskEnd: () =>
@@ -510,6 +508,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       onNotification: (message, type) =>
           unawaited(runtime.notificationHooks(message, notificationType: type)),
       onPreCompact: () {
+        MobileBackgroundCoordinator.instance.update(
+          _backgroundTaskId(task.id),
+          phase: BackgroundTaskPhase.compacting,
+        );
         // 事件流实况行：安全点压缩开始（LLM 摘要中不可取消）。
         ref
             .read(agentCompactionProgressProvider.notifier)
@@ -544,9 +546,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         for (final id in state)
           if (id != task.id) id,
       };
-      if (state.isEmpty) {
-        unawaited(StreamingKeepAliveService.release('agent'));
-      }
+      _finishBackgroundTask(task.id);
       final userSwitch = _pendingUserModeSwitch.remove(task.id);
       if (userSwitch != null) {
         // 用户运行中手动切模式：引擎已在安全点退出（通常 paused），
@@ -570,6 +570,60 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         }
       }
     });
+  }
+
+  static String _backgroundTaskId(String taskId) => 'agent:$taskId';
+
+  void _startBackgroundTask(String taskId, {String? title}) {
+    final name =
+        title ??
+        ref
+            .read(agentTasksProvider)
+            .where((t) => t.id == taskId)
+            .firstOrNull
+            ?.title;
+    unawaited(
+      MobileBackgroundCoordinator.instance.start(
+        id: _backgroundTaskId(taskId),
+        conversationId: _backgroundTaskId(taskId),
+        title: name == null || name.isEmpty ? '智能体任务' : name,
+        cancel: () async => forceStop(taskId),
+      ),
+    );
+  }
+
+  void _finishBackgroundTask(String taskId) {
+    final status = ref
+        .read(agentTasksProvider)
+        .where((t) => t.id == taskId)
+        .firstOrNull
+        ?.status;
+    unawaited(
+      MobileBackgroundCoordinator.instance.finish(
+        _backgroundTaskId(taskId),
+        switch (status) {
+          AgentTaskStatus.failed => BackgroundTaskOutcome.failed,
+          AgentTaskStatus.cancelled ||
+          AgentTaskStatus.paused => BackgroundTaskOutcome.cancelled,
+          _ => BackgroundTaskOutcome.completed,
+        },
+      ),
+    );
+  }
+
+  /// 任务写回同时把阶段/token 同步给后台通知（未登记的任务 id 是空操作）。
+  void _reportBackgroundProgress(AgentTask task) {
+    final phase = switch (task.status) {
+      AgentTaskStatus.running => BackgroundTaskPhase.generating,
+      AgentTaskStatus.waitingApproval => BackgroundTaskPhase.waitingApproval,
+      _ => null,
+    };
+    if (phase == null) return;
+    MobileBackgroundCoordinator.instance.update(
+      _backgroundTaskId(task.id),
+      phase: phase,
+      tokens: task.tokenCount,
+    );
   }
 
   /// 某个任务的 hooks 时间线通道：运行中文案落一条状态事件，
@@ -608,8 +662,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     }
   }
 
-  Future<void> _applyTask(AgentTask task) =>
-      ref.read(agentTasksProvider.notifier).apply(task);
+  Future<void> _applyTask(AgentTask task) {
+    _reportBackgroundProgress(task);
+    return ref.read(agentTasksProvider.notifier).apply(task);
+  }
 }
 
 class _ProviderTaskGateway implements AgentTaskGateway {
