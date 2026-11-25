@@ -9,9 +9,11 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/app/di/app_main_mode.dart';
 import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/mobile_background_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_tool.dart';
+import 'package:aetherlink_flutter/shared/services/mobile_background.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/shared/widgets/ime_editing_panel_support.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
@@ -19,6 +21,7 @@ import 'package:aetherlink_flutter/features/settings/application/font_size_contr
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_position_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/display_refresh_rate_controller.dart';
+import 'package:aetherlink_flutter/features/settings/application/mobile_background_settings_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/application/buddy_overlay_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/presentation/buddy_floating_pet.dart';
 import 'package:aetherlink_flutter/features/settings/application/perf_monitor_controller.dart';
@@ -75,6 +78,19 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
     // death on the platform side).
     ref.read(displayRefreshRateControllerProvider);
     WidgetsBinding.instance.addObserver(this);
+    unawaited(
+      MobileBackgroundCoordinator.instance.configure(
+        ref.read(mobileBackgroundSettingsControllerProvider),
+      ),
+    );
+  }
+
+  Future<void> _openBackgroundConversation(String conversationId) async {
+    final path = await ref.read(backgroundConversationOpenerProvider)(
+      conversationId,
+    );
+    if (!mounted) return;
+    _router?.go(path);
   }
 
   @override
@@ -138,6 +154,14 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
     final appFontFamily = ref.watch(appFontFamilyProvider);
     final lightTheme = AppTheme.light(spec, appFontFamily: appFontFamily);
     final darkTheme = AppTheme.dark(spec, appFontFamily: appFontFamily);
+    ref.listen(mobileBackgroundSettingsControllerProvider, (_, next) {
+      unawaited(
+        MobileBackgroundCoordinator.instance.configure(
+          next,
+          overlayProgressColor: lightTheme.colorScheme.primary,
+        ),
+      );
+    });
     final themeMode = switch (mode) {
       AppThemeMode.system => ThemeMode.system,
       AppThemeMode.light => ThemeMode.light,
@@ -174,6 +198,9 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
       }
       provider.addListener(report);
       report();
+      MobileBackgroundCoordinator.instance.setConversationOpener(
+        (id) => unawaited(_openBackgroundConversation(id)),
+      );
     }
     final router = _router;
     if (router == null) {

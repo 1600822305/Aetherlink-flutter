@@ -40,6 +40,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.da
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart'
     show terminalCommandIsHighRisk;
+import 'package:aetherlink_flutter/shared/services/mobile_background.dart';
 
 final _log = createLogger('TurnStreamBinder');
 
@@ -399,8 +400,14 @@ class TurnStreamBinder {
     }
 
     void scheduleUpdate() {
-      if (pendingEmitFrame != null) return;
       final scheduler = frameScheduler;
+      // 后台（帧停产）时 frame callback 永远不会触发：直接推进，并顺带冲掉
+      // 切后台前已挂起的合帧回调，否则流式状态会停在最后一帧。
+      if (scheduler != null && !scheduler.framesEnabled) {
+        update();
+        return;
+      }
+      if (pendingEmitFrame != null) return;
       // Leading edge：无 binding，或空闲且没有帧在排时直接发射（emit 本身会把
       // 下一帧排上，后续 delta 自然落入下面的合帧分支）。
       if (scheduler == null ||
@@ -516,6 +523,7 @@ class TurnStreamBinder {
           ),
         );
       }
+      _registry.reportOutcome(turnTopicId, BackgroundTaskOutcome.cancelled);
       _ref.read(toolConfirmationProvider.notifier).rejectAll();
       _ref.read(runningCommandsProvider.notifier).cancelAll();
       await checkpointChain;
@@ -630,6 +638,10 @@ class TurnStreamBinder {
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
                 buffer.write(text);
+                _registry.reportPhase(
+                  turnTopicId,
+                  BackgroundTaskPhase.generating,
+                );
                 scheduleUpdate();
                 checkpoint();
               case LlmReasoningDelta(:final text):
@@ -637,6 +649,10 @@ class TurnStreamBinder {
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 thinkingStartAt ??= DateTime.now();
                 thinking.write(text);
+                _registry.reportPhase(
+                  turnTopicId,
+                  BackgroundTaskPhase.thinking,
+                );
                 scheduleUpdate();
                 checkpoint();
               case LlmToolCallDelta():
@@ -841,6 +857,11 @@ class TurnStreamBinder {
             Future<McpToolResult> runRoute() async {
               activeToolName = call.name;
               activeToolArgs = args;
+              _registry.reportPhase(
+                turnTopicId,
+                BackgroundTaskPhase.tool,
+                toolName: call.name,
+              );
               final McpToolResult result;
               if (!isCancelableCommand) {
                 result = await _toolExecutor.runTool(route, call.name, args);
@@ -901,6 +922,13 @@ class TurnStreamBinder {
                   confirm.isGraceActive(turnTopicId, call.name) &&
                   !(route is TerminalToolRoute &&
                       terminalCommandIsHighRisk(call.name, args));
+              if (!graceUsable) {
+                _registry.reportPhase(
+                  turnTopicId,
+                  BackgroundTaskPhase.waitingApproval,
+                  toolName: call.name,
+                );
+              }
               final approved = graceUsable
                   ? true
                   : await confirm.request(
@@ -1112,6 +1140,7 @@ class TurnStreamBinder {
 
     // Terminal failure: reject any pending confirmations, persist any key stat
     // changes, then mark the message errored.
+    _registry.reportOutcome(turnTopicId, BackgroundTaskOutcome.failed);
     _ref.read(toolConfirmationProvider.notifier).rejectAll();
     _ref.read(runningCommandsProvider.notifier).cancelAll();
     await checkpointChain;

@@ -153,7 +153,6 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   timezone: ^0.10.0
   system_fonts: ^1.0.1
-  flutter_foreground_task: ^9.2.2
   dartssh2: 2.18.0
   # Terminal emulator widget for the SSH workspace PTY page (设计文档 §8.2).
   # 原 xterm 4.0.0 已停更；xterm3 是其维护中 fork（AGPL）的超集：

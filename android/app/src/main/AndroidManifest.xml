@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- 读取任意路径下的 APK 供 dex 编辑器分析/修改。Android 11+ 走
          MANAGE_EXTERNAL_STORAGE（所有文件访问）；旧版本用传统外部存储读写权限。 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
@@ -21,7 +24,7 @@
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <application
         android:label="aetherlink_flutter"
-        android:name="${applicationName}"
+        android:name=".AetherlinkApplication"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
         <activity
@@ -47,10 +50,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Foreground service that keeps AI reply generation running while the
-             app is in the background (flutter_foreground_task). -->
+        <!-- Foreground service that holds a partial WakeLock while chat or agent
+             tasks run in the background (background/BackgroundRuntime.kt). -->
         <service
-            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:name=".background.GenerationForegroundService"
+            android:stopWithTask="false"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 

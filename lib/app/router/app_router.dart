@@ -26,6 +26,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/agent_prompts_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/auxiliary_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/appearance_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/background_execution_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/behavior_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
@@ -116,6 +117,7 @@ abstract final class AppRouter {
   static const String modelComboPath = '/settings/model-combo';
   static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
+  static const String backgroundExecutionPath = '/settings/background';
   static const String settingsSearchPath = '/settings/search';
   static const String voiceSettingsPath = '/settings/voice';
   static const String backupSettingsPath = '/settings/backup';
@@ -419,6 +421,12 @@ abstract final class AppRouter {
         name: 'behavior',
         pageBuilder: (context, state) =>
             _instant(state, const BehaviorSettingsPage()),
+      ),
+      GoRoute(
+        path: backgroundExecutionPath,
+        name: 'background-execution',
+        pageBuilder: (context, state) =>
+            _instant(state, const BackgroundExecutionSettingsPage()),
       ),
       GoRoute(
         path: knowledgeBasePath,

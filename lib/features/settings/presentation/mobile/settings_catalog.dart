@@ -77,6 +77,12 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         description: '消息发送和通知设置',
         route: AppRouter.behaviorPath,
       ),
+      SettingItemData(
+        icon: LucideIcons.activity,
+        title: '后台执行',
+        description: '切后台/息屏继续生成、完成通知与悬浮窗',
+        route: AppRouter.backgroundExecutionPath,
+      ),
     ],
   ),
   SettingGroupData(

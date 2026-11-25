@@ -23,7 +23,6 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
-import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
 
 /// 任务标题取自首条文本的前 24 字。
 String agentTaskTitleFrom(String text) =>
@@ -332,13 +331,6 @@ class AgentSubagentRunner implements AgentSubagentLauncher {
   }) async {
     final token = AgentCancellationToken();
     _onBackgroundChildStarted(child.id, token);
-    unawaited(
-      StreamingKeepAliveService.acquire(
-        'agent',
-        title: '智能体任务运行中…',
-        text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
-      ),
-    );
     try {
       final result = await _runChildEngine(
         child: child,
