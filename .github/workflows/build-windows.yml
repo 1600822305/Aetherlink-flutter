@@ -1,0 +1,54 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: '3.44.9'
+          architecture: x64
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate Dart sources
+        run: dart run build_runner build
+
+      - name: Build Windows release
+        run: flutter build windows --release --no-pub
+
+      - name: Check release bundle
+        run: |
+          $bundle = 'build/windows/x64/runner/Release'
+          foreach ($file in @('aetherlink_flutter.exe', 'flutter_windows.dll', 'data/app.so')) {
+            if (-not (Test-Path -LiteralPath "$bundle/$file" -PathType Leaf)) {
+              throw "Missing release file: $file"
+            }
+          }
+          if (-not (Test-Path -LiteralPath "$bundle/data/flutter_assets" -PathType Container)) {
+            throw 'Missing Flutter assets directory'
+          }
+
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: Aetherlink-Windows-x64-${{ github.sha }}
+          path: build/windows/x64/runner/Release/
+          if-no-files-found: error
