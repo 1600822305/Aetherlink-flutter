@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 45
 
     steps:
@@ -55,6 +55,21 @@ jobs:
           }
 
           Copy-Item -Path $source, $header -Destination $sourceDir -Force
+
+          $sqliteArchive = 'sqlite-amalgamation-3460100.zip'
+          $sqliteUrl = "https://www.sqlite.org/2024/$sqliteArchive"
+          $sqliteExpectedHash = '77823CB110929C2BCB0F5D48E4833B5C59A8A6E40CDEA3936B99E199DBBE5784'
+          $sqliteArchivePath = Join-Path $tempDir $sqliteArchive
+          Invoke-WebRequest -Uri $sqliteUrl -OutFile $sqliteArchivePath
+          $sqliteActualHash = (Get-FileHash -Path $sqliteArchivePath -Algorithm SHA256).Hash
+          if ($sqliteActualHash -ne $sqliteExpectedHash) {
+            throw "SQLite amalgamation SHA-256 mismatch: $sqliteActualHash"
+          }
+
+          $sqliteDir = Join-Path $tempDir 'sqlite-amalgamation'
+          Expand-Archive -Path $sqliteArchivePath -DestinationPath $sqliteDir
+          $sqliteIncludeDir = Join-Path $sqliteDir 'sqlite-amalgamation-3460100'
+          Copy-Item -Path (Join-Path $sqliteIncludeDir 'sqlite3.h'), (Join-Path $sqliteIncludeDir 'sqlite3ext.h') -Destination $sourceDir -Force
 
       - name: Generate Dart sources
         run: dart run build_runner build
