@@ -28,6 +28,34 @@ jobs:
       - name: Install dependencies
         run: flutter pub get --enforce-lockfile
 
+      - name: Restore sqlite_vec source
+        shell: pwsh
+        run: |
+          $archive = 'sqlite-vec-0.1.7-amalgamation.tar.gz'
+          $url = "https://github.com/asg017/sqlite-vec/releases/download/v0.1.7/$archive"
+          $expectedHash = 'FA0BBE5057414B587402536741178B65D18F5BF3DBB429BB3AAA7375AF2D3EE0'
+          $tempDir = Join-Path $env:RUNNER_TEMP 'sqlite-vec'
+          $archivePath = Join-Path $tempDir $archive
+          $packageDir = Join-Path $env:LOCALAPPDATA 'Pub/Cache/hosted/pub.dev/sqlite_vec-0.1.7-alpha.3'
+          $sourceDir = Join-Path $packageDir 'src'
+
+          New-Item -ItemType Directory -Force -Path $tempDir, $sourceDir | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $archivePath
+          $actualHash = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "sqlite-vec archive SHA-256 mismatch: $actualHash"
+          }
+
+          tar -xzf $archivePath -C $tempDir
+          $source = Join-Path $tempDir 'sqlite-vec.c'
+          $header = Join-Path $tempDir 'sqlite-vec.h'
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $header -PathType Leaf)) {
+            throw 'sqlite-vec amalgamation is missing required source files'
+          }
+
+          Copy-Item -Path $source, $header -Destination $sourceDir -Force
+
       - name: Generate Dart sources
         run: dart run build_runner build
 
