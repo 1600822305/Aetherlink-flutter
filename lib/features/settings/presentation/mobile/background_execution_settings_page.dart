@@ -60,11 +60,16 @@ class _BackgroundExecutionSettingsPageState
             : context.go(AppRouter.settingsPath),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          12,
+          12,
+          16 + MediaQuery.paddingOf(context).bottom,
+        ),
         children: [
           if (!_coordinator.supported)
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 12),
               child: Text(
                 '后台执行仅支持 Android。',
                 style: theme.textTheme.bodyMedium?.copyWith(
@@ -78,29 +83,28 @@ class _BackgroundExecutionSettingsPageState
               children: [
                 _SwitchRow(
                   label: '后台继续执行',
-                  description: '聊天生成或智能体任务运行时启动前台服务并保持 CPU 唤醒，'
-                      '切后台/息屏也不中断',
+                  description: '切后台或锁屏时，聊天与智能体任务不中断',
                   value: settings.androidEnabled,
                   onChanged: controller.setEnabled,
                 ),
                 Divider(height: 1, color: theme.dividerColor),
                 _SwitchRow(
                   label: '完成通知',
-                  description: 'App 在后台时任务结束弹通知，点击回到对应会话',
+                  description: '后台任务结束时通知，点击回到会话',
                   value: settings.notificationsEnabled,
                   onChanged: controller.setNotificationsEnabled,
                 ),
                 Divider(height: 1, color: theme.dividerColor),
                 _SwitchRow(
                   label: '隐私模式',
-                  description: '通知与悬浮窗不显示会话标题和进度详情',
+                  description: '通知与悬浮窗不显示标题和进度',
                   value: settings.privacyMode,
                   onChanged: controller.setPrivacyMode,
                 ),
                 Divider(height: 1, color: theme.dividerColor),
                 _SwitchRow(
                   label: '后台悬浮窗',
-                  description: '在其他应用上方显示任务进度，可拖动，点击回到会话，长按关闭',
+                  description: '在其他应用上方显示任务进度',
                   value: settings.overlayEnabled,
                   onChanged: controller.setOverlayEnabled,
                 ),
@@ -128,7 +132,7 @@ class _BackgroundExecutionSettingsPageState
                   Divider(height: 1, color: theme.dividerColor),
                   _SwitchRow(
                     label: '实时更新通知',
-                    description: 'Android 16 起在状态栏以实时活动样式展示进度',
+                    description: 'Android 16 起在状态栏显示实时进度',
                     value: settings.liveUpdatesEnabled,
                     onChanged: controller.setLiveUpdatesEnabled,
                   ),
@@ -136,14 +140,14 @@ class _BackgroundExecutionSettingsPageState
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           ModelSettingsCard(
             padding: EdgeInsets.zero,
             child: Column(
               children: [
                 _SwitchRow(
                   label: '聊天请求失败自动重试',
-                  description: '网络断开、服务繁忙或限流时自动重试，最多 3 次',
+                  description: '网络断开或服务繁忙时自动重试',
                   value: ref.watch(chatLlmAutoRetryProvider),
                   onChanged: ref.read(chatLlmAutoRetryProvider.notifier).set,
                   info: _kAutoRetryInfo,
@@ -151,7 +155,7 @@ class _BackgroundExecutionSettingsPageState
                 Divider(height: 1, color: theme.dividerColor),
                 _SwitchRow(
                   label: '终端后台保持运行',
-                  description: '锁屏或切到后台后，终端里正在跑的命令继续执行（更耗电）',
+                  description: '锁屏后终端命令继续执行，更耗电',
                   value: settings.terminalKeepAlive,
                   onChanged: controller.setTerminalKeepAlive,
                   info: _kTerminalKeepAliveInfo,
@@ -159,7 +163,7 @@ class _BackgroundExecutionSettingsPageState
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           ModelSettingsCard(
             padding: EdgeInsets.zero,
             child: Column(
@@ -191,7 +195,7 @@ class _BackgroundExecutionSettingsPageState
           ),
           if (lastError.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
               child: Text(
                 '最近错误：$lastError',
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -226,7 +230,7 @@ class _SwitchRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       child: Row(
         children: [
           Expanded(
@@ -249,19 +253,21 @@ class _SwitchRow extends StatelessWidget {
                         customBorder: const CircleBorder(),
                         onTap: () => _showFeatureInfo(context, label, info!),
                         child: Padding(
-                          padding: const EdgeInsets.all(4),
+                          padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
                           child: Icon(
                             Icons.info_outline,
-                            size: 16,
+                            size: 15,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 12,
                     height: 1.3,
@@ -271,7 +277,7 @@ class _SwitchRow extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           CustomSwitch(value: value, onChanged: onChanged),
         ],
       ),
@@ -393,7 +399,7 @@ class _VisibilityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
       child: Row(
         children: [
           Expanded(
@@ -439,6 +445,8 @@ class _PermissionRow extends StatelessWidget {
     final state = granted;
     return ListTile(
       dense: true,
+      visualDensity: const VisualDensity(vertical: -2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14),
       title: Text(label, style: theme.textTheme.bodyMedium),
       trailing: Text(
         state == null
