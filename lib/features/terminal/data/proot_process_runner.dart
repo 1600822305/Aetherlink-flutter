@@ -199,3 +199,7 @@ ByteConversionSink? _liveDecoder(void Function(String chunk)? onOutput) =>
     ? null
     : const Utf8Decoder(allowMalformed: true)
           .startChunkedConversion(_LiveTextSink(onOutput));
+
+/// 插件自带保活前台服务开关的唯一出口（本文件是唯一接触插件的地方）。
+Future<void> setTerminalPluginKeepAliveService(bool enabled) =>
+    AetherlinkTerminal.setOwnKeepAliveService(enabled);

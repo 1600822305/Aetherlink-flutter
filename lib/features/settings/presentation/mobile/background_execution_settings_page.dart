@@ -139,13 +139,24 @@ class _BackgroundExecutionSettingsPageState
           const SizedBox(height: 16),
           ModelSettingsCard(
             padding: EdgeInsets.zero,
-            child: _SwitchRow(
-              label: '聊天请求失败自动重试',
-              description: '网络断开、服务繁忙或限流时，在还没收到回复前自动重试'
-                  '（最多 3 次，间隔 1s/2s/4s）；余额不足、Key 无效不重试。'
-                  '智能体任务始终自动重试',
-              value: ref.watch(chatLlmAutoRetryProvider),
-              onChanged: ref.read(chatLlmAutoRetryProvider.notifier).set,
+            child: Column(
+              children: [
+                _SwitchRow(
+                  label: '聊天请求失败自动重试',
+                  description: '网络断开、服务繁忙或限流时自动重试，最多 3 次',
+                  value: ref.watch(chatLlmAutoRetryProvider),
+                  onChanged: ref.read(chatLlmAutoRetryProvider.notifier).set,
+                  info: _kAutoRetryInfo,
+                ),
+                Divider(height: 1, color: theme.dividerColor),
+                _SwitchRow(
+                  label: '终端后台保持运行',
+                  description: '锁屏或切到后台后，终端里正在跑的命令继续执行（更耗电）',
+                  value: settings.terminalKeepAlive,
+                  onChanged: controller.setTerminalKeepAlive,
+                  info: _kTerminalKeepAliveInfo,
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -200,12 +211,16 @@ class _SwitchRow extends StatelessWidget {
     required this.description,
     required this.value,
     required this.onChanged,
+    this.info,
   });
 
   final String label;
   final String description;
   final bool value;
   final ValueChanged<bool> onChanged;
+
+  /// 功能说明：非空时标题旁显示 ⓘ，点击弹出说明。
+  final _FeatureInfo? info;
 
   @override
   Widget build(BuildContext context) {
@@ -218,12 +233,31 @@ class _SwitchRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (info != null)
+                      InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => _showFeatureInfo(context, label, info!),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -244,6 +278,103 @@ class _SwitchRow extends StatelessWidget {
     );
   }
 }
+
+/// 功能说明：分段的标题 + 正文。
+class _FeatureInfo {
+  const _FeatureInfo(this.sections);
+
+  final List<(String, String)> sections;
+}
+
+Future<void> _showFeatureInfo(
+  BuildContext context,
+  String title,
+  _FeatureInfo info,
+) {
+  final theme = Theme.of(context);
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (i, (heading, body)) in info.sections.indexed) ...[
+              if (i > 0) const SizedBox(height: 12),
+              Text(
+                heading,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                body,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('知道了'),
+        ),
+      ],
+    ),
+  );
+}
+
+const _kAutoRetryInfo = _FeatureInfo([
+  (
+    '作用',
+    '普通聊天请求失败时，在还没收到任何回复内容前自动重新请求，'
+        '最多重试 3 次，间隔约 1 秒、2 秒、4 秒。等待期间消息里会显示'
+        '「网络中断，N 秒后重试（1/3）」，可随时停止。',
+  ),
+  (
+    '会重试的情况',
+    '网络断开、连接被重置、请求超时；服务器返回 408、425、429、500、502、'
+        '503、504、529；错误信息含「繁忙」「限流」「稍后」等。',
+  ),
+  (
+    '不会重试的情况',
+    '已经开始输出回复后的错误（避免重复内容）；余额不足、额度用尽、'
+        'Key 无效、无权限等；你手动停止。',
+  ),
+  ('智能体', '智能体任务始终自动重试，不受这个开关影响。'),
+]);
+
+const _kTerminalKeepAliveInfo = _FeatureInfo([
+  (
+    '作用',
+    '切到后台或锁屏后，终端里正在跑的命令继续执行，不会因为手机休眠而暂停，'
+        '适合 npm install、编译这类长命令。',
+  ),
+  (
+    '什么时候生效',
+    '终端页有已连接的会话，或 AI 正在终端里执行命令时生效；都没有时自动'
+        '撤销，不占用资源。有智能体任务在跑时，任务本身已经保活，开不开都一样。',
+  ),
+  (
+    '耗电',
+    '生效期间会保持 CPU 唤醒，比关闭时更耗电。终端页开着会话但不用时也会'
+        '保持唤醒，不用时建议关闭终端会话。',
+  ),
+  (
+    '通知',
+    '生效时只显示一条「终端运行中」常驻通知；点通知里的「停止」可临时取消'
+        '本次保活（不会结束终端会话）。',
+  ),
+  (
+    '前提',
+    '需要先开启「后台继续执行」；锁屏后网络是否可用还取决于是否允许'
+        '「不受电池优化限制」。',
+  ),
+]);
 
 class _VisibilityRow extends StatelessWidget {
   const _VisibilityRow({required this.value, required this.onChanged});

@@ -30,6 +30,8 @@ import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart'
 import 'package:aetherlink_flutter/features/theming/application/theme_controller.dart';
 import 'package:aetherlink_flutter/features/voice/application/tts_controller.dart';
 import 'package:aetherlink_flutter/features/welcome/application/onboarding_controller.dart';
+import 'package:aetherlink_flutter/features/terminal/application/terminal_keep_alive.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 
 /// Root application widget (composition root).
 ///
@@ -123,11 +125,62 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
     // death on the platform side).
     ref.read(displayRefreshRateControllerProvider);
     WidgetsBinding.instance.addObserver(this);
+    MobileBackgroundCoordinator.instance.batteryPromptRequests.addListener(
+      _showBatteryPrompt,
+    );
+    // 终端后台保持运行（设置开关，默认关）：跟随会话池 busy 与设置变化。
+    TerminalKeepAlive.instance.attach(
+      ref.read(workspaceSessionPoolManagerProvider),
+    );
     unawaited(
       MobileBackgroundCoordinator.instance.configure(
         ref.read(mobileBackgroundSettingsControllerProvider),
       ),
     );
+  }
+
+  /// 后台任务启动时发现未豁免电池优化：说明锁屏后 Doze 会断网，引导加白名单。
+  Future<void> _showBatteryPrompt() async {
+    final context = _router?.routerDelegate.navigatorKey.currentContext;
+    if (context == null || !mounted) return;
+    final coordinator = MobileBackgroundCoordinator.instance;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('允许后台不受电池优化限制'),
+        content: const Text(
+          '任务已在后台运行。但系统开启了电池优化：锁屏一段时间后手机进入省电'
+          '休眠，会断开网络，任务会卡住或报网络错误。\n\n'
+          '建议允许本应用「不受电池优化限制」；小米、OPPO、vivo、华为等手机还需'
+          '在厂商设置里允许后台运行 / 自启动。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop('never'),
+            child: const Text('不再提醒'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop('vendor'),
+            child: const Text('厂商设置'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop('battery'),
+            child: const Text('去允许'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case 'battery':
+        unawaited(coordinator.requestPermission('battery'));
+      case 'vendor':
+        unawaited(coordinator.openSettings('autostart'));
+      case 'never':
+        ref
+            .read(mobileBackgroundSettingsControllerProvider.notifier)
+            .setBatteryPromptDismissed(true);
+    }
   }
 
   Future<void> _openBackgroundConversation(String conversationId) async {
@@ -140,6 +193,9 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp>
 
   @override
   void dispose() {
+    MobileBackgroundCoordinator.instance.batteryPromptRequests.removeListener(
+      _showBatteryPrompt,
+    );
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

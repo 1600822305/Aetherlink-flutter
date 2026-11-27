@@ -82,6 +82,28 @@ class MobileBackgroundCoordinator extends ChangeNotifier
   /// Receives the conversation id of a tapped notification / overlay. Wired by
   /// the app shell, which owns routing.
   void Function(String conversationId)? openConversation;
+
+  /// 「忽略电池优化」提醒请求：每次 +1，App 壳监听后弹对话框。
+  /// 条件：Android、开启了后台继续执行、App 在前台、用户没选不再提醒、
+  /// 系统报告未豁免；每个进程最多提醒一次。
+  final ValueNotifier<int> batteryPromptRequests = ValueNotifier(0);
+  bool _batteryPromptShown = false;
+
+  void _maybeRequestBatteryPrompt() {
+    if (_batteryPromptShown ||
+        !_foreground ||
+        !_settings.androidEnabled ||
+        _settings.batteryPromptDismissed) {
+      return;
+    }
+    // 状态里还没有这个字段（原生未回报）时不打扰。
+    if (!status.values.containsKey('batteryExempt') ||
+        status.flag('batteryExempt')) {
+      return;
+    }
+    _batteryPromptShown = true;
+    batteryPromptRequests.value++;
+  }
   String? _pendingConversation;
   Future<void>? _tail;
   Timer? _updateTimer;
@@ -135,6 +157,8 @@ class MobileBackgroundCoordinator extends ChangeNotifier
         _overlayProgressColor != progressColor;
     _settings = settings;
     _overlayProgressColor = progressColor;
+    // 设置变化通知订阅方（如终端后台保持运行）。
+    if (changed) notifyListeners();
     await initialize();
     if (changed) await _sync();
   }
@@ -155,6 +179,8 @@ class MobileBackgroundCoordinator extends ChangeNotifier
     );
     await initialize();
     await _sync();
+    // 同步回来的状态里带着是否已豁免电池优化（Doze 下未豁免会断网）。
+    _maybeRequestBatteryPrompt();
   }
 
   void update(

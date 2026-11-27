@@ -42,6 +42,9 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
     private val nextSessionId = AtomicInteger(1)
     @Volatile private var eventSink: EventChannel.EventSink? = null
 
+    /** 插件自带的保活前台服务开关：App 的统一前台服务接管时关掉，避免两条通知。 */
+    @Volatile private var ownServiceEnabled = true
+
     private class PtySession(
         val pid: Int,
         val fileDescriptor: ParcelFileDescriptor,
@@ -81,6 +84,12 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
             "ptyStart" -> ptyStart(call, result)
             "ptyWrite" -> ptyWrite(call, result)
             "ptyResize" -> ptyResize(call, result)
+            "setOwnKeepAliveService" -> {
+                ownServiceEnabled = call.argument<Boolean>("enabled") ?: true
+                if (!ownServiceEnabled) TerminalForegroundService.stop(context)
+                else if (sessions.isNotEmpty()) TerminalForegroundService.start(context)
+                result.success(null)
+            }
             "ptyKill" -> {
                 killSession(call.argument<Int>("id") ?: -1)
                 result.success(null)
@@ -142,7 +151,7 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
         )
         sessions[id] = session
         // 保活：有存活会话期间起前台服务，防止 OEM 杀后台连带杀掉 ptrace 子链。
-        TerminalForegroundService.start(context)
+        if (ownServiceEnabled) TerminalForegroundService.start(context)
 
         // Reader: pump master-fd output to the event stream until EOF/close.
         executor.execute {

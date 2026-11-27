@@ -36,6 +36,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/sessio
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/terminal_extra_keys.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/features/workspace/application/terminal_icon_font.dart';
+import 'package:aetherlink_flutter/features/terminal/application/terminal_keep_alive.dart';
 
 /// 单个终端 tab：独立的 xterm 缓冲 + PTY 会话与连接状态。
 class _TerminalTab {
@@ -56,6 +57,7 @@ class _TerminalTab {
   String? error;
 
   Future<void> dispose() async {
+    TerminalKeepAlive.instance.userSessionClosed(this);
     focusNode.dispose();
     await outSub?.cancel();
     outSub = null;
@@ -303,6 +305,7 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
         );
       }
       session.done.whenComplete(() {
+        TerminalKeepAlive.instance.userSessionClosed(tab);
         if (!mounted) return;
         tab.terminal.write('\r\n\x1b[33m[会话已结束]\x1b[0m\r\n');
         setState(() => tab.connected = false);
@@ -317,6 +320,7 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
         tab.connected = true;
         tab.connecting = false;
       });
+      TerminalKeepAlive.instance.userSessionOpened(tab);
     } on TerminalEngineMissingException {
       // 环境被清理/残缺：弹安装引导，装好后自动重连。
       if (!mounted) return;

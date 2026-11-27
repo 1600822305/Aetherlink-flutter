@@ -213,7 +213,11 @@ class PooledWorkspaceSession {
 
   bool get alive => _alive;
   bool get busy => busyListenable.value;
-  set _busy(bool value) => busyListenable.value = value;
+  set _busy(bool value) {
+    if (busyListenable.value == value) return;
+    busyListenable.value = value;
+    WorkspaceSessionPoolManager.busyChanges.value++;
+  }
 
   /// 最近一条已结束命令的退出码（含超时/后台提交后才结束的）；
   /// 从未跑完过命令时为 null。配合 busy 可查后台命令是否结束。
@@ -800,6 +804,9 @@ class WorkspaceSessionPool {
 /// 不同工作区各自隔离；未锚定工作区的裸后端用后端自身做键），
 /// 会话 ID 全局唯一，查找 / 关闭可跨池按 ID 直达。
 class WorkspaceSessionPoolManager extends ChangeNotifier {
+  /// 任一会话 busy 变化时 +1（终端后台保持运行据此判断 AI 命令是否在跑）。
+  static final ValueNotifier<int> busyChanges = ValueNotifier(0);
+
   final Map<Object, WorkspaceSessionPool> _pools = {};
   int _nextId = 1;
 

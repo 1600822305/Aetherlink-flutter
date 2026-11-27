@@ -13,6 +13,8 @@ class MobileBackgroundSettings {
     this.overlayIconKind = 'app',
     this.overlayIconValue = '',
     this.overlayAppearance = const BackgroundOverlayAppearance(),
+    this.batteryPromptDismissed = false,
+    this.terminalKeepAlive = false,
   });
 
   final bool androidEnabled;
@@ -24,6 +26,13 @@ class MobileBackgroundSettings {
   final String overlayIconKind;
   final String overlayIconValue;
   final BackgroundOverlayAppearance overlayAppearance;
+
+  /// 用户在「忽略电池优化」提醒里选了不再提醒。
+  final bool batteryPromptDismissed;
+
+  /// 终端后台保持运行：终端有会话在用时并入同一个前台服务并持 WakeLock，
+  /// 锁屏后命令继续跑。默认关（保持原行为、不额外耗电）。
+  final bool terminalKeepAlive;
 
   factory MobileBackgroundSettings.fromJson(Map<String, dynamic> json) {
     final visibility = BackgroundCompletionVisibility.values.firstWhere(
@@ -44,6 +53,8 @@ class MobileBackgroundSettings {
         (json['overlayAppearance'] as Map?)?.cast<String, dynamic>() ??
             const {},
       ),
+      batteryPromptDismissed: json['batteryPromptDismissed'] == true,
+      terminalKeepAlive: json['terminalKeepAlive'] == true,
     );
   }
 
@@ -57,6 +68,8 @@ class MobileBackgroundSettings {
     'overlayIconKind': overlayIconKind,
     'overlayIconValue': overlayIconValue,
     'overlayAppearance': overlayAppearance.toJson(),
+    'batteryPromptDismissed': batteryPromptDismissed,
+    'terminalKeepAlive': terminalKeepAlive,
   };
 
   MobileBackgroundSettings copyWith({
@@ -69,6 +82,8 @@ class MobileBackgroundSettings {
     String? overlayIconKind,
     String? overlayIconValue,
     BackgroundOverlayAppearance? overlayAppearance,
+    bool? batteryPromptDismissed,
+    bool? terminalKeepAlive,
   }) => MobileBackgroundSettings(
     androidEnabled: androidEnabled ?? this.androidEnabled,
     notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
@@ -79,6 +94,9 @@ class MobileBackgroundSettings {
     overlayIconKind: overlayIconKind ?? this.overlayIconKind,
     overlayIconValue: overlayIconValue ?? this.overlayIconValue,
     overlayAppearance: overlayAppearance ?? this.overlayAppearance,
+    batteryPromptDismissed:
+        batteryPromptDismissed ?? this.batteryPromptDismissed,
+    terminalKeepAlive: terminalKeepAlive ?? this.terminalKeepAlive,
   );
 }
 

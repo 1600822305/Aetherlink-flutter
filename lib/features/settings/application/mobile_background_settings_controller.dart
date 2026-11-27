@@ -53,4 +53,10 @@ class MobileBackgroundSettingsController
 
   void setOverlayAppearance(BackgroundOverlayAppearance value) =>
       persist(state.copyWith(overlayAppearance: value));
+
+  void setBatteryPromptDismissed(bool value) =>
+      persist(state.copyWith(batteryPromptDismissed: value));
+
+  void setTerminalKeepAlive(bool value) =>
+      persist(state.copyWith(terminalKeepAlive: value));
 }

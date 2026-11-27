@@ -1,5 +1,6 @@
 package com.example.aetherlink_flutter
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -26,6 +27,13 @@ class MainActivity : FlutterActivity() {
     // in onRequestPermissionsResult.
     private var pendingRunCommand: Pair<String, MethodChannel.Result>? = null
 
+    /** 共享 Application 持有的引擎（见 [AetherlinkApplication]）。 */
+    override fun provideFlutterEngine(context: Context): FlutterEngine =
+        (application as AetherlinkApplication).engine
+
+    /** Activity 销毁不连带销毁引擎：后台任务继续跑。 */
+    override fun shouldDestroyEngineWithHost(): Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         backgroundRuntime.receiveConversation(intent)
@@ -49,7 +57,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        backgroundRuntime.configure(flutterEngine.dartExecutor.binaryMessenger)
+        // 后台通道由 Application 在建引擎时配置一次；这里只登记当前 Activity。
         backgroundRuntime.attachActivity(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, termuxChannel)
             .setMethodCallHandler { call, result ->
@@ -63,8 +71,13 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        // 引擎不随 Activity 销毁：只解除本 Activity 的引用，不再 detach()
+        // （那会清空任务、停前台服务，把仍在跑的后台任务一并杀掉）。
         backgroundRuntime.detachActivity(this)
-        backgroundRuntime.detach()
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, termuxChannel)
+            .setMethodCallHandler(null)
+        pendingRunCommand?.second?.error("activity-destroyed", "Activity destroyed", null)
+        pendingRunCommand = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

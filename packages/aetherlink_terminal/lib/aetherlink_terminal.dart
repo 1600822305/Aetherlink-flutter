@@ -42,6 +42,11 @@ class AetherlinkTerminal {
         'destPath': destPath,
       });
 
+  /// 打开 / 关闭插件自带的保活前台服务（App 统一前台服务接管时关掉）。
+  static Future<void> setOwnKeepAliveService(bool enabled) => _channel
+      .invokeMethod<void>('setOwnKeepAliveService', {'enabled': enabled})
+      .catchError((_) {});
+
   /// Starts [cmd] (an absolute path, e.g. libproot.so) with [args] / [env] on
   /// a fresh PTY of [rows] x [columns] cells.
   static Future<TerminalPtySession> startPty({
