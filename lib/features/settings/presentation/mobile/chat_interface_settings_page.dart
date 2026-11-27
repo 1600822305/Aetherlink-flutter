@@ -12,7 +12,6 @@ import 'package:aetherlink_flutter/features/settings/application/chat_interface_
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
-import 'package:aetherlink_flutter/features/settings/application/llm_auto_retry_controller.dart';
 
 /// The "聊天界面设置" sub-page (外观设置 → this page), a compact port of the
 /// original `src/pages/Settings/ChatInterfaceSettings.tsx`.
@@ -137,14 +136,14 @@ class _MultiModelCard extends StatelessWidget {
 
 /// The 消息显示 card: groups the 工具调用详情 / 引用详情 / 系统提示词气泡 toggles
 /// (the web original's "开关类设置组") under a single header.
-class _DisplayCard extends ConsumerWidget {
+class _DisplayCard extends StatelessWidget {
   const _DisplayCard({required this.settings, required this.controller});
 
   final ChatInterfaceSettings settings;
   final ChatInterfaceSettingsController controller;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,15 +175,6 @@ class _DisplayCard extends ConsumerWidget {
             description: '在聊天顶部显示系统提示词气泡，便于查看和编辑当前会话的系统提示词。',
             value: settings.showSystemPromptBubble,
             onChanged: controller.setShowSystemPromptBubble,
-          ),
-          const SizedBox(height: 14),
-          _DescribedSwitchRow(
-            title: '请求失败自动重试',
-            description:
-                '网络断开、服务繁忙或限流时，在还没收到回复前自动重试（最多 3 次，'
-                '间隔 1s/2s/4s）。余额不足、Key 无效等错误不重试。智能体任务始终自动重试。',
-            value: ref.watch(chatLlmAutoRetryProvider),
-            onChanged: ref.read(chatLlmAutoRetryProvider.notifier).set,
           ),
         ],
       ),

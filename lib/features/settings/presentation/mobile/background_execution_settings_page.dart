@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/settings/application/llm_auto_retry_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/mobile_background_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/mobile_background_settings.dart';
@@ -133,6 +134,18 @@ class _BackgroundExecutionSettingsPageState
                   ),
                 ],
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          ModelSettingsCard(
+            padding: EdgeInsets.zero,
+            child: _SwitchRow(
+              label: '聊天请求失败自动重试',
+              description: '网络断开、服务繁忙或限流时，在还没收到回复前自动重试'
+                  '（最多 3 次，间隔 1s/2s/4s）；余额不足、Key 无效不重试。'
+                  '智能体任务始终自动重试',
+              value: ref.watch(chatLlmAutoRetryProvider),
+              onChanged: ref.read(chatLlmAutoRetryProvider.notifier).set,
             ),
           ),
           const SizedBox(height: 16),
