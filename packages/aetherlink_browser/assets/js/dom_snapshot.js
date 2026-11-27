@@ -130,7 +130,31 @@
 
   var selector = 'a, button, input, select, textarea, summary, ' +
       '[role], [onclick], [tabindex="0"]';
-  var candidates = document.querySelectorAll(selector);
+  // 深度收集：主文档 + 开放 shadow root + 同源 iframe（跨域 frame 无法进入，
+  // 下方显式标注盲区）。
+  var roots = [];
+  var visitRoot = function (root) {
+    roots.push(root);
+    var all = root.querySelectorAll('*');
+    for (var k = 0; k < all.length; k++) {
+      var node = all[k];
+      if (node.shadowRoot) visitRoot(node.shadowRoot);
+      if (node.tagName === 'IFRAME') {
+        try { if (node.contentDocument) visitRoot(node.contentDocument); } catch (_) {}
+      }
+    }
+  };
+  visitRoot(document);
+  var candidates = [];
+  roots.forEach(function (root) {
+    root.querySelectorAll(selector).forEach(function (el) { candidates.push(el); });
+  });
+  var ids = {};
+  var identity = function (el) {
+    return JSON.stringify([el.tagName, el.id, el.getAttribute('name'),
+      el.getAttribute('role'), el.type || null, el.href || null,
+      truncate(nameOf(el), MAX_NAME)]);
+  };
   var elementLines = [];
   var overflow = 0;
   candidates.forEach(function (el) {
@@ -143,6 +167,7 @@
     }
     seq++;
     refs[seq] = el;
+    ids[seq] = identity(el);
     var name = truncate(nameOf(el), MAX_NAME);
     var state = stateOf(el);
     elementLines.push(
@@ -164,11 +189,12 @@
   var frameLines = [];
   document.querySelectorAll('iframe').forEach(function (f) {
     if (!isVisible(f)) return;
+    try { if (f.contentDocument) return; } catch (_) {} // 同源已收录
     if (frameLines.length >= 10) return;
     var src = f.getAttribute('src') || '';
     frameLines.push('[iframe' +
         (src ? ' src=' + JSON.stringify(truncate(src, MAX_HREF)) : '') +
-        ' 内容未收录，无法用 @N/role 定位其内部元素]');
+        ' 跨域内容未收录，无法用 @N/role 定位其内部元素；需要时请交给用户操作]');
   });
   if (frameLines.length) {
     lines.push('');
@@ -177,6 +203,9 @@
 
   // 每次快照整体重建 ref 映射；旧 @N 一律失效（借 ego-lite 语义）。
   window.__aetherRefs = refs;
+  // 快照时的元素身份：元素被框架复用成别的控件时判 stale，避免点错。
+  window.__aetherRefIds = ids;
+  window.__aetherRefIdentity = identity;
   window.__aetherRefSnapshotUrl = location.href;
   // 暴露同一份名称计算供 role: 定位复用（快照展示名 ≡ 定位名）。
   window.__aetherNameOf = nameOf;

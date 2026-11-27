@@ -12,6 +12,9 @@ void main() {
       expect(js, contains("return 'disabled'"));
       expect(js, contains('el.click()'));
       expect(js, contains("return 'ok'"));
+      expect(js, contains("return 'covered'"));
+      expect(js, contains('scrollIntoView'));
+      expect(js, contains('__aetherRefIds'));
     });
 
     test('@N 编号不在快照中返回 notfound，失效才是 stale', () {
@@ -22,8 +25,9 @@ void main() {
 
     test('CSS 目标缺元素返回 notfound', () {
       final js = buildClickJs(ElementTarget.parse('#submit'));
-      expect(js, contains('document.querySelector'));
+      expect(js, contains('document.querySelectorAll'));
       expect(js, contains("return 'notfound'"));
+      expect(js, contains("return 'ambiguous'"));
       expect(js, isNot(contains("return 'stale'")));
     });
   });
@@ -36,6 +40,7 @@ void main() {
       expect(js, contains("new Event('change'"));
       expect(js, contains(r"'a\'b\nc'"));
       expect(js, isNot(contains('requestSubmit')));
+      expect(js, contains('__aetherLastWrite'));
     });
 
     test('submit=true 追加回车与表单提交回退', () {

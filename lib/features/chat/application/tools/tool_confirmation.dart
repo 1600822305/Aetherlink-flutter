@@ -41,7 +41,7 @@ bool toolNeedsConfirmation(
       (route is PptxToolRoute && pptxToolNeedsConfirmation(toolName, args)) ||
       (route is BuiltinToolRoute &&
           route.serverName == kBrowserServerName &&
-          browserToolNeedsConfirmation(toolName));
+          browserToolNeedsConfirmation(toolName, args));
 }
 
 /// Whether the user's tool authorization whitelist ([policy], 工作区管理页

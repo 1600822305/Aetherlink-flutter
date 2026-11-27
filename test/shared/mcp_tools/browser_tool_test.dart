@@ -566,16 +566,24 @@ void main() {
           'browser_select',
           'browser_wait',
           'browser_run',
+          'browser_press',
+          'browser_scroll',
           'browser_hand_off',
           'browser_take_over',
         ]),
       );
     });
 
-    test('交互工具需审批，只读工具不需要', () {
-      expect(browserToolNeedsConfirmation('browser_click'), isTrue);
-      expect(browserToolNeedsConfirmation('browser_input'), isTrue);
-      expect(browserToolNeedsConfirmation('browser_select'), isTrue);
+    test('按风险分级审批：只有 run 和带 submit 的输入需审批', () {
+      expect(browserToolNeedsConfirmation('browser_click'), isFalse);
+      expect(browserToolNeedsConfirmation('browser_input'), isFalse);
+      expect(
+        browserToolNeedsConfirmation('browser_input', {'submit': true}),
+        isTrue,
+      );
+      expect(browserToolNeedsConfirmation('browser_select'), isFalse);
+      expect(browserToolNeedsConfirmation('browser_press'), isFalse);
+      expect(browserToolNeedsConfirmation('browser_scroll'), isFalse);
       expect(browserToolNeedsConfirmation('browser_run'), isTrue);
       expect(browserToolNeedsConfirmation('browser_take_over'), isFalse);
       expect(browserToolNeedsConfirmation('browser_hand_off'), isFalse);

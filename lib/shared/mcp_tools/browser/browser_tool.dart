@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -20,12 +21,20 @@ const Set<String> kBrowserInteractiveTools = {
   'browser_click',
   'browser_input',
   'browser_select',
+  'browser_press',
+  'browser_scroll',
   'browser_run',
 };
 
-/// 交互类浏览器工具是否需要用户审批（审批门复用）。
-bool browserToolNeedsConfirmation(String toolName) =>
-    kBrowserInteractiveTools.contains(toolName);
+/// 按风险分级审批：日常点击/输入/选择/按键/滚动直接放行（否则智能体
+/// 每一步都卡在审批上跑不动）；只有任意脚本 browser_run 和带
+/// submit 的输入（会直接提交表单）需要确认。白名单可进一步放行。
+bool browserToolNeedsConfirmation(
+  String toolName, [
+  Map<String, Object?> args = const {},
+]) =>
+    toolName == 'browser_run' ||
+    (toolName == 'browser_input' && args['submit'] == true);
 
 /// `@aether/browser` 内置服务器名（catalog / 路由 / 智能体工具组共用）。
 const String kBrowserServerName = '@aether/browser';
@@ -152,6 +161,10 @@ Future<McpToolResult> _dispatch(
       return await _select(sessions, args);
     case 'browser_wait':
       return await _wait(sessions, args);
+    case 'browser_press':
+      return await _press(sessions, args);
+    case 'browser_scroll':
+      return await _scroll(sessions, args);
     case 'browser_run':
       return await _run(sessions, args);
     case 'browser_hand_off':
@@ -500,6 +513,92 @@ Future<McpToolResult> _run(
     }
     return McpToolResult(buf.toString());
   });
+}
+
+/// 按键：在目标元素（缺省为当前焦点）上派发键盘事件；Enter 在输入框
+/// 内会提交表单，Tab 移动焦点。合成事件，非可信输入。
+Future<McpToolResult> _press(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final key = (args['key'] as String?)?.trim() ?? '';
+  if (key.isEmpty) {
+    return const McpToolResult('key 不能为空（如 Enter / Escape / Tab）', isError: true);
+  }
+  final target = _trimmedOrNull(args['target']);
+  final sessionId = args['session'] as String?;
+  return sessions.run(
+    sessionId: sessionId,
+    kind: BrowserCallKind.mutation,
+    (session) async {
+      final before = await session.currentUrl();
+      await session.runScript(
+        'await aether.press(${jsonEncode(key)}, ${target == null ? 'null' : jsonEncode(target)}); return "ok";',
+        timeout: const Duration(seconds: 20),
+      );
+      final after = await session.currentUrl();
+      final navigated = after != null && after != before;
+      return McpToolResult(
+        '已按下 $key${target == null ? '' : '（目标「$target」）'}。'
+        '当前 URL: ${after ?? '未知'}'
+        '${navigated ? '\n页面已导航，旧 @N 编号失效，请重新 browser_snapshot_dom。' : ''}',
+      );
+    },
+  );
+}
+
+/// 滚动：页面或最近的可滚动容器（target 给出时从该元素向上找）。
+Future<McpToolResult> _scroll(
+  BrowserSessionManager sessions,
+  Map<String, Object?> args,
+) async {
+  final direction = (args['direction'] as String?)?.trim() ?? 'down';
+  if (!const {'up', 'down', 'left', 'right'}.contains(direction)) {
+    return const McpToolResult('direction 只能是 up/down/left/right', isError: true);
+  }
+  final amount = asIntOr(args['amount'], 600).clamp(50, 5000);
+  final target = _trimmedOrNull(args['target']);
+  final sessionId = args['session'] as String?;
+  final script = '''
+const target = ${target == null ? 'null' : jsonEncode(target)};
+let el = null;
+if (target) {
+  const m = /^@(\\d+)\$/.exec(target);
+  el = m ? (window.__aetherRefs || {})[m[1]] : document.querySelector(target);
+  if (!el) throw new Error('未找到滚动目标 ' + target);
+}
+let scroller = null;
+for (let n = el; n && n !== document.body; n = n.parentElement) {
+  const st = getComputedStyle(n);
+  if (/(auto|scroll)/.test(st.overflowY + st.overflowX) &&
+      (n.scrollHeight > n.clientHeight || n.scrollWidth > n.clientWidth)) { scroller = n; break; }
+}
+const d = ${jsonEncode(direction)}, a = $amount;
+const left = d === 'left' ? -a : d === 'right' ? a : 0;
+const top = d === 'up' ? -a : d === 'down' ? a : 0;
+(scroller || window).scrollBy({ left, top, behavior: 'instant' });
+const s = scroller || document.scrollingElement || document.documentElement;
+return JSON.stringify({ y: Math.round(s.scrollTop), max: Math.round(s.scrollHeight - s.clientHeight) });
+''';
+  return sessions.run(
+    sessionId: sessionId,
+    kind: BrowserCallKind.mutation,
+    (session) async {
+      final raw = await session.runScript(
+        script,
+        timeout: const Duration(seconds: 10),
+      );
+      var pos = '';
+      try {
+        final m = jsonDecode(raw) as Map<String, dynamic>;
+        pos = '（当前 ${m['y']}/${m['max']} px）';
+      } catch (_) {}
+      return McpToolResult(
+        '已向 $direction 滚动 ${amount}px$pos。可视区域内容已变化，'
+        '需要定位元素时请重新 browser_snapshot_dom。',
+      );
+    },
+  );
 }
 
 String? _trimmedOrNull(Object? value) {

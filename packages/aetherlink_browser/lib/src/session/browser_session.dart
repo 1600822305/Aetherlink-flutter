@@ -318,18 +318,21 @@ class HeadlessBrowserSession implements BrowserSession {
   }) => _interact(
     ElementTarget.parse(target),
     (t) => buildFillJs(t, text, submit: submit),
+    verifyWrite: true,
   );
 
   @override
   Future<InteractResult> selectOption(String target, String value) => _interact(
     ElementTarget.parse(target),
     (t) => buildSelectOptionJs(t, value),
+    verifyWrite: true,
   );
 
   Future<InteractResult> _interact(
     ElementTarget target,
-    String Function(ElementTarget) buildJs,
-  ) async {
+    String Function(ElementTarget) buildJs, {
+    bool verifyWrite = false,
+  }) async {
     _ensureAlive();
     final controller = await _requirePage();
     final preUrl = (await controller.getUrl())?.toString();
@@ -354,11 +357,31 @@ class HeadlessBrowserSession implements BrowserSession {
       }
       if (status == 'ok') break;
       final retryable =
-          status == 'invisible' || status == 'disabled' || status == 'notfound';
+          status == 'invisible' ||
+          status == 'disabled' ||
+          status == 'notfound' ||
+          status == 'covered';
       if (!retryable || DateTime.now().isAfter(deadline)) {
         throw _interactError(target, status);
       }
       await Future<void>.delayed(_actionPollInterval);
+    }
+    if (!evalLost && verifyWrite) {
+      // 下一帧回读：React/Vue 等受控组件可能在重渲染时把值改回去。
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      String? check;
+      try {
+        check = (await _evaluate(kVerifyLastWriteJs)) as String?;
+      } on BrowserException {
+        check = null;
+      }
+      if (check == 'rejected') {
+        throw BrowserException(
+          BrowserErrorKind.elementNotFound,
+          '「$target」没有保留写入的值（页面校验或框架把值改回去了）；'
+          '请检查输入格式/页面提示，或先 browser_click 聚焦后再输入',
+        );
+      }
     }
     final result = await _resolveNavigation(
       controller,
@@ -384,7 +407,8 @@ class HeadlessBrowserSession implements BrowserSession {
       case 'stale':
         return const BrowserException(
           BrowserErrorKind.refStale,
-          '@N 引用已失效（页面已导航或快照已重建），请重新 browser_snapshot_dom',
+          '@N 引用已失效（页面已导航、快照已重建或该元素已变成别的控件），'
+          '请重新 browser_snapshot_dom',
         );
       case 'notfound':
         return BrowserException(
@@ -398,6 +422,20 @@ class HeadlessBrowserSession implements BrowserSession {
           '元素 「$target」${status == 'disabled' ? '被禁用' : '不可见'}（已等待 '
           '${_actionWait.inSeconds}s）；页面可能仍在加载或需先展开/滚动',
           transient: true,
+        );
+      case 'covered':
+        return BrowserException(
+          BrowserErrorKind.elementNotFound,
+          '元素「$target」被其他元素遮挡（弹窗/遮罩/悬浮层，已等待 '
+          '${_actionWait.inSeconds}s）；请先关闭遮挡物（browser_snapshot_dom '
+          '找关闭按钮）再操作',
+          transient: true,
+        );
+      case 'ambiguous':
+        return BrowserException(
+          BrowserErrorKind.elementNotFound,
+          'CSS 选择器「$target」匹配到多个可见元素；请改用 browser_snapshot_dom '
+          '给出的 @N 或更精确的选择器',
         );
       case 'notfillable-select':
         return BrowserException(

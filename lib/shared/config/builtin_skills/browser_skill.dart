@@ -43,6 +43,20 @@ const Skill kBrowserSkill = Skill(
    验证“是否写上字/是否勾选”用 snapshot_dom 的 value/checked，
    比截图省且更准。
 
+## 单步工具补充
+
+- `browser_press(key, target?)`：Enter 搜索/提交、Escape 关弹窗、
+  Tab/方向键；`browser_scroll(direction, amount?, target?)`：懒加载、
+  无限滚动、把视口外元素滚出来。两者都不需要审批。
+- 交互前会自动滚动到可见位置并做遮挡检测：报"被遮挡"时先找到并关闭
+  弹窗/遮罩（snapshot 找关闭按钮或 `browser_press('Escape')`），
+  不要原样重试。
+- 同源 iframe 与开放 shadow DOM 内的元素会出现在快照里，可直接用 @N；
+  跨域 iframe（常见于登录、支付、验证码）进不去，交给用户。
+- input/select 写入后会回读校验：报"没有保留写入的值"说明页面校验
+  或框架拒绝了这个值，检查格式而不是重复输入。
+- 审批：只有 `browser_run` 和 `browser_input(submit: true)` 需要用户确认。
+
 ## 先等待，再动作，后验证
 
 - 动态页面点击前用 `browser_wait(selector: ...)` 等元素出现，

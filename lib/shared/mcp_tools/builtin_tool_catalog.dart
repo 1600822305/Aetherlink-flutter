@@ -571,6 +571,51 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'browser_press',
+      description:
+          '在内置浏览器中按键（Enter/Escape/Tab/ArrowDown/Backspace 或单字符）。'
+          'target 可选（@N / role:角色:名称 / CSS），缺省作用于当前焦点元素。'
+          '常用于：输入后按 Enter 搜索、Escape 关闭弹窗、下拉框用方向键选择。'
+          '合成键盘事件，个别站点可能不响应，此时改用 browser_click。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'key': {'type': 'string', 'description': '按键名，如 Enter / Escape / Tab / ArrowDown / a'},
+          'target': {'type': 'string', 'description': '可选目标元素：@N / role:角色:名称 / CSS'},
+          'session': {
+            'type': 'string',
+            'description':
+                '可选会话标识（仅在本对话内有效）：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 main',
+          },
+        },
+        'required': ['key'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'browser_scroll',
+      description:
+          '滚动内置浏览器页面（或 target 所在的可滚动容器），用于加载懒加载/'
+          '无限滚动内容、让视口外元素出现。滚动后需要定位元素时重新 '
+          'browser_snapshot_dom。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'direction': {
+            'type': 'string',
+            'enum': ['up', 'down', 'left', 'right'],
+            'default': 'down',
+          },
+          'amount': {'type': 'integer', 'description': '滚动像素（默认 600，范围 50-5000）', 'default': 600},
+          'target': {'type': 'string', 'description': '可选：在该元素所在的滚动容器内滚动（@N / CSS）'},
+          'session': {
+            'type': 'string',
+            'description':
+                '可选会话标识（仅在本对话内有效）：不同 id 使用独立浏览器窗口（登录态/cookie 全局共享），缺省为 main',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
       name: 'browser_hand_off',
       description:
           '把内置浏览器会话交给用户主导（登录、验证码、滑块等 agent 无法'
