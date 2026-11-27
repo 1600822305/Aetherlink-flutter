@@ -251,23 +251,17 @@ void main() {
     expect(session.outputCursor, r2.cursor);
   });
 
-  test('用户键入未回车的半行时 exec 拒绝执行，不写入命令', () async {
+  test('用户键入未回车的半行时 exec 照常执行：先清行再写命令', () async {
     final session = await pool.create();
     final shell = backend.shells.single;
     session.writeUserInput('rm -');
-    expect(session.isUserTyping, isTrue);
-    await expectLater(
-      session.exec('echo hi'),
-      throwsA(
-        isA<WorkspaceSessionException>().having(
-          (e) => e.message,
-          'message',
-          contains('用户正在'),
-        ),
-      ),
-    );
-    expect(shell.written.toString(), isNot(contains('__AETHER_DONE_')));
-    expect(session.busy, isFalse);
+    shell.written.clear();
+    final future = session.exec('echo hi');
+    await Future<void>.delayed(Duration.zero);
+    expect(shell.written.toString(), startsWith('\x05\x15'));
+    final nonce = _nonceOf(shell);
+    shell.emit('hi\n__AETHER_DONE_${nonce}_0__\n');
+    expect((await future).exitCode, 0);
   });
 
   test('用户回车后不再占用，exec 先发 Ctrl-U 清行再写命令', () async {
@@ -396,34 +390,45 @@ void main() {
     a.markWaitingInput();
     await futureA;
   });
-  group('会话归属：AI 与用户不抢会话', () {
-    test('acquireDefault 跳过用户手动新建的空闲会话', () async {
+  group('共用终端：人和 AI 用同一个会话', () {
+    test('acquireDefault 复用用户手动新建的会话', () async {
       final user = await pool.create(name: 'mine', owner: SessionOwner.user);
-      expect(user.owner, SessionOwner.user);
-      final ai = await pool.acquireDefault();
-      expect(ai.id, isNot(user.id));
-      expect(ai.owner, SessionOwner.ai);
-      // 再取一次复用同一个 AI 会话，不会落到用户会话上。
-      final again = await pool.acquireDefault();
-      expect(again.id, ai.id);
-    });
-
-    test('acquireDefault 跳过用户正在键入半行的 AI 会话', () async {
-      final typing = await pool.create();
-      typing.writeUserInput('git sta'); // 半行未回车
-      expect(typing.isUserTyping, isTrue);
       final picked = await pool.acquireDefault();
-      expect(picked.id, isNot(typing.id));
+      expect(picked.id, user.id);
     });
 
-    test('用户回车后半行清除，会话重新可被复用', () async {
+    test('acquireDefault 不因用户正在键入而另开会话', () async {
+      final typing = await pool.create();
+      typing.writeUserInput('git sta');
+      final picked = await pool.acquireDefault();
+      expect(picked.id, typing.id);
+    });
+
+    test('共用会话正忙时 acquireDefault 仍返回它，由 exec 拒绝且不另开', () async {
       final s = await pool.create();
-      s.writeUserInput('ls');
-      expect(s.isUserTyping, isTrue);
-      s.writeUserInput('\r');
-      expect(s.isUserTyping, isFalse);
+      final running = s.exec('sleep 100', timeout: const Duration(milliseconds: 1));
+      await running; // 超时返回，命令仍在前台
+      expect(s.busy, isTrue);
       final picked = await pool.acquireDefault();
       expect(picked.id, s.id);
+      await expectLater(
+        picked.exec('ls'),
+        throwsA(
+          isA<WorkspaceSessionException>().having(
+            (e) => e.message,
+            'message',
+            contains('没有执行'),
+          ),
+        ),
+      );
+      expect(pool.list(), hasLength(1));
+    });
+
+    test('后台任务会话不作为共用终端', () async {
+      await pool.create(name: '${kBackgroundSessionPrefix}x');
+      final picked = await pool.acquireDefault();
+      expect(isBackgroundSessionName(picked.name), isFalse);
+      expect(pool.list(), hasLength(2));
     });
 
     test('create 默认 owner 为 ai（兼容旧调用）', () async {
@@ -580,28 +585,12 @@ void main() {
       expect(identical(p1, p2), isTrue);
     });
 
-    test('上限按创建者分开计数：AI 满了用户仍可新建，反之亦然', () async {
-      for (var i = 0; i < kMaxPooledSessions; i++) {
+    test('会话数量不设上限', () async {
+      for (var i = 0; i < 10; i++) {
         await pool.create();
-      }
-      await expectLater(
-        pool.create(),
-        throwsA(isA<WorkspaceSessionException>()),
-      );
-      for (var i = 0; i < kMaxPooledSessions; i++) {
         await pool.create(owner: SessionOwner.user);
       }
-      await expectLater(
-        pool.create(owner: SessionOwner.user),
-        throwsA(
-          isA<WorkspaceSessionException>().having(
-            (e) => e.message,
-            'message',
-            contains('手动会话'),
-          ),
-        ),
-      );
-      expect(pool.list(), hasLength(kMaxPooledSessions * 2));
+      expect(pool.list(), hasLength(20));
     });
 
     test('closeWorkspace 关掉该工作区全部会话，不影响其他工作区', () async {

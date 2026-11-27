@@ -328,6 +328,12 @@ Future<McpToolResult> _execute(
       );
     }
     session = found ?? await _createNamedSession(ref, args, sessionRef);
+  } else if (args['background'] == true) {
+    // 后台长任务：独立会话，跑完前不占用共用终端（之后可用返回的
+    // sessionId 查看输出 / 中断 / 关闭）。
+    final name =
+        '$kBackgroundSessionPrefix${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    session = await _createNamedSession(ref, args, name);
   } else {
     final target = await _resolveTarget(ref, args);
     session = await manager
@@ -376,10 +382,10 @@ Future<McpToolResult> _execute(
     if (result.background) 'background': true,
     if (result.background)
       'hint':
-          '命令已在后台提交到会话里跑（会话在其结束前保持占用）：用 '
-          'terminal_session action=output 查看进度（busy=false 且 '
-          'lastExitCode 非空即已结束）；需要并行执行其他命令请传新的 '
-          'session 名字。'
+          '命令已在独立的后台会话 ${session.id} 里运行，共用终端不受影响，'
+          '可以继续执行其他命令。用 terminal_session action=output '
+          'session_id=${session.id} 查看进度（busy=false 且 lastExitCode 非空即'
+          '已结束），不再需要时 action=close 关掉它。'
     else if (result.fullScreen)
       'hint':
           '前台是全屏交互程序（vim / less / htop / nano 等），它不会自己退出，'
@@ -402,8 +408,8 @@ Future<McpToolResult> _execute(
           '${session.id}）。下一步：用 terminal_session action=output 看输出'
           '尾部——还在正常推进就继续等；尾部像提示（含无回显的密码提示、'
           '空白静默）按等输入处理（action=write 或询问用户）；无进展或跑飞就 '
-          'action=interrupt，不响应再 action=close。不要对该会话重复提交命令'
-          '（会被拒绝），并行执行请传新的 session 名字。'
+          'action=interrupt，不响应再 action=close。它结束前新命令会被拒绝'
+          '（不会另开终端）；长任务下次请用 background=true。'
     else if (result.canceled)
       'hint': '命令被用户中断（已向会话发 Ctrl-C），会话仍可继续使用。',
     'stdout': _clipExecOutput(result.output),

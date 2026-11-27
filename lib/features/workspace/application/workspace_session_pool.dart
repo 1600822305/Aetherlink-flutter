@@ -19,9 +19,9 @@ part 'workspace_session_pool.g.dart';
 /// 会话空闲多久后自动释放进程（无任务 N 分钟后自动释放）。
 const Duration kSessionIdleTimeout = Duration(minutes: 10);
 
-/// 单个工作区池内、每类创建者（AI / 用户）各自的并发会话上限：
-/// AI 跑满长任务不会挤占用户「新建会话」的名额，反之亦然。
-const int kMaxPooledSessions = 4;
+/// 已不再限制会话数量；保留常量仅为兼容旧引用。
+@Deprecated('会话数量不再设上限')
+const int kMaxPooledSessions = 1 << 20;
 
 /// 无终端视图接入时会话 PTY 的默认尺寸；接入视图后按视图实际尺寸同步。
 /// 原 200 列：手机上打开回放历史时整屏断行错位。120 列兼顾 AI 读输出
@@ -367,15 +367,11 @@ class PooledWorkspaceSession {
       throw const WorkspaceSessionException('会话已结束，请新建会话');
     }
     if (busy) {
-      throw const WorkspaceSessionException(
-        '会话正忙（上一条命令还没结束）：用 terminal_session action=output 看它'
-        '是否在等输入，action=interrupt 中断它，或不传 session / 换新的 session '
-        '名字执行',
-      );
-    }
-    if (isUserTyping) {
-      throw const WorkspaceSessionException(
-        '用户正在该会话终端里键入（有未回车的输入），为避免与命令拼接已拒绝执行；可换一个会话或稍后再试',
+      throw WorkspaceSessionException(
+        '上一条命令还在该会话前台运行（${currentCommand ?? '未知命令'}），'
+        '本条命令没有执行。下一步：terminal_session action=output 看进度并继续等；'
+        '它在等输入就 action=write 回答；不需要了就 action=interrupt 中断，'
+        '之后再重新执行本条命令。长任务请用 background=true。',
       );
     }
     _busy = true;
@@ -637,6 +633,13 @@ class PooledWorkspaceSession {
   }
 }
 
+/// 后台任务会话名前缀：background=true 且未指定 session 的命令各自跑在
+/// 这样的独立会话里（Claude Code run_in_background 模型），不占用共用终端。
+const String kBackgroundSessionPrefix = 'bg-';
+
+bool isBackgroundSessionName(String name) =>
+    name.startsWith(kBackgroundSessionPrefix);
+
 /// 单个后端的长驻会话池：新建 / 列出 / 关闭 / 复用默认会话，空闲超时自动回收。
 class WorkspaceSessionPool {
   WorkspaceSessionPool(
@@ -692,15 +695,6 @@ class WorkspaceSessionPool {
     SessionOwner owner = SessionOwner.ai,
   }) async {
     _prune();
-    final sameOwner = _sessions.values.where((s) => s.owner == owner).length;
-    if (sameOwner >= kMaxPooledSessions) {
-      throw WorkspaceSessionException(
-        owner == SessionOwner.user
-            ? '手动会话已达上限（$kMaxPooledSessions 个）：先关掉不用的会话'
-            : 'AI 会话数已达上限（$kMaxPooledSessions 个）：可用 terminal_session '
-                  'action=close 关掉不用的会话，或 action=interrupt 中断卡住的命令',
-      );
-    }
     final shell = await _backend.startShell(
       columns: kDefaultSessionColumns,
       rows: kDefaultSessionRows,
@@ -727,9 +721,10 @@ class WorkspaceSessionPool {
     return session;
   }
 
-  /// 取默认长驻会话（第一个空闲的 AI 会话），没有就新建——「默认保留 1 个
-  /// 长驻 shell，毫秒级复用」。跳过用户手动新建的会话（cwd / 环境是用户的
-  /// 调试现场）和用户正在键入半行的会话（否则 exec 必然被拒）。
+  /// 取默认长驻会话：人和 AI 共用同一个终端（OpenHands 模型）。返回最早
+  /// 的前台会话，不管它是否正忙、是谁开的、用户是否在键入——正忙时由
+  /// exec 拒绝并提示等待 / 回答 / 中断，绝不为此另开终端。后台任务会话
+  /// （[isBackgroundSessionName]）不参与。没有前台会话时才新建。
   Future<PooledWorkspaceSession> acquireDefault({
     String? workingDirectory,
     Map<String, String> environment = const {},
@@ -737,8 +732,7 @@ class WorkspaceSessionPool {
   }) async {
     _prune();
     for (final session in _sessions.values) {
-      if (session.owner != SessionOwner.ai) continue;
-      if (session.alive && !session.busy && !session.isUserTyping) {
+      if (session.alive && !isBackgroundSessionName(session.name)) {
         return session;
       }
     }
