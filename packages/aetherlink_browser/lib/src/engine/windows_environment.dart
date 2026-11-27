@@ -33,4 +33,18 @@ class BrowserWindowsEnvironment {
       rethrow;
     }
   }
+
+  /// 该 URL 在内置浏览器里的 Cookie 头（下载时带上登录态）。失败返回 null。
+  Future<String?> cookieHeaderFor(String url) async {
+    try {
+      final env = await get();
+      final cookies = await CookieManager.instance(
+        webViewEnvironment: env,
+      ).getCookies(url: WebUri(url));
+      if (cookies.isEmpty) return null;
+      return cookies.map((c) => '${c.name}=${c.value}').join('; ');
+    } catch (_) {
+      return null;
+    }
+  }
 }

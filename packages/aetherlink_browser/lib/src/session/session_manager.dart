@@ -4,7 +4,6 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 
 import '../models/browser_exception.dart';
-import '../models/page_load_result.dart';
 import 'browser_session.dart';
 
 /// 调用类别：决定接管暂停与"超时后先观察"纪律如何生效。
@@ -158,9 +157,7 @@ class BrowserSessionManager extends ChangeNotifier {
     final created = entry.session == null;
     final session = entry.session ??= _factory();
     if (created) {
-      if (session is HeadlessBrowserSession) {
-        session.onOpenWindow = (url) => _openWindow(entry.id, url);
-      }
+      if (session is HeadlessBrowserSession) _wireWindows(entry, session);
       notifyListeners();
       // 透明恢复：重建的会话预约重开上次页面（惰性，显式 open
       // 会跳过），cookie 全局共享登录态不丢；@N 需重新快照。
@@ -199,6 +196,13 @@ class BrowserSessionManager extends ChangeNotifier {
         entry.idleTimer = Timer(idleTimeout, () {
           // 共驾页可见挂载的会话不回收（用户可能正在看）。
           if (entry.session?.visibleAttached == true) return;
+          if (_isAttachedPopup(entry)) return;
+          // 有存活弹窗的父会话也不回收：页面还在等弹窗回传结果。
+          if (_entries.values.any(
+            (e) => e.popupParentId == entry.id && e.session != null,
+          )) {
+            return;
+          }
           _disposeEntry(entry);
         });
       }
@@ -238,21 +242,66 @@ class BrowserSessionManager extends ChangeNotifier {
 
   int _windowSeq = 0;
 
-  /// 页面弹出的新窗口：在同一对话作用域下新开一个标签会话并打开 URL。
-  /// 新标签不继承 window.opener（OAuth 回调依赖 opener 的站点仍需在原
-  /// 标签完成，可交给用户）。
-  void _openWindow(String parentId, String url) {
+  /// 任一会话加载完一个页面（浏览历史用）。
+  void Function(String sessionId, String url, String title)? onPageVisited;
+
+  /// 任一会话触发下载。
+  void Function(String sessionId, String url, String? fileName, String? mimeType)?
+  onDownloadRequested;
+
+  void _wireWindows(_SessionEntry entry, HeadlessBrowserSession session) {
+    session.onPageLoaded = (url, title) =>
+        onPageVisited?.call(entry.id, url, title);
+    session.onDownload = (url, name, mime) =>
+        onDownloadRequested?.call(entry.id, url, name, mime);
+    session.onOpenWindow = (url, windowId) =>
+        _openWindow(entry, session, url, windowId);
+    session.onCloseWindow = () {
+      // 只有弹窗响应 window.close()；普通标签由用户在界面关闭。
+      if (entry.popupParentId != null) unawaited(closeSession(entry.id));
+    };
+  }
+
+  /// 页面弹出的新窗口：在同一对话作用域下新开一个弹窗会话，用原生
+  /// windowId 承接（window.opener / postMessage / OAuth 回传保留）。
+  /// 必须同步建好条目并立刻创建 WebView——页面那边在等这个窗口，
+  /// 不能排进可能被阻塞的会话队列。
+  void _openWindow(
+    _SessionEntry parent,
+    HeadlessBrowserSession parentSession,
+    String? url,
+    int windowId,
+  ) {
     if (_closed) return;
-    final i = parentId.indexOf('::');
-    final scope = i < 0 ? '' : parentId.substring(0, i + 2);
+    final i = parent.id.indexOf('::');
+    final scope = i < 0 ? '' : parent.id.substring(0, i + 2);
     final id = '${scope}tab${++_windowSeq}';
-    unawaited(
-      run(
-        (s) => s.open(url),
-        sessionId: id,
-        kind: BrowserCallKind.observation,
-      ).catchError((Object _) => const PageLoadResult(title: '', finalUrl: '')),
+    final entry = _SessionEntry(id)
+      ..popupParentId = parent.id
+      ..lastUrl = url
+      ..lastUsed = DateTime.now()
+      // 弹窗通常是登录/授权：继承父会话的主导方，用户接管中的弹窗
+      // 智能体同样不能操作。
+      ..ownership = parent.ownership;
+    final popup = HeadlessBrowserSession(
+      urlPolicy: parentSession.urlPolicy,
+      windowId: windowId,
     );
+    entry.session = popup;
+    _wireWindows(entry, popup);
+    _entries[id] = entry;
+    notifyListeners();
+    unawaited(
+      popup.attachPopup(url).catchError((Object _) {
+        unawaited(closeSession(id));
+      }),
+    );
+  }
+
+  /// 父会话仍存活的弹窗不参与回收（回收会断开 opener 关系）。
+  bool _isAttachedPopup(_SessionEntry entry) {
+    final parent = entry.popupParentId;
+    return parent != null && _entries[parent]?.session != null;
   }
 
   /// 用户在界面上关闭标签：等该会话手头的操作结束后释放并移除。
@@ -266,6 +315,24 @@ class BrowserSessionManager extends ChangeNotifier {
     _entries.remove(id);
     _recentUrls.remove(id);
     notifyListeners();
+  }
+
+  /// 恢复用户上次开着的标签：只建条目（用户主导、记住 URL），不建
+  /// WebView——用户切到该标签时再按 [lastUrlOf] 打开，避免启动时一次
+  /// 加载所有页面。已存在的 id 跳过。
+  void restoreUserSession(String id, String url) {
+    if (_closed || _entries.containsKey(id)) return;
+    _entries[id] = _SessionEntry(id)
+      ..ownership = SessionOwnership.user
+      ..lastUrl = url;
+    notifyListeners();
+  }
+
+  /// 会话最后已知 URL（存活时取页面当前 URL，回收后取记录值）。
+  String? lastUrlOf(String id) {
+    final entry = _entries[id];
+    if (entry == null) return _recentUrls[id];
+    return entry.session?.lastUrl ?? entry.lastUrl ?? _recentUrls[id];
   }
 
   /// 该会话是否处于"超时后需先观察"状态（UI/诊断用）。
@@ -298,7 +365,11 @@ class BrowserSessionManager extends ChangeNotifier {
       if (entry == about) continue;
       if (entry.session != null &&
           entry.ownership == SessionOwnership.agent &&
-          entry.session?.visibleAttached != true) {
+          entry.session?.visibleAttached != true &&
+          !_isAttachedPopup(entry) &&
+          !_entries.values.any(
+            (e) => e.popupParentId == entry.id && e.session != null,
+          )) {
         // 回收挂进该会话自己的队列，不打断正在执行的操作。
         final disposed = entry.queue.then((_) => _disposeEntry(entry));
         entry.queue = disposed.then<void>((_) {}, onError: (_) {});
@@ -432,6 +503,9 @@ class _SessionEntry {
   int pending = 0;
   int consecutiveFailures = 0;
   bool awaitingObservation = false;
+
+  /// 弹窗会话的父会话 id（普通会话为 null）。
+  String? popupParentId;
   SessionOwnership ownership = SessionOwnership.agent;
   String? handOffNote;
   String? handOffUrl;

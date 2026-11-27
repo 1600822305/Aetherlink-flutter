@@ -41,6 +41,8 @@ class _CoDriveWebViewState extends State<CoDriveWebView> {
       },
       shouldOverrideUrlLoading: session.handleNavigation,
       onCreateWindow: session.handleCreateWindow,
+      onCloseWindow: session.handleCloseWindow,
+      onDownloadStartRequest: session.handleDownload,
       onJsAlert: session.handleJsAlert,
       onJsConfirm: session.handleJsConfirm,
       onJsPrompt: session.handleJsPrompt,

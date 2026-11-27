@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:aetherlink_browser/aetherlink_browser.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_library.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/tool_helpers.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -46,8 +47,16 @@ typedef ScreenshotDirProvider = Future<Directory> Function();
 /// 设计稿 §16.3）；懒建，空闲 5 分钟自动释放 WebView。
 BrowserSessionManager? _sharedManager;
 
-BrowserSessionManager _defaultManager() => _sharedManager ??=
-    BrowserSessionManager(factory: HeadlessBrowserSession.new);
+BrowserSessionManager _defaultManager() {
+  final existing = _sharedManager;
+  if (existing != null) return existing;
+  final manager = _sharedManager = BrowserSessionManager(
+    factory: HeadlessBrowserSession.new,
+  );
+  // 书签/历史/下载：所有会话的页面访问和下载都汇到资料库。
+  BrowserLibrary.instance.attach(manager);
+  return manager;
+}
 
 Future<Directory> _defaultScreenshotDir() async {
   final docs = await getApplicationDocumentsDirectory();

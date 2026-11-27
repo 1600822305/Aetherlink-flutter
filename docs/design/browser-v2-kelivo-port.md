@@ -100,4 +100,5 @@ kelivo 依赖到的外部件需要替换的：`ToolCallCancellation`（→ 用�
 - P2：快照覆盖 shadow DOM / 同源 iframe；@N 身份校验；CSS 深度查询与歧义报错；交互前滚动 + 遮挡检测；输入/选择回读校验；新增 browser_press / browser_scroll；审批按风险分级。
 - P3：共驾页改为内置浏览器页（标签条可关闭、地址栏、前进/后退/刷新，用户导航自动接管）；页面弹窗在同对话新开 tabN 会话（不继承 opener）。
 - P3b：事件流步骤截图卡片。新增 `previewPath`（McpToolResult → AgentToolResult → ToolCallEvent → 持久化），只给界面展示、不注入模型；open/click/input/select/press/scroll/run 成功后用 `HeadlessBrowserSession.thumbnail()`（不改视口、360 宽低质 JPEG）落盘到 `browser_screenshots/previews/`，删任务/回滚时一并清理；点缩略图进入内置浏览器页。
-- 未做：书签/历史/下载、弹窗保留 opener 关系。
+- P3c：真弹窗。onCreateWindow 返回 true，用 `HeadlessInAppWebView(windowId:)` 承接原生窗口，opener/postMessage 保留；about:blank 弹窗放行（后续导航仍过 SSRF）；弹窗继承父会话主导方；window.close() 自动关闭弹窗会话；父子任一存活时互不参与 LRU/空闲回收（弹窗不计入 maxSessions 上限）。
+- P4：用户标签持久化（`browser/user_tabs.json`，切到标签时才加载）；起始页（书签宫格 + 最近访问）；书签（地址栏星标）、浏览历史（所有会话加载完成即记录，上限 500）、下载（WebView 下载请求 → Dio，带 WebView Cookie，过 SSRF，同名不覆盖，进度/取消/删除），资料库存 `browser/library.json`，入口在浏览器页右上角。

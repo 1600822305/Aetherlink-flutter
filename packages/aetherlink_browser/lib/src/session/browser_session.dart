@@ -94,11 +94,21 @@ abstract class BrowserSession {
 /// HeadlessInAppWebView 实现。生命周期由 SessionManager 管理，
 /// 不要直接长期持有。
 class HeadlessBrowserSession implements BrowserSession {
-  HeadlessBrowserSession({UrlPolicy? urlPolicy, PageLoadPoller? poller})
-    : _urlPolicy = urlPolicy ?? UrlPolicy(),
-      _poller = poller ?? const PageLoadPoller();
+  HeadlessBrowserSession({
+    UrlPolicy? urlPolicy,
+    PageLoadPoller? poller,
+    this.windowId,
+  }) : _urlPolicy = urlPolicy ?? UrlPolicy(),
+       _poller = poller ?? const PageLoadPoller();
 
   final UrlPolicy _urlPolicy;
+
+  /// 弹窗会话：页面 onCreateWindow 给出的原生窗口 id。创建 WebView 时
+  /// 带上它，原生侧把这个新 WebView 作为弹窗交给页面——window.opener、
+  /// postMessage、OAuth 回传都保留。为 null 时是普通会话。
+  final int? windowId;
+
+  UrlPolicy get urlPolicy => _urlPolicy;
   final PageLoadPoller _poller;
 
   HeadlessInAppWebView? _headless;
@@ -754,8 +764,40 @@ $script
   void handleLoadStart(InAppWebViewController _, WebUri? url) =>
       notifyLoadStart(url?.toString());
 
-  void handleLoadStop(InAppWebViewController _, WebUri? url) =>
-      notifyLoadStop(url?.toString());
+  /// 页面加载完成（历史记录用）：URL + 标题。
+  void Function(String url, String title)? onPageLoaded;
+
+  /// 页面触发下载（Content-Disposition / download 属性等）。
+  void Function(String url, String? fileName, String? mimeType)? onDownload;
+
+  String? _lastTitle;
+
+  /// 最后一次加载完成时的页面标题。
+  String? get lastTitle => _lastTitle;
+
+  Future<void> handleLoadStop(
+    InAppWebViewController controller,
+    WebUri? url,
+  ) async {
+    notifyLoadStop(url?.toString());
+    final s = url?.toString();
+    if (s == null || s.isEmpty || s == 'about:blank') return;
+    try {
+      _lastTitle = await controller.getTitle();
+    } catch (_) {}
+    onPageLoaded?.call(s, _lastTitle ?? '');
+  }
+
+  void handleDownload(
+    InAppWebViewController _,
+    DownloadStartRequest request,
+  ) {
+    onDownload?.call(
+      request.url.toString(),
+      request.suggestedFilename,
+      request.mimeType,
+    );
+  }
 
   Future<NavigationActionPolicy> handleNavigation(
     InAppWebViewController _,
@@ -764,7 +806,18 @@ $script
 
   /// 页面请求新窗口（target=_blank / window.open）时的回调：会话管理器
   /// 设置为"在同一对话里新开一个标签会话"。未设置时退化为当前窗口打开。
-  void Function(String url)? onOpenWindow;
+  void Function(String? url, int windowId)? onOpenWindow;
+
+  /// 页面调用 window.close() 时的回调（弹窗登录完成后常见）。
+  void Function()? onCloseWindow;
+
+  void handleCloseWindow(InAppWebViewController _) => onCloseWindow?.call();
+
+  /// 弹窗会话立即创建原生 WebView：页面那边在等这个窗口，不能惰性。
+  Future<void> attachPopup(String? url) async {
+    if (url != null && url != 'about:blank') _lastUrl = url;
+    await _ensureWebView();
+  }
 
   /// 用户界面导航（不经过智能体控制检查）。
   Future<void> goBack() async => _controller?.goBack();
@@ -800,16 +853,21 @@ $script
     CreateWindowAction action,
   ) async {
     final target = action.request.url;
-    if (target != null &&
-        target.toString() != 'about:blank' &&
-        await policeNavigation(action) == NavigationActionPolicy.ALLOW) {
-      final open = onOpenWindow;
-      if (open != null) {
-        open(target.toString());
-      } else {
-        await controller.loadUrl(urlRequest: URLRequest(url: target));
-      }
+    final blank = target == null || target.toString() == 'about:blank';
+    // about:blank 弹窗（OAuth 常见：先开空窗再导航）放行，后续导航仍逐跳
+    // 过 shouldOverrideUrlLoading 的 SSRF 复检。
+    if (!blank &&
+        await policeNavigation(action) != NavigationActionPolicy.ALLOW) {
+      return false;
     }
+    final open = onOpenWindow;
+    if (open != null) {
+      // 返回 true：由我们用 windowId 建的新 WebView 承接这个窗口，
+      // 页面拿到真实的 window 对象（opener 关系保留）。
+      open(blank ? null : target.toString(), action.windowId);
+      return true;
+    }
+    if (!blank) await controller.loadUrl(urlRequest: URLRequest(url: target));
     return false;
   }
 
@@ -862,6 +920,7 @@ $script
     _environment ??= await BrowserWindowsEnvironment.instance.get();
     final created = Completer<InAppWebViewController>();
     final headless = HeadlessInAppWebView(
+      windowId: windowId,
       webViewEnvironment: _environment,
       // 桌面常见视口，避免被识别成奇怪的超高窗口。
       initialSize: const Size(1280, 900),
@@ -873,6 +932,8 @@ $script
       onLoadStop: handleLoadStop,
       shouldOverrideUrlLoading: handleNavigation,
       onCreateWindow: handleCreateWindow,
+      onCloseWindow: handleCloseWindow,
+      onDownloadStartRequest: handleDownload,
       onJsAlert: handleJsAlert,
       onJsConfirm: handleJsConfirm,
       onJsPrompt: handleJsPrompt,
