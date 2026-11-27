@@ -41,6 +41,8 @@ import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_s
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart'
     show terminalCommandIsHighRisk;
 import 'package:aetherlink_flutter/shared/services/mobile_background.dart';
+import 'package:aetherlink_flutter/app/di/llm_auto_retry_access.dart';
+import 'package:aetherlink_flutter/shared/services/llm_auto_retry.dart';
 
 final _log = createLogger('TurnStreamBinder');
 
@@ -258,7 +260,12 @@ class TurnStreamBinder {
     // Every pool key gets at most one try per send (failed keys are excluded
     // from re-selection below), plus one trailing slot for the single-key
     // fallback when the whole pool is unusable.
-    final maxAttempts = useKeyPool ? keyPool.length + 1 : 1;
+    // 单 Key 时可选自动重试（设置开关，默认关）：网络断开 / 5xx / 限流等
+    // 在首个数据块之前失败时退避重发，最多 [kLlmMaxRetries] 次。
+    final autoRetry = !useKeyPool && _ref.read(chatLlmAutoRetryProvider);
+    final maxAttempts = useKeyPool
+        ? keyPool.length + 1
+        : (autoRetry ? 1 + kLlmMaxRetries : 1);
     final workingKeys = List<ApiKeyConfig>.of(keyPool);
     final failedKeyIds = <String>{};
     final keyUpdates = <String, ApiKeyConfig>{};
@@ -1132,6 +1139,28 @@ class TurnStreamBinder {
                 ),
           );
           await Future<void>.delayed(_keyRetryDelay(attempt));
+          continue;
+        }
+        // 单 Key 自动重试：只在尚未流出任何内容时、且错误可重试。
+        if (autoRetry &&
+            !committed &&
+            attempt < maxAttempts - 1 &&
+            shouldRetryLlmError(error)) {
+          failedAttempts.add(
+            _ref.read(chatErrorCaptureProvider).attempt(attempt, error),
+          );
+          final delay = llmRetryDelay(attempt);
+          final retries = _ref.read(llmRetryStatusProvider.notifier);
+          retries.begin(assistantMessageId, attempt, delay, error);
+          try {
+            await llmRetryWait(delay, cancelled: cancelToken.whenCancelled);
+          } finally {
+            retries.clear(assistantMessageId);
+          }
+          if (cancelToken.isCancelled) {
+            await persistStopped();
+            return;
+          }
           continue;
         }
         break;

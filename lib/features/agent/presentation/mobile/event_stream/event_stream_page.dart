@@ -20,6 +20,8 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/ag
 import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';
 import 'package:aetherlink_flutter/shared/widgets/list_scroll_state.dart';
 import 'package:aetherlink_flutter/shared/widgets/no_implicit_scroll_physics.dart';
+import 'package:aetherlink_flutter/shared/widgets/llm_retry_notice.dart';
+import 'package:aetherlink_flutter/shared/services/llm_auto_retry.dart';
 
 /// 左页：事件流主视图（UI 稿 §4.1）——计划纪要条 + 时间线 + 底部输入区。
 ///
@@ -249,6 +251,11 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
           ),
         ),
         _CompactionProgressBanner(taskId: widget.taskId),
+        // 模型请求自动重试等待中：「网络中断，N 秒后重试（1/3）」。
+        LlmRetryNotice(
+          retryKey: agentLlmRetryKey(widget.taskId),
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+        ),
         _TaskBuilder(
           taskId: widget.taskId,
           watchKey: (t) => t.status,

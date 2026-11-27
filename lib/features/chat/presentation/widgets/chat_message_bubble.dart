@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/chat/application/user_avatar_control
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/user_avatar_widget.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
+import 'package:aetherlink_flutter/shared/widgets/llm_retry_notice.dart';
 
 /// A single chat message rendered as a bubble.
 ///
@@ -144,16 +145,30 @@ class ChatMessageBubble extends ConsumerWidget {
             textColor: textColor,
           );
 
+    final withRetry = isStreaming && !isUser
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              blockContent,
+              // 自动重试等待中：「网络中断，N 秒后重试（1/3）」。
+              LlmRetryNotice(
+                retryKey: view.id,
+                margin: const EdgeInsets.only(top: 6),
+              ),
+            ],
+          )
+        : blockContent;
     final content = isTruncated
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              blockContent,
+              withRetry,
               const SizedBox(height: 8),
               _ContinueGeneratingButton(messageId: view.id),
             ],
           )
-        : blockContent;
+        : withRetry;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

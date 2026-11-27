@@ -75,6 +75,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.da
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
+import 'package:aetherlink_flutter/shared/services/llm_auto_retry.dart';
 
 part 'agent_runtime_access.g.dart';
 
@@ -696,10 +697,16 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     var promptTokens = 0;
     var finishReason = '';
     try {
+      // 自动重试（对齐 kelivo）：首个数据块之前的网络断开 / 5xx / 限流等
+      // 退避重发，最多 kLlmMaxRetries 次；已收到数据后的错误原样抛出。
+      for (var attempt = 0; ; attempt++) {
+      var received = false;
+      try {
       await for (final chunk in gateway.streamChat(
         request,
         cancelToken: llmCancel,
       )) {
+        received = true;
         switch (chunk) {
           case LlmTextDelta(:final text):
             buffer.write(text);
@@ -754,12 +761,31 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
             if (reason != null) finishReason = reason;
         }
       }
-    } on Object {
-      // 用户暂停/终止：取消中断流属预期，保留已产出的部分文本。
-      if (llmCancel.isCancelled) {
-        return AgentLlmTurn(text: buffer.toString());
+      break;
+      } on Object catch (error) {
+        // 用户暂停/终止：取消中断流属预期，保留已产出的部分文本。
+        if (llmCancel.isCancelled) {
+          return AgentLlmTurn(text: buffer.toString());
+        }
+        if (received ||
+            attempt >= kLlmMaxRetries ||
+            !shouldRetryLlmError(error)) {
+          rethrow;
+        }
+        final delay = llmRetryDelay(attempt);
+        final retries = ref.read(llmRetryStatusProvider.notifier);
+        final retryKey = agentLlmRetryKey(context.task.id);
+        retries.begin(retryKey, attempt, delay, error);
+        try {
+          await llmRetryWait(delay, cancelled: llmCancel.whenCancelled);
+        } finally {
+          retries.clear(retryKey);
+        }
+        if (llmCancel.isCancelled) {
+          return AgentLlmTurn(text: buffer.toString());
+        }
       }
-      rethrow;
+      }
     } finally {
       cancel?.removeListener(onCancelSignal);
     }
