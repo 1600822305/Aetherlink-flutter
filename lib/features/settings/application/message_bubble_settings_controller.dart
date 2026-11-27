@@ -103,4 +103,8 @@ class MessageBubbleSettingsController extends _$MessageBubbleSettingsController
   /// Resets 自定义气泡颜色 back to empty (use the theme defaults).
   void resetCustomBubbleColors() =>
       persist(state.copyWith(customBubbleColors: const CustomBubbleColors()));
+
+  /// 恢复全部默认：整页设置（模式、宽度、头像名称、隐藏气泡、工具栏收纳、
+  /// 颜色）回到出厂值。页面负责二次确认。
+  void resetAll() => persist(const MessageBubbleSettings());
 }

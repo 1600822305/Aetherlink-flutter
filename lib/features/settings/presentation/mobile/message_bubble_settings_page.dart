@@ -9,24 +9,14 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_ac
 import 'package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
-import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
 
-/// The "信息气泡管理" sub-page (外观设置 → this page), a port of the original
-/// `src/pages/Settings/MessageBubbleSettings.tsx`.
+/// 「信息气泡管理」页（外观设置 → 本页）。
 ///
-/// Mirrors the original's five icon-tinted cards — 气泡功能设置 / 消息气泡宽度设置
-/// / 头像和名称显示 / 隐藏气泡 / 自定义气泡颜色 (with a live preview) — and persists
-/// every option through [MessageBubbleSettingsController]. The width / avatar /
-/// hide / color settings re-render the chat bubbles live; the action-mode group
-/// (operation mode, micro bubbles, TTS, version switch) is saved only — Flutter
-/// has no message-action toolbar yet — and carries an inline "即将支持" note
-/// instead of fake buttons.
-///
-/// The five cards are organised into a top tab strip (styled like 辅助模型设置页 —
-/// a segmented pill TabBar): 功能 (气泡功能设置) and 外观 (宽度 / 头像和名称 /
-/// 隐藏气泡 / 自定义气泡颜色 + 预览). Tab content swaps instantly via an
-/// [IndexedStack] and a >60px horizontal swipe jumps to the adjacent tab.
+/// 布局：顶部固定一块实时预览（用户 + AI 消息，含工具栏 / 功能气泡），下面是
+/// 「操作 / 尺寸 / 头像 / 颜色」四个 tab。所有设置改动即存
+/// （[MessageBubbleSettingsController]），预览随之刷新，不用滚动就能看到效果。
+/// 工具栏按钮收纳用 chip 点选：高亮 = 外露，其余收进末尾「更多」。
 class MessageBubbleSettingsPage extends ConsumerStatefulWidget {
   const MessageBubbleSettingsPage({super.key});
 
@@ -40,17 +30,14 @@ class MessageBubbleSettingsPage extends ConsumerStatefulWidget {
 class _MessageBubbleSettingsPageState
     extends ConsumerState<MessageBubbleSettingsPage>
     with SingleTickerProviderStateMixin {
+  static const int _tabCount = 4;
+
   late final TabController _tabController = TabController(
-    length: 2,
+    length: _tabCount,
     vsync: this,
   )..addListener(_onTabChanged);
 
-  // Drive the shown tab straight off the controller via an [IndexedStack] so
-  // content swaps the moment a tab is tapped or swiped (the indicator still
-  // slides), mirroring the MCP page.
   int _index = 0;
-
-  // Horizontal swipe accumulator: a >60px drag jumps to the adjacent tab.
   double _swipeDx = 0;
 
   void _onTabChanged() {
@@ -61,8 +48,45 @@ class _MessageBubbleSettingsPageState
 
   void _onSwipeEnd() {
     if (_swipeDx.abs() <= 60) return;
-    final next = (_tabController.index + (_swipeDx < 0 ? 1 : -1)).clamp(0, 1);
+    final next = (_tabController.index + (_swipeDx < 0 ? 1 : -1)).clamp(
+      0,
+      _tabCount - 1,
+    );
     if (next != _tabController.index) _tabController.animateTo(next);
+  }
+
+  Future<void> _confirmResetAll(
+    MessageBubbleSettingsController controller,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('恢复全部默认？'),
+        content: const Text(
+          '显示模式、气泡宽度、头像和名称、隐藏气泡、工具栏按钮收纳和自定义颜色'
+          '都会恢复为默认值，此操作不能撤销。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('恢复默认'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    controller.resetAll();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('已恢复全部默认设置')));
   }
 
   @override
@@ -110,9 +134,27 @@ class _MessageBubbleSettingsPageState
           color: theme.colorScheme.onSurface,
         ),
         title: const Text(MessageBubbleSettingsPage._title),
+        actions: [
+          TextButton(
+            onPressed: settings == const MessageBubbleSettings()
+                ? null
+                : () => _confirmResetAll(controller),
+            child: const Text('恢复默认'),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: Column(
         children: [
+          // 固定预览：不随 tab 内容滚动。
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: theme.dividerColor)),
+            ),
+            child: _LivePreview(settings: settings),
+          ),
           _TabBarHeader(controller: _tabController),
           Expanded(
             child: GestureDetector(
@@ -125,10 +167,10 @@ class _MessageBubbleSettingsPageState
                 children: [
                   _TabList(
                     children: [
-                      _FunctionCard(settings: settings, controller: controller),
+                      _ActionsGroup(settings: settings, controller: controller),
                       if (settings.messageActionMode ==
                           MessageActionMode.toolbar)
-                        _ToolbarCollapseCard(
+                        _ToolbarChipsGroup(
                           settings: settings,
                           controller: controller,
                         ),
@@ -136,13 +178,18 @@ class _MessageBubbleSettingsPageState
                   ),
                   _TabList(
                     children: [
-                      _WidthCard(settings: settings, controller: controller),
-                      _AvatarCard(settings: settings, controller: controller),
-                      _HideBubbleCard(
-                        settings: settings,
-                        controller: controller,
-                      ),
-                      _ColorsCard(settings: settings, controller: controller),
+                      _SizeGroup(settings: settings, controller: controller),
+                    ],
+                  ),
+                  _TabList(
+                    children: [
+                      _AvatarGroup(settings: settings, controller: controller),
+                    ],
+                  ),
+                  _TabList(
+                    children: [
+                      _HideGroup(settings: settings, controller: controller),
+                      _ColorsGroup(settings: settings, controller: controller),
                     ],
                   ),
                 ],
@@ -155,8 +202,7 @@ class _MessageBubbleSettingsPageState
   }
 }
 
-/// The scrollable body of a single tab: the cards, with the page's standard
-/// 16px padding (plus the bottom safe-area inset).
+/// 单个 tab 的滚动区（含底部安全区）。
 class _TabList extends StatelessWidget {
   const _TabList({required this.children});
 
@@ -167,162 +213,234 @@ class _TabList extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(
         12,
+        4,
         12,
-        12,
-        12 + MediaQuery.paddingOf(context).bottom,
+        16 + MediaQuery.paddingOf(context).bottom,
       ),
       children: children,
     );
   }
 }
 
-/// The tab strip below the app bar, styled like 辅助模型设置页 (`auxiliary_model_
-/// settings_page`'s `_SegmentedTabBar`): a rounded bordered track holding
-/// scrollable pill tabs (icon + label) with a tinted rounded indicator.
+/// 下划线式四等分 tab：操作 / 尺寸 / 头像 / 颜色。
 class _TabBarHeader extends StatelessWidget {
   const _TabBarHeader({required this.controller});
 
   final TabController controller;
 
-  static const List<(IconData, String)> _tabs = [
-    (LucideIcons.sliders, '功能'),
-    (LucideIcons.layout, '外观'),
-  ];
+  static const List<String> _tabs = ['操作', '尺寸', '头像', '颜色'];
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.dividerColor),
-          color: theme.colorScheme.surface,
+    return Material(
+      color: theme.colorScheme.surface,
+      child: TabBar(
+        controller: controller,
+        dividerColor: theme.dividerColor,
+        indicatorColor: theme.colorScheme.primary,
+        indicatorSize: TabBarIndicatorSize.label,
+        labelColor: theme.colorScheme.primary,
+        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+        labelStyle: theme.textTheme.labelLarge?.copyWith(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w600,
         ),
-        padding: const EdgeInsets.all(3),
-        child: TabBar(
-          controller: controller,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          indicator: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: theme.colorScheme.primary.withValues(alpha: 0.12),
-          ),
-          indicatorSize: TabBarIndicatorSize.tab,
-          dividerHeight: 0,
-          labelColor: theme.colorScheme.primary,
-          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-          labelStyle: theme.textTheme.labelLarge?.copyWith(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-          unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-          tabs: [
-            for (final (icon, label) in _tabs)
-              Tab(
-                height: 34,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(icon, size: 15),
-                    const SizedBox(width: 5),
-                    Text(label),
-                  ],
-                ),
-              ),
-          ],
+        unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w500,
         ),
+        tabs: [for (final label in _tabs) Tab(height: 42, text: label)],
       ),
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// 气泡功能设置
+// 分组列表骨架
 // ---------------------------------------------------------------------------
 
-/// 气泡功能设置: the operation-mode select plus (in bubbles mode) the micro
-/// bubbles / TTS switches and the version-switch select. None of these drive
-/// the chat view yet, so an inline note marks them saved-only (即将支持).
-class _FunctionCard extends StatelessWidget {
-  const _FunctionCard({required this.settings, required this.controller});
+/// 分组：灰色小标题（可带右侧操作）+ 白色圆角卡，行之间细分隔线。
+class _Group extends StatelessWidget {
+  const _Group({required this.title, required this.children, this.trailing});
 
-  final MessageBubbleSettings settings;
-  final MessageBubbleSettingsController controller;
-
-  static const Map<MessageActionMode, String> _modes = {
-    MessageActionMode.bubbles: '功能气泡模式',
-    MessageActionMode.toolbar: '底部工具栏模式（默认）',
-  };
-  static const Map<VersionSwitchStyle, String> _versionStyles = {
-    VersionSwitchStyle.popup: '弹出列表（默认）',
-    VersionSwitchStyle.arrows: '箭头式切换 < 2 >',
-  };
+  final String title;
+  final List<Widget> children;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
-    final isBubbles = settings.messageActionMode == MessageActionMode.bubbles;
-
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _CardHeader(
-            icon: LucideIcons.sliders,
-            hue: primary,
-            title: '气泡功能设置',
-            tooltip: '设置信息气泡的功能和显示方式',
-          ),
-          const SizedBox(height: 8),
-          _Select<MessageActionMode>(
-            label: '消息操作显示模式',
-            value: settings.messageActionMode,
-            items: _modes,
-            onChanged: controller.setMessageActionMode,
-          ),
-          if (isBubbles) ...[
-            const _CardDivider(),
-            _SubSwitchRow(
-              icon: LucideIcons.sliders,
-              hue: const Color(0xFF6366F1), // indigo
-              title: '显示功能气泡',
-              description: '在消息气泡上方显示播放和版本切换的小功能气泡',
-              value: settings.showMicroBubbles,
-              onChanged: controller.setShowMicroBubbles,
-            ),
-            if (settings.showMicroBubbles) ...[
-              const _CardDivider(),
-              _SubSwitchRow(
-                icon: LucideIcons.volume2,
-                hue: const Color(0xFF10B981), // emerald
-                title: '显示播放按钮',
-                description: '在AI消息气泡上显示语音播放按钮，可将回复内容转为语音',
-                value: settings.showTTSButton,
-                onChanged: controller.setShowTTSButton,
-              ),
-              const _CardDivider(),
-              _Select<VersionSwitchStyle>(
-                label: '版本切换样式',
-                value: settings.versionSwitchStyle,
-                items: _versionStyles,
-                onChanged: controller.setVersionSwitchStyle,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '设置版本历史的显示和切换方式：弹出列表点击后弹出所有版本；箭头式用左右箭头在版本间切换。',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) {
+        rows.add(Divider(height: 1, thickness: 1, color: theme.dividerColor));
+      }
+      rows.add(children[i]);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 12, 2, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
+              ?trailing,
             ],
-          ],
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: theme.dividerColor),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: rows,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 一行：标题（可带一行说明）+ 右侧控件。
+class _Row extends StatelessWidget {
+  const _Row({required this.title, required this.trailing, this.subtitle});
+
+  final String title;
+  final String? subtitle;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Row(
+      title: title,
+      subtitle: subtitle,
+      trailing: CustomSwitch(value: value, onChanged: onChanged),
+    );
+  }
+}
+
+/// 紧凑分段控件（2~3 个选项）。
+class _Segmented<T> extends StatelessWidget {
+  const _Segmented({
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final T value;
+  final List<(T, String)> options;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (v, label) in options)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onChanged(v),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: v == value ? cs.surface : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                  boxShadow: v == value
+                      ? [
+                          BoxShadow(
+                            color: cs.shadow.withValues(alpha: 0.08),
+                            blurRadius: 2,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: v == value ? FontWeight.w600 : FontWeight.w500,
+                    color: v == value ? cs.onSurface : cs.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -330,45 +448,81 @@ class _FunctionCard extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// 底部工具栏按钮收纳
+// 操作 tab
 // ---------------------------------------------------------------------------
 
-/// 底部工具栏按钮收纳：选择哪些操作收进末尾的「更多」上拉菜单，顶部带
-/// 实时预览（外露图标行 + 更多按钮 + 菜单内容概览），可一键恢复预设。
-/// 仅底部工具栏模式下显示；改动即存，聊天页实时生效。
-class _ToolbarCollapseCard extends StatelessWidget {
-  const _ToolbarCollapseCard({required this.settings, required this.controller});
+class _ActionsGroup extends StatelessWidget {
+  const _ActionsGroup({required this.settings, required this.controller});
 
   final MessageBubbleSettings settings;
   final MessageBubbleSettingsController controller;
 
-  /// resend/regenerate share one visual slot; the customization list shows the
-  /// AI-side set plus 重新发送/重新生成 merged into one row (they collapse
-  /// together).
-  static const List<MessageActionId> _configurable = [
-    MessageActionId.copy,
-    MessageActionId.edit,
-    MessageActionId.export,
-    MessageActionId.regenerate,
-    MessageActionId.regenerateWithModel,
-    MessageActionId.tts,
-    MessageActionId.translate,
-    MessageActionId.versionHistory,
-    MessageActionId.fork,
-    MessageActionId.branch,
-    MessageActionId.saveToKnowledge,
-    MessageActionId.delete,
-  ];
+  @override
+  Widget build(BuildContext context) {
+    final isBubbles = settings.messageActionMode == MessageActionMode.bubbles;
+    return _Group(
+      title: '消息操作',
+      children: [
+        _Row(
+          title: '显示模式',
+          trailing: _Segmented<MessageActionMode>(
+            value: settings.messageActionMode,
+            options: const [
+              (MessageActionMode.bubbles, '功能气泡'),
+              (MessageActionMode.toolbar, '工具栏'),
+            ],
+            onChanged: controller.setMessageActionMode,
+          ),
+        ),
+        if (isBubbles)
+          _SwitchRow(
+            title: '显示功能气泡',
+            subtitle: '气泡上方的播放 / 版本切换小按钮',
+            value: settings.showMicroBubbles,
+            onChanged: controller.setShowMicroBubbles,
+          ),
+        if (isBubbles && settings.showMicroBubbles) ...[
+          _SwitchRow(
+            title: '显示播放按钮',
+            subtitle: '把 AI 回复转成语音',
+            value: settings.showTTSButton,
+            onChanged: controller.setShowTTSButton,
+          ),
+          _Row(
+            title: '版本切换',
+            subtitle: '列表：弹出全部版本；箭头：左右切换',
+            trailing: _Segmented<VersionSwitchStyle>(
+              value: settings.versionSwitchStyle,
+              options: const [
+                (VersionSwitchStyle.popup, '列表'),
+                (VersionSwitchStyle.arrows, '‹ 2 ›'),
+              ],
+              onChanged: controller.setVersionSwitchStyle,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 工具栏按钮收纳：chip 点选，高亮 = 外露，其余收进「更多」。
+/// 重新生成与重新发送共用一个 chip。
+class _ToolbarChipsGroup extends StatelessWidget {
+  const _ToolbarChipsGroup({required this.settings, required this.controller});
+
+  final MessageBubbleSettings settings;
+  final MessageBubbleSettingsController controller;
 
   List<String> get _collapsed =>
       settings.collapsedActionIds ?? kDefaultCollapsedActionIds;
 
-  void _toggle(MessageActionId id, bool collapse) {
+  void _toggle(MessageActionId id) {
     final next = {..._collapsed};
-    // 重新生成与重新发送共用一个收纳开关。
     final names = id == MessageActionId.regenerate
         ? const ['regenerate', 'resend']
         : [id.name];
+    final collapse = !next.contains(id.name);
     for (final name in names) {
       collapse ? next.add(name) : next.remove(name);
     }
@@ -378,186 +532,145 @@ class _ToolbarCollapseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final collapsed = _collapsed;
+    final cs = theme.colorScheme;
+    final collapsed = _collapsed.toSet();
     final isPreset = settings.collapsedActionIds == null ||
-        (collapsed.toSet().length == kDefaultCollapsedActionIds.length &&
-            collapsed.toSet().containsAll(kDefaultCollapsedActionIds));
+        (collapsed.length == kDefaultCollapsedActionIds.length &&
+            collapsed.containsAll(kDefaultCollapsedActionIds));
+    final exposedCount = _kToolbarOrder
+        .where((id) => !collapsed.contains(id.name))
+        .length;
 
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _CardHeader(
-            icon: LucideIcons.ellipsis,
-            hue: Color(0xFFF59E0B), // amber
-            title: '工具栏按钮收纳',
-            tooltip: '把不常用的操作收进工具栏末尾的「更多」上拉菜单',
-          ),
-          const SizedBox(height: 8),
-          _ToolbarPreview(collapsed: collapsed.toSet()),
-          const _CardDivider(),
-          for (final id in _configurable) ...[
-            Row(
-              children: [
-                Icon(
-                  kMessageActionCatalog[id]!.icon,
-                  size: 18,
-                  color: theme.colorScheme.onSurfaceVariant,
+    return _Group(
+      title: '工具栏按钮 · 高亮外露 $exposedCount 个，其余收进「⋯」',
+      trailing: isPreset
+          ? null
+          : GestureDetector(
+              onTap: () => controller.setCollapsedActionIds(
+                kDefaultCollapsedActionIds.toList(),
+              ),
+              child: Text(
+                '恢复预设',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: cs.primary,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    id == MessageActionId.regenerate
-                        ? '重新生成 / 重新发送'
-                        : kMessageActionCatalog[id]!.label,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ),
-                Text(
-                  collapsed.contains(id.name) ? '收纳' : '外露',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                CustomSwitch(
-                  value: collapsed.contains(id.name),
-                  onChanged: (v) => _toggle(id, v),
-                ),
-              ],
+              ),
             ),
-          ],
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: isPreset
-                  ? null
-                  : () => controller.setCollapsedActionIds(
-                      kDefaultCollapsedActionIds.toList(),
-                    ),
-              icon: const Icon(LucideIcons.rotateCcw, size: 15),
-              label: const Text('恢复预设'),
-            ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final id in _kToolbarOrder)
+                _ActionChip(
+                  icon: kMessageActionCatalog[id]!.icon,
+                  label: kMessageActionCatalog[id]!.label,
+                  selected: !collapsed.contains(id.name),
+                  onTap: () => _toggle(id),
+                ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-/// 实时预览：上行是聊天页工具栏的外露图标（含末尾「更多」按钮），下行
-/// 列出收进菜单的操作名。随上方开关即时变化。
-class _ToolbarPreview extends StatelessWidget {
-  const _ToolbarPreview({required this.collapsed});
+class _ActionChip extends StatelessWidget {
+  const _ActionChip({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
-  final Set<String> collapsed;
-
-  static const List<MessageActionId> _aiToolbarOrder = [
-    MessageActionId.copy,
-    MessageActionId.edit,
-    MessageActionId.export,
-    MessageActionId.regenerate,
-    MessageActionId.regenerateWithModel,
-    MessageActionId.tts,
-    MessageActionId.translate,
-    MessageActionId.versionHistory,
-    MessageActionId.fork,
-    MessageActionId.branch,
-    MessageActionId.saveToKnowledge,
-    MessageActionId.delete,
-  ];
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final inline = [
-      for (final id in _aiToolbarOrder)
-        if (!collapsed.contains(id.name)) id,
-    ];
-    final hidden = [
-      for (final id in _aiToolbarOrder)
-        if (collapsed.contains(id.name)) id,
-    ];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: theme.dividerColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '预览（AI 消息工具栏）',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+    final cs = theme.colorScheme;
+    final fg = selected ? cs.primary : cs.onSurfaceVariant;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? cs.primary.withValues(alpha: 0.1)
+                : cs.onSurface.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: selected
+                  ? cs.primary.withValues(alpha: 0.4)
+                  : Colors.transparent,
             ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 10,
-            runSpacing: 6,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              for (final id in inline)
-                Icon(
-                  kMessageActionCatalog[id]!.icon,
-                  size: 17,
-                  color: id == MessageActionId.delete
-                      ? theme.colorScheme.error
-                      : theme.colorScheme.onSurface,
+              Icon(icon, size: 13, color: fg),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: fg,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
-              if (hidden.isNotEmpty)
-                Icon(
-                  LucideIcons.ellipsis,
-                  size: 17,
-                  color: theme.colorScheme.primary,
-                ),
+              ),
             ],
           ),
-          if (hidden.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              '更多菜单内：${hidden.map((id) => kMessageActionCatalog[id]!.label).join('、')}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontSize: 12,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
 }
 
+/// AI 消息工具栏的按钮顺序（预览与 chip 共用）。
+const List<MessageActionId> _kToolbarOrder = [
+  MessageActionId.copy,
+  MessageActionId.edit,
+  MessageActionId.export,
+  MessageActionId.regenerate,
+  MessageActionId.regenerateWithModel,
+  MessageActionId.tts,
+  MessageActionId.translate,
+  MessageActionId.versionHistory,
+  MessageActionId.fork,
+  MessageActionId.branch,
+  MessageActionId.saveToKnowledge,
+  MessageActionId.delete,
+];
+
 // ---------------------------------------------------------------------------
-// 消息气泡宽度设置
+// 尺寸 / 头像 / 颜色 tab
 // ---------------------------------------------------------------------------
 
-/// 消息气泡宽度设置: the AI-max / user-max / min width sliders (all in %).
-class _WidthCard extends StatelessWidget {
-  const _WidthCard({required this.settings, required this.controller});
+class _SizeGroup extends StatelessWidget {
+  const _SizeGroup({required this.settings, required this.controller});
 
   final MessageBubbleSettings settings;
   final MessageBubbleSettingsController controller;
 
   @override
   Widget build(BuildContext context) {
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _CardHeader(
-            icon: LucideIcons.maximize2,
-            hue: Color(0xFF10B981), // emerald
-            title: '消息气泡宽度设置',
-            tooltip: '自定义聊天界面中消息气泡的宽度范围，适配不同设备屏幕',
-          ),
-          const SizedBox(height: 8),
+    Widget pad(Widget child) => Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+      child: child,
+    );
+    return _Group(
+      title: '气泡宽度（占聊天区宽度）',
+      children: [
+        pad(
           _WidthSlider(
             icon: LucideIcons.bot,
             label: 'AI消息最大宽度',
@@ -566,6 +679,8 @@ class _WidthCard extends StatelessWidget {
             max: 100,
             onChanged: controller.setMessageBubbleMaxWidth,
           ),
+        ),
+        pad(
           _WidthSlider(
             icon: LucideIcons.user,
             label: '用户消息最大宽度',
@@ -574,6 +689,8 @@ class _WidthCard extends StatelessWidget {
             max: 100,
             onChanged: controller.setUserMessageMaxWidth,
           ),
+        ),
+        pad(
           _WidthSlider(
             icon: LucideIcons.minimize2,
             label: '消息最小宽度',
@@ -582,8 +699,359 @@ class _WidthCard extends StatelessWidget {
             max: 90,
             onChanged: controller.setMessageBubbleMinWidth,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AvatarGroup extends StatelessWidget {
+  const _AvatarGroup({required this.settings, required this.controller});
+
+  final MessageBubbleSettings settings;
+  final MessageBubbleSettingsController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Group(
+      title: '头像和名称',
+      children: [
+        _SwitchRow(
+          title: '用户头像',
+          value: settings.showUserAvatar,
+          onChanged: controller.setShowUserAvatar,
+        ),
+        _SwitchRow(
+          title: '用户名称',
+          value: settings.showUserName,
+          onChanged: controller.setShowUserName,
+        ),
+        _SwitchRow(
+          title: '模型头像',
+          value: settings.showModelAvatar,
+          onChanged: controller.setShowModelAvatar,
+        ),
+        _SwitchRow(
+          title: '模型名称',
+          value: settings.showModelName,
+          onChanged: controller.setShowModelName,
+        ),
+      ],
+    );
+  }
+}
+
+class _HideGroup extends StatelessWidget {
+  const _HideGroup({required this.settings, required this.controller});
+
+  final MessageBubbleSettings settings;
+  final MessageBubbleSettingsController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Group(
+      title: '隐藏气泡',
+      children: [
+        _SwitchRow(
+          title: '隐藏用户气泡',
+          subtitle: '去掉背景，只显示文字',
+          value: settings.hideUserBubble,
+          onChanged: controller.setHideUserBubble,
+        ),
+        _SwitchRow(
+          title: '隐藏 AI 气泡',
+          subtitle: '去掉背景，只显示文字',
+          value: settings.hideAIBubble,
+          onChanged: controller.setHideAIBubble,
+        ),
+      ],
+    );
+  }
+}
+
+class _ColorsGroup extends StatelessWidget {
+  const _ColorsGroup({required this.settings, required this.controller});
+
+  final MessageBubbleSettings settings;
+  final MessageBubbleSettingsController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = settings.customBubbleColors;
+    void update(CustomBubbleColors next) =>
+        controller.setCustomBubbleColors(next);
+
+    Widget head(String text) => Expanded(
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Group(
+          title: '自定义颜色',
+          trailing: GestureDetector(
+            onTap: controller.resetCustomBubbleColors,
+            child: Text(
+              '重置默认',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(width: 120),
+                      head('背景色'),
+                      head('文字色'),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _ColorRow(
+                    icon: LucideIcons.user,
+                    label: '用户消息',
+                    bubbleColor: colors.userBubbleColor.isEmpty
+                        ? '#1976d2'
+                        : colors.userBubbleColor,
+                    textColor: colors.userTextColor.isEmpty
+                        ? '#ffffff'
+                        : colors.userTextColor,
+                    onBubbleChanged: (c) =>
+                        update(colors.copyWith(userBubbleColor: c)),
+                    onTextChanged: (c) =>
+                        update(colors.copyWith(userTextColor: c)),
+                  ),
+                  const SizedBox(height: 8),
+                  _ColorRow(
+                    icon: LucideIcons.bot,
+                    label: 'AI回复',
+                    bubbleColor: colors.aiBubbleColor.isEmpty
+                        ? '#f5f5f5'
+                        : colors.aiBubbleColor,
+                    textColor: colors.aiTextColor.isEmpty
+                        ? '#333333'
+                        : colors.aiTextColor,
+                    onBubbleChanged: (c) =>
+                        update(colors.copyWith(aiBubbleColor: c)),
+                    onTextChanged: (c) =>
+                        update(colors.copyWith(aiTextColor: c)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+          child: Text(
+            '文字色同时控制气泡内文字和工具栏按钮的颜色。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 固定实时预览
+// ---------------------------------------------------------------------------
+
+/// 页面顶部的固定预览：用户 + AI 消息，反映颜色 / 宽度 / 头像名称 / 隐藏气泡；
+/// AI 消息下方按显示模式画工具栏（外露图标 + 「⋯」）或上方的功能气泡。
+class _LivePreview extends StatelessWidget {
+  const _LivePreview({required this.settings});
+
+  final MessageBubbleSettings settings;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ext = theme.extension<AppThemeExtension>();
+    final colors = settings.customBubbleColors;
+
+    final userBubble =
+        colorFromHex(colors.userBubbleColor) ??
+        ext?.bubbleUser ??
+        const Color(0xFF1976D2);
+    final userText =
+        colorFromHex(colors.userTextColor) ?? theme.colorScheme.onSurface;
+    final aiBubble =
+        colorFromHex(colors.aiBubbleColor) ??
+        ext?.bubbleAi ??
+        const Color(0xFFF5F5F5);
+    final aiText =
+        colorFromHex(colors.aiTextColor) ?? theme.colorScheme.onSurface;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _PreviewMessage(
+          isUser: true,
+          showAvatar: settings.showUserAvatar,
+          showName: settings.showUserName,
+          avatarColor: theme.colorScheme.primary,
+          avatarText: 'U',
+          name: '用户',
+          time: '12:30',
+          sampleText: '你好，帮我写个启动脚本',
+          bubbleColor: userBubble,
+          textColor: userText,
+          hideBubble: settings.hideUserBubble,
+          maxWidthFactor: settings.userMessageMaxWidth / 100,
+        ),
+        const SizedBox(height: 8),
+        if (settings.messageActionMode == MessageActionMode.bubbles &&
+            settings.showMicroBubbles)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _MicroBubbles(settings: settings),
+          ),
+        _PreviewMessage(
+          isUser: false,
+          showAvatar: settings.showModelAvatar,
+          showName: settings.showModelName,
+          avatarColor: theme.colorScheme.secondary,
+          avatarText: 'AI',
+          name: 'AI助手',
+          time: '12:32',
+          sampleText: '好的！下面是一个 bash 启动脚本，保存为 start.sh 后直接运行即可。',
+          bubbleColor: aiBubble,
+          textColor: aiText,
+          hideBubble: settings.hideAIBubble,
+          maxWidthFactor: settings.messageBubbleMaxWidth / 100,
+        ),
+        if (settings.messageActionMode == MessageActionMode.toolbar)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 2),
+            child: _PreviewToolbar(
+              collapsed:
+                  (settings.collapsedActionIds ?? kDefaultCollapsedActionIds)
+                      .toSet(),
+              color: aiText.withValues(alpha: 0.6),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 工具栏预览：外露图标 + 末尾「⋯」（点开列出收进去的按钮）。
+class _PreviewToolbar extends StatelessWidget {
+  const _PreviewToolbar({required this.collapsed, required this.color});
+
+  final Set<String> collapsed;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final inline = [
+      for (final id in _kToolbarOrder)
+        if (!collapsed.contains(id.name)) id,
+    ];
+    final hidden = [
+      for (final id in _kToolbarOrder)
+        if (collapsed.contains(id.name)) id,
+    ];
+    return Wrap(
+      spacing: 12,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final id in inline)
+          Icon(
+            kMessageActionCatalog[id]!.icon,
+            size: 15,
+            color: id == MessageActionId.delete
+                ? theme.colorScheme.error
+                : color,
+          ),
+        if (hidden.isNotEmpty)
+          PopupMenuButton<void>(
+            tooltip: '更多',
+            padding: EdgeInsets.zero,
+            position: PopupMenuPosition.under,
+            itemBuilder: (_) => [
+              for (final id in hidden)
+                PopupMenuItem<void>(
+                  enabled: false,
+                  height: 36,
+                  child: Row(
+                    children: [
+                      Icon(kMessageActionCatalog[id]!.icon, size: 15),
+                      const SizedBox(width: 8),
+                      Text(
+                        kMessageActionCatalog[id]!.label,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+            child: Icon(LucideIcons.ellipsis, size: 16, color: color),
+          ),
+      ],
+    );
+  }
+}
+
+/// 功能气泡模式下 AI 消息上方的小气泡（播放 / 版本）。
+class _MicroBubbles extends StatelessWidget {
+  const _MicroBubbles({required this.settings});
+
+  final MessageBubbleSettings settings;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget pill(IconData? icon, String text) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 10, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            text,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
+    );
+    return Row(
+      children: [
+        if (settings.showTTSButton) ...[
+          pill(LucideIcons.play, '播放'),
+          const SizedBox(width: 5),
+        ],
+        settings.versionSwitchStyle == VersionSwitchStyle.arrows
+            ? pill(null, '‹ 2/3 ›')
+            : pill(LucideIcons.history, '版本 2'),
+      ],
     );
   }
 }
@@ -655,212 +1123,6 @@ class _WidthSlider extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 头像和名称显示
-// ---------------------------------------------------------------------------
-
-/// 头像和名称显示: the four show-avatar / show-name switches.
-class _AvatarCard extends StatelessWidget {
-  const _AvatarCard({required this.settings, required this.controller});
-
-  final MessageBubbleSettings settings;
-  final MessageBubbleSettingsController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _CardHeader(
-            icon: LucideIcons.user,
-            hue: Color(0xFFF59E0B), // amber
-            title: '头像和名称显示',
-            tooltip: '自定义聊天界面中用户和模型的头像及名称显示',
-          ),
-          const _CardDivider(),
-          _PlainSwitchRow(
-            title: '显示用户头像',
-            value: settings.showUserAvatar,
-            onChanged: controller.setShowUserAvatar,
-          ),
-          const SizedBox(height: 8),
-          _PlainSwitchRow(
-            title: '显示用户名称',
-            value: settings.showUserName,
-            onChanged: controller.setShowUserName,
-          ),
-          const SizedBox(height: 8),
-          _PlainSwitchRow(
-            title: '显示模型头像',
-            value: settings.showModelAvatar,
-            onChanged: controller.setShowModelAvatar,
-          ),
-          const SizedBox(height: 8),
-          _PlainSwitchRow(
-            title: '显示模型名称',
-            value: settings.showModelName,
-            onChanged: controller.setShowModelName,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 隐藏气泡
-// ---------------------------------------------------------------------------
-
-/// 隐藏气泡: hide the user / AI bubble background (content stays visible).
-class _HideBubbleCard extends StatelessWidget {
-  const _HideBubbleCard({required this.settings, required this.controller});
-
-  final MessageBubbleSettings settings;
-  final MessageBubbleSettingsController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _CardHeader(
-            icon: LucideIcons.eyeOff,
-            hue: Color(0xFFEF4444), // red
-            title: '隐藏气泡',
-            tooltip: '隐藏消息气泡的背景，只显示内容',
-          ),
-          const _CardDivider(),
-          _DescribedSwitchRow(
-            title: '隐藏用户气泡',
-            description: '隐藏用户消息的气泡背景，只显示消息内容',
-            value: settings.hideUserBubble,
-            onChanged: controller.setHideUserBubble,
-          ),
-          const SizedBox(height: 8),
-          _DescribedSwitchRow(
-            title: '隐藏AI气泡',
-            description: '隐藏AI回复的气泡背景，只显示消息内容',
-            value: settings.hideAIBubble,
-            onChanged: controller.setHideAIBubble,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 自定义气泡颜色
-// ---------------------------------------------------------------------------
-
-/// 自定义气泡颜色: the user / AI background & text color pickers, a reset button
-/// and the live [_MessageBubblePreview].
-class _ColorsCard extends StatelessWidget {
-  const _ColorsCard({required this.settings, required this.controller});
-
-  final MessageBubbleSettings settings;
-  final MessageBubbleSettingsController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = settings.customBubbleColors;
-
-    void update(CustomBubbleColors next) =>
-        controller.setCustomBubbleColors(next);
-
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Expanded(
-                child: _CardHeader(
-                  icon: LucideIcons.palette,
-                  hue: Color(0xFFEC4899), // pink
-                  title: '自定义气泡颜色',
-                  tooltip: '自定义用户和AI消息气泡的背景色和字体颜色',
-                ),
-              ),
-              const SizedBox(width: 12),
-              ModelTonalButton(
-                label: '重置默认',
-                icon: LucideIcons.rotateCcw,
-                onPressed: controller.resetCustomBubbleColors,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // Header row: 空 / 背景色 / 字体色.
-          Row(
-            children: [
-              const SizedBox(width: 120),
-              Expanded(
-                child: Text(
-                  '背景色',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  '字体色',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _ColorRow(
-            icon: LucideIcons.user,
-            label: '用户消息',
-            // The original placeholder defaults when a slot is empty.
-            bubbleColor: colors.userBubbleColor.isEmpty
-                ? '#1976d2'
-                : colors.userBubbleColor,
-            textColor: colors.userTextColor.isEmpty
-                ? '#ffffff'
-                : colors.userTextColor,
-            onBubbleChanged: (c) => update(colors.copyWith(userBubbleColor: c)),
-            onTextChanged: (c) => update(colors.copyWith(userTextColor: c)),
-          ),
-          const SizedBox(height: 8),
-          _ColorRow(
-            icon: LucideIcons.bot,
-            label: 'AI回复',
-            bubbleColor: colors.aiBubbleColor.isEmpty
-                ? '#f5f5f5'
-                : colors.aiBubbleColor,
-            textColor: colors.aiTextColor.isEmpty
-                ? '#333333'
-                : colors.aiTextColor,
-            onBubbleChanged: (c) => update(colors.copyWith(aiBubbleColor: c)),
-            onTextChanged: (c) => update(colors.copyWith(aiTextColor: c)),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '提示：字体颜色同时控制气泡内文字和工具栏按钮的颜色。',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _MessageBubblePreview(settings: settings),
-        ],
-      ),
-    );
-  }
-}
-
 /// One color row in the 自定义气泡颜色 grid: a labelled left cell plus the
 /// background and text [ColorPicker] swatches.
 class _ColorRow extends StatelessWidget {
@@ -913,89 +1175,6 @@ class _ColorRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 实时预览
-// ---------------------------------------------------------------------------
-
-/// A live preview of a user + AI bubble, a port of `MessageBubblePreview.tsx`.
-/// Reflects the custom colors (falling back to the theme bubble tokens), the
-/// widths, the avatar/name toggles and the hide-bubble toggles.
-class _MessageBubblePreview extends StatelessWidget {
-  const _MessageBubblePreview({required this.settings});
-
-  final MessageBubbleSettings settings;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final ext = theme.extension<AppThemeExtension>();
-    final colors = settings.customBubbleColors;
-
-    final userBubble =
-        colorFromHex(colors.userBubbleColor) ??
-        ext?.bubbleUser ??
-        const Color(0xFF1976D2);
-    final userText =
-        colorFromHex(colors.userTextColor) ?? theme.colorScheme.onSurface;
-    final aiBubble =
-        colorFromHex(colors.aiBubbleColor) ??
-        ext?.bubbleAi ??
-        const Color(0xFFF5F5F5);
-    final aiText =
-        colorFromHex(colors.aiTextColor) ?? theme.colorScheme.onSurface;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.dividerColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '实时预览',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _PreviewMessage(
-            isUser: true,
-            showAvatar: settings.showUserAvatar,
-            showName: settings.showUserName,
-            avatarColor: theme.colorScheme.primary,
-            avatarText: 'U',
-            name: '用户',
-            time: '12:30',
-            sampleText: '你好！有什么可以帮助你的吗？',
-            bubbleColor: userBubble,
-            textColor: userText,
-            hideBubble: settings.hideUserBubble,
-            maxWidthFactor: settings.userMessageMaxWidth / 100,
-          ),
-          const SizedBox(height: 16),
-          _PreviewMessage(
-            isUser: false,
-            showAvatar: settings.showModelAvatar,
-            showName: settings.showModelName,
-            avatarColor: theme.colorScheme.secondary,
-            avatarText: 'AI',
-            name: 'AI助手',
-            time: '12:32',
-            sampleText: '我是AI助手，很高兴为您服务！可以帮您解答问题、提供信息和协助完成各种任务。',
-            bubbleColor: aiBubble,
-            textColor: aiText,
-            hideBubble: settings.hideAIBubble,
-            maxWidthFactor: settings.messageBubbleMaxWidth / 100,
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1121,273 +1300,3 @@ class _PreviewMessage extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shared card scaffolding (mirrors `chat_interface_settings_page.dart`)
-// ---------------------------------------------------------------------------
-
-/// `MessageBubbleSettings.tsx` `cardStyle`, tightened for the tabbed layout: a
-/// 12px-gap, 14px-padded, 18px-radius card with a 1px divider border, the paper
-/// surface and no shadow.
-class _Card extends StatelessWidget {
-  const _Card({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.dividerColor),
-      ),
-      child: child,
-    );
-  }
-}
-
-/// A `my:2` (16px vertical) hairline divider, the original card section break.
-class _CardDivider extends StatelessWidget {
-  const _CardDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Divider(height: 1, color: Theme.of(context).dividerColor),
-    );
-  }
-}
-
-/// A card header: the tinted icon avatar plus the title (with optional Info
-/// tooltip holding the full description).
-class _CardHeader extends StatelessWidget {
-  const _CardHeader({
-    required this.icon,
-    required this.hue,
-    required this.title,
-    this.tooltip,
-  });
-
-  final IconData icon;
-  final Color hue;
-  final String title;
-  final String? tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(7),
-          decoration: BoxDecoration(
-            color: hue.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, size: 18, color: hue),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Row(
-            children: [
-              Flexible(
-                child: Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              if (tooltip != null) ...[
-                const SizedBox(width: 4),
-                Tooltip(
-                  message: tooltip!,
-                  triggerMode: TooltipTriggerMode.tap,
-                  child: Icon(
-                    LucideIcons.info,
-                    size: 16,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// A sub-setting row inside the function card: tinted icon + title/description
-/// on the left, a [CustomSwitch] on the right.
-class _SubSwitchRow extends StatelessWidget {
-  const _SubSwitchRow({
-    required this.icon,
-    required this.hue,
-    required this.title,
-    required this.description,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final IconData icon;
-  final Color hue;
-  final String title;
-  final String description;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(7),
-          decoration: BoxDecoration(
-            color: hue.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, size: 18, color: hue),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                description,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: CustomSwitch(value: value, onChanged: onChanged),
-        ),
-      ],
-    );
-  }
-}
-
-/// A plain switch row (`body2` label + switch), the avatar card's row style.
-class _PlainSwitchRow extends StatelessWidget {
-  const _PlainSwitchRow({
-    required this.title,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String title;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Expanded(child: Text(title, style: theme.textTheme.bodyMedium)),
-        const SizedBox(width: 12),
-        CustomSwitch(value: value, onChanged: onChanged),
-      ],
-    );
-  }
-}
-
-/// A switch row with a title and a muted sub-description, the hide-bubble row.
-class _DescribedSwitchRow extends StatelessWidget {
-  const _DescribedSwitchRow({
-    required this.title,
-    required this.description,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String title;
-  final String description;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                description,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: CustomSwitch(value: value, onChanged: onChanged),
-        ),
-      ],
-    );
-  }
-}
-
-/// A labelled outlined dropdown (the original MUI `Select size="small"`).
-class _Select<T> extends StatelessWidget {
-  const _Select({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  final String label;
-  final T value;
-  final Map<T, String> items;
-  final ValueChanged<T> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSelectField<T>(
-      label: label,
-      value: value,
-      borderRadius: 12,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      options: [
-        for (final entry in items.entries)
-          AppSelectOption<T>(value: entry.key, label: entry.value),
-      ],
-      onChanged: onChanged,
-    );
-  }
-}
