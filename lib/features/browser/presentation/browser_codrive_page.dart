@@ -1,6 +1,6 @@
-// 浏览共驾页（升级设计 §2.4 M4d，宽松共驾）：始终实时渲染 agent
-// 正在用的同一个 WebView（headless 转可见 + keepAlive），不管谁在
-// 主导都能看、都能操作；「接管/交回」只切换主导标记，不限制双方。
+// 内置浏览器页：多标签 + 地址栏 + 前进/后退/刷新，实时渲染智能体正在用的
+// 同一个 WebView（headless 转可见 + keepAlive）。用户在地址栏导航即接管该
+// 标签（智能体暂停），点「交回给智能体」后恢复。
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -17,12 +17,22 @@ class BrowserCoDrivePage extends StatefulWidget {
 
 class _BrowserCoDrivePageState extends State<BrowserCoDrivePage> {
   final BrowserSessionManager _manager = sharedBrowserManager();
+  final TextEditingController _address = TextEditingController();
+  final FocusNode _addressFocus = FocusNode();
   String? _selectedId;
+  String? _shownId;
+
+  @override
+  void dispose() {
+    _address.dispose();
+    _addressFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('浏览共驾')),
+      appBar: AppBar(title: const Text('内置浏览器')),
       body: ListenableBuilder(
         listenable: _manager,
         builder: (context, _) {
@@ -34,18 +44,25 @@ class _BrowserCoDrivePageState extends State<BrowserCoDrivePage> {
             (i) => i.id == _selectedId,
             orElse: () => infos.firstWhere(
               (i) => i.ownership == SessionOwnership.delegatedToUser,
-              orElse: () => infos.first,
+              orElse: () => infos.last,
             ),
           );
+          final session = _liveSession(selected.id);
+          if (_shownId != selected.id) {
+            _shownId = selected.id;
+            _address.text = session?.lastUrl ?? '';
+          }
           return Column(
             children: [
               _SessionBar(
                 infos: infos,
                 selectedId: selected.id,
                 onSelect: (id) => setState(() => _selectedId = id),
+                onClose: (id) => _manager.closeSession(id),
               ),
               _OwnershipBanner(info: selected, manager: _manager),
-              Expanded(child: _liveView(selected)),
+              if (session != null) _addressBar(context, selected.id, session),
+              Expanded(child: _liveView(selected, session)),
             ],
           );
         },
@@ -53,31 +70,143 @@ class _BrowserCoDrivePageState extends State<BrowserCoDrivePage> {
     );
   }
 
+  HeadlessBrowserSession? _liveSession(String id) {
+    final session = _manager.peekSession(id);
+    if (session is! HeadlessBrowserSession || session.disposed) return null;
+    return session;
+  }
+
+  Widget _addressBar(
+    BuildContext context,
+    String id,
+    HeadlessBrowserSession session,
+  ) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: '后退',
+            icon: const Icon(LucideIcons.arrowLeft, size: 18),
+            onPressed: () => _userAction(id, session.goBack),
+          ),
+          IconButton(
+            tooltip: '前进',
+            icon: const Icon(LucideIcons.arrowRight, size: 18),
+            onPressed: () => _userAction(id, session.goForward),
+          ),
+          IconButton(
+            tooltip: '刷新',
+            icon: const Icon(LucideIcons.rotateCw, size: 18),
+            onPressed: () => _userAction(id, session.reload),
+          ),
+          Expanded(
+            child: TextField(
+              controller: _address,
+              focusNode: _addressFocus,
+              keyboardType: TextInputType.url,
+              textInputAction: TextInputAction.go,
+              style: theme.textTheme.bodyMedium,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: '输入网址或搜索',
+                filled: true,
+                fillColor: theme.colorScheme.surfaceContainerHighest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+              ),
+              onSubmitted: (value) => _go(id, value),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 用户亲自操作页面：智能体主导时自动接管（真暂停，避免双方抢页面）。
+  Future<void> _userAction(String id, Future<void> Function() action) async {
+    if (_manager.ownershipOf(id) == SessionOwnership.agent) {
+      _manager.userClaim(id);
+    }
+    await action();
+  }
+
+  Future<void> _go(String id, String input) async {
+    final url = _normalizeAddress(input);
+    if (url == null) return;
+    _addressFocus.unfocus();
+    if (_manager.ownershipOf(id) == SessionOwnership.agent) {
+      _manager.userClaim(id);
+    }
+    try {
+      await _manager.run(
+        sessionId: id,
+        kind: BrowserCallKind.observation,
+        (s) => s.open(url),
+      );
+    } on BrowserException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
+  /// 地址栏输入：像网址就补 https://，否则走搜索。
+  static String? _normalizeAddress(String raw) {
+    final input = raw.trim();
+    if (input.isEmpty) return null;
+    final uri = Uri.tryParse(input);
+    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+      return input;
+    }
+    final looksLikeHost =
+        !input.contains(' ') &&
+        RegExp(r'^[\w-]+(\.[\w-]+)+(:\d+)?(/.*)?$').hasMatch(input);
+    if (looksLikeHost) return 'https://$input';
+    return 'https://www.bing.com/search?q=${Uri.encodeQueryComponent(input)}';
+  }
+
   /// 始终渲染会话自己的 WebView（存活时），无关谁在主导。
-  Widget _liveView(BrowserSessionInfo selected) {
-    final session = _manager.peekSession(selected.id);
-    if (session is! HeadlessBrowserSession || session.disposed) {
+  Widget _liveView(BrowserSessionInfo selected, HeadlessBrowserSession? session) {
+    if (session == null) {
       return const _NoLiveSessionPlaceholder();
     }
-    return CoDriveWebView(key: ValueKey(selected.id), session: session);
+    return CoDriveWebView(
+      key: ValueKey(selected.id),
+      session: session,
+      onUrlChanged: (url) {
+        if (!_addressFocus.hasFocus && _address.text != url) {
+          _address.text = url;
+        }
+      },
+    );
   }
 }
 
-/// 会话切换条（多会话时显示）。
+/// 标签条：每个会话一个标签，可关闭。
 class _SessionBar extends StatelessWidget {
   const _SessionBar({
     required this.infos,
     required this.selectedId,
     required this.onSelect,
+    required this.onClose,
   });
 
   final List<BrowserSessionInfo> infos;
   final String selectedId;
   final ValueChanged<String> onSelect;
+  final ValueChanged<String> onClose;
 
   @override
   Widget build(BuildContext context) {
-    if (infos.length <= 1) return const SizedBox.shrink();
     return SizedBox(
       height: 44,
       child: ListView(
@@ -87,18 +216,28 @@ class _SessionBar extends StatelessWidget {
           for (final info in infos)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(browserSessionLabel(info.id)),
+              child: InputChip(
+                label: Text(_tabLabel(info)),
                 selected: info.id == selectedId,
                 avatar: info.ownership == SessionOwnership.agent
                     ? const Icon(LucideIcons.bot, size: 14)
                     : const Icon(LucideIcons.user, size: 14),
                 onSelected: (_) => onSelect(info.id),
+                onDeleted: () => onClose(info.id),
+                deleteButtonTooltipMessage: '关闭标签',
               ),
             ),
         ],
       ),
     );
+  }
+
+  static String _tabLabel(BrowserSessionInfo info) {
+    final label = browserSessionLabel(info.id);
+    final url = info.handOffUrl;
+    if (url == null) return label;
+    final host = Uri.tryParse(url)?.host ?? '';
+    return host.isEmpty ? label : '$label · $host';
   }
 }
 

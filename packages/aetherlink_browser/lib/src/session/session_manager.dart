@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 
 import '../models/browser_exception.dart';
+import '../models/page_load_result.dart';
 import 'browser_session.dart';
 
 /// 调用类别：决定接管暂停与"超时后先观察"纪律如何生效。
@@ -157,6 +158,9 @@ class BrowserSessionManager extends ChangeNotifier {
     final created = entry.session == null;
     final session = entry.session ??= _factory();
     if (created) {
+      if (session is HeadlessBrowserSession) {
+        session.onOpenWindow = (url) => _openWindow(entry.id, url);
+      }
       notifyListeners();
       // 透明恢复：重建的会话预约重开上次页面（惰性，显式 open
       // 会跳过），cookie 全局共享登录态不丢；@N 需重新快照。
@@ -230,6 +234,38 @@ class BrowserSessionManager extends ChangeNotifier {
         '页面无响应时可 browser_open 重新打开。',
       );
     }
+  }
+
+  int _windowSeq = 0;
+
+  /// 页面弹出的新窗口：在同一对话作用域下新开一个标签会话并打开 URL。
+  /// 新标签不继承 window.opener（OAuth 回调依赖 opener 的站点仍需在原
+  /// 标签完成，可交给用户）。
+  void _openWindow(String parentId, String url) {
+    if (_closed) return;
+    final i = parentId.indexOf('::');
+    final scope = i < 0 ? '' : parentId.substring(0, i + 2);
+    final id = '${scope}tab${++_windowSeq}';
+    unawaited(
+      run(
+        (s) => s.open(url),
+        sessionId: id,
+        kind: BrowserCallKind.observation,
+      ).catchError((Object _) => const PageLoadResult(title: '', finalUrl: '')),
+    );
+  }
+
+  /// 用户在界面上关闭标签：等该会话手头的操作结束后释放并移除。
+  Future<void> closeSession(String id) async {
+    final entry = _entries[id];
+    if (entry == null) return;
+    entry.ownership = SessionOwnership.agent;
+    final done = entry.queue.then((_) => _disposeEntry(entry));
+    entry.queue = done.then<void>((_) {}, onError: (_) {});
+    await done;
+    _entries.remove(id);
+    _recentUrls.remove(id);
+    notifyListeners();
   }
 
   /// 该会话是否处于"超时后需先观察"状态（UI/诊断用）。

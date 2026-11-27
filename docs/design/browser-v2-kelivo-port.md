@@ -92,3 +92,11 @@ kelivo 依赖到的外部件需要替换的：`ToolCallCancellation`（→ 用�
 - kelivo 用的是它 fork 在 `dependencies/` 里的 `flutter_inappwebview_windows/macos/ios/android`（改了 WebView2 文档保留、截图尺寸等）。**P0 先用上游 6.1.5 跑；若 Windows 上 headless→可见切换或截图有问题，再把它的 fork 拷进 `packages/` 并 dependency_overrides。**
 - 移动端低内存杀渲染进程：沿用 kelivo 的 `rendererTerminated` 恢复 + liveViewLimit（移动 2、桌面 4）。
 - 我无法在你机器上运行 `flutter analyze/test`，每阶段写完需要你跑一次并把报错贴给我。
+
+## 6. 实施记录
+
+- P0：Windows 固定 WebView2 profile；headless 与可见挂载共用全套回调；加载判定改 DOMContentLoaded。
+- P1：会话按对话隔离（`<对话>::<session>`）；真接管（用户主导时只允许观察）；改动超时后需先观察。
+- P2：快照覆盖 shadow DOM / 同源 iframe；@N 身份校验；CSS 深度查询与歧义报错；交互前滚动 + 遮挡检测；输入/选择回读校验；新增 browser_press / browser_scroll；审批按风险分级。
+- P3：共驾页改为内置浏览器页（标签条可关闭、地址栏、前进/后退/刷新，用户导航自动接管）；页面弹窗在同对话新开 tabN 会话（不继承 opener）。
+- 未做：事件流步骤截图卡片、书签/历史/下载、弹窗保留 opener 关系。

@@ -762,8 +762,19 @@ $script
     NavigationAction action,
   ) => policeNavigation(action);
 
-  /// 新窗口：暂在当前窗口打开（同样过 SSRF 复检）。真多标签/opener
-  /// 关系在 v2 服务层（多 tab）落地。
+  /// 页面请求新窗口（target=_blank / window.open）时的回调：会话管理器
+  /// 设置为"在同一对话里新开一个标签会话"。未设置时退化为当前窗口打开。
+  void Function(String url)? onOpenWindow;
+
+  /// 用户界面导航（不经过智能体控制检查）。
+  Future<void> goBack() async => _controller?.goBack();
+  Future<void> goForward() async => _controller?.goForward();
+  Future<void> reload() async => _controller?.reload();
+  Future<bool> canGoBack() async => await _controller?.canGoBack() ?? false;
+  Future<bool> canGoForward() async =>
+      await _controller?.canGoForward() ?? false;
+
+  /// 新窗口：交给 [onOpenWindow] 新开标签（同样过 SSRF 复检）。
   Future<bool> handleCreateWindow(
     InAppWebViewController controller,
     CreateWindowAction action,
@@ -772,7 +783,12 @@ $script
     if (target != null &&
         target.toString() != 'about:blank' &&
         await policeNavigation(action) == NavigationActionPolicy.ALLOW) {
-      await controller.loadUrl(urlRequest: URLRequest(url: target));
+      final open = onOpenWindow;
+      if (open != null) {
+        open(target.toString());
+      } else {
+        await controller.loadUrl(urlRequest: URLRequest(url: target));
+      }
     }
     return false;
   }
