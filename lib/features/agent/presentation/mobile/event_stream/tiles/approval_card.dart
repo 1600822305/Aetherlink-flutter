@@ -85,7 +85,7 @@ class ApprovalCard extends ConsumerWidget {
                   child: const Text('拒绝'),
                 ),
                 const SizedBox(width: 8),
-                _GrantMenuButton(
+                ApprovalGrantMenuButton(
                   enabled: active,
                   patterns: active ? pending.alwaysPatterns : const [],
                   onSelected: respond,
@@ -99,9 +99,9 @@ class ApprovalCard extends ConsumerWidget {
   }
 }
 
-/// 「更多 ▾」授权菜单：按本次命中的 pattern 动态生成选项。
-class _GrantMenuButton extends StatelessWidget {
-  const _GrantMenuButton({
+/// 「更多 ▾」授权菜单：按本次命中的 pattern 动态生成选项（焦点 tab 复用）。
+class ApprovalGrantMenuButton extends StatelessWidget {
+  const ApprovalGrantMenuButton({
     required this.enabled,
     required this.patterns,
     required this.onSelected,

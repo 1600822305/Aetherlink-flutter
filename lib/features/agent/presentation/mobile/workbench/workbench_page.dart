@@ -12,8 +12,8 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/
 
 /// 右页：工作台（UI 稿 §4.3）——顶部小 tab 切换
 /// 「终端 / 焦点 / 改动 diff / 文件」：终端实时围观任务工作区
-/// 的 AI 会话（[WorkbenchTerminalTab]）；焦点由事件流驱动，跟随最新
-/// 工具/思考/叙述活动自动切内容，附最近工具列表（[WorkbenchFocusTab]）；
+/// 的 AI 会话（[WorkbenchTerminalTab]）；焦点由事件流驱动，默认跟随最新
+/// 活动，「历史」面板可回看并锁定某条（[WorkbenchFocusTab]）；
 /// diff 为任务工作区的未提交改动清单 + 复用 Git 只读 diff 组件
 /// （[WorkbenchDiffTab]）。
 class WorkbenchPage extends ConsumerStatefulWidget {

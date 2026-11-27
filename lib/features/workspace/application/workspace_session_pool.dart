@@ -219,6 +219,10 @@ class PooledWorkspaceSession {
   /// 从未跑完过命令时为 null。配合 busy 可查后台命令是否结束。
   int? lastExitCode;
 
+  /// 当前（前台 / 后台）正在跑的 AI 命令原文；空闲时为 null。焦点 tab 据此
+  /// 把「执行中、结果里还没有 sessionId」的工具调用对到会话上看实况。
+  String? currentCommand;
+
   /// 回看缓冲开头在全量输出流中的偏移（截断丢弃的部分），
   /// 用于增量游标：cursor = _streamBase + 缓冲长度，单调递增。
   int _streamBase = 0;
@@ -373,6 +377,7 @@ class PooledWorkspaceSession {
     _busy = true;
     lastUsedAt = DateTime.now();
     lastExitCode = null;
+    currentCommand = command;
     final nonce = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
     final collected = StringBuffer();
     final done = Completer<SentinelMatch>();
@@ -460,6 +465,7 @@ class PooledWorkspaceSession {
     void releaseNow() {
       if (released) return;
       released = true;
+      currentCommand = null;
       _busy = false;
       lastUsedAt = DateTime.now();
       _failPendingExec = null;
@@ -546,6 +552,7 @@ class PooledWorkspaceSession {
       if (releaseInFinally) {
         _failPendingExec = null;
         _cancelPendingExec = null;
+        currentCommand = null;
         _busy = false;
         lastUsedAt = DateTime.now();
         await sub.cancel();

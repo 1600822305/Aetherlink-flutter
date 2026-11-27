@@ -417,6 +417,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   void forceStop(String taskId) => _tokens[taskId]?.requestCancel();
 
+  /// 只打断当前正在执行的工具（终端命令收到 Ctrl-C），循环本身继续，
+  /// 模型拿到「被中断」的工具结果后自行决定下一步。焦点 tab 的「中断」。
+  void interruptTool(String taskId) => _tokens[taskId]?.requestToolInterrupt();
+
   /// 从设置组装引擎预算：上下文窗口取侧栏设置，压缩开关/阈值取
   /// 压缩设置页；主任务与 subagent 共用同一来源，任务启动时一次性
   /// 快照。主任务轮数/token 默认不限（0），子代理调用方显式传上限。

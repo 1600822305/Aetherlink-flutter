@@ -3,6 +3,16 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:xterm3/flutter.dart';
+
+import 'package:aetherlink_flutter/app/di/agent_terminal_access.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_terminal_focus.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/approval_card.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_tool_detail.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/session_terminal.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish_guards.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
@@ -14,17 +24,69 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/devin_diff
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tool_detail_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 
-/// 工作台「焦点」tab（UI 稿 §4.3）：只显示「当前最新活动」的单一视图，
-/// 活动切换时整块跟着变——终端工具→命令+实况输出、文件编辑→
-/// search/replace 红绿 diff、读文件→内容片段、思考/汇报/用户消息→
-/// 正文。产物区占满余下高度，点头部打开完整详情抽屉。
-class WorkbenchFocusTab extends ConsumerWidget {
+/// 工作台「焦点」tab（UI 稿 §4.3）：默认**跟随**最新活动，活动切换时整块
+/// 跟着变——终端工具→命令 + 实况输出（执行中直接接会话 PTY）、文件编辑→
+/// search/replace 红绿 diff、读文件→内容片段、思考/汇报/用户消息→正文。
+///
+/// 顶部「历史」按钮从底部弹出本轮活动面板（可按命令 / 改动 / 失败筛选），
+/// 点某条即**锁定**到它，不再被新活动顶走；锁定条显示有几条更新的活动，
+/// 「回到最新」恢复跟随。
+class WorkbenchFocusTab extends ConsumerStatefulWidget {
   const WorkbenchFocusTab({required this.task, super.key});
 
   final AgentTask task;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WorkbenchFocusTab> createState() => _WorkbenchFocusTabState();
+}
+
+/// 历史面板列出的活动条数上限。
+const int _kFocusHistoryLimit = 50;
+
+bool _isFocusable(AgentEvent e) =>
+    e is ToolCallEvent ||
+    e is ReasoningEvent ||
+    e is AssistantTextEvent ||
+    e is UserMessageEvent ||
+    e is PlanUpdateEvent;
+
+/// 最近的可聚焦活动，新→旧。
+List<AgentEvent> _historyOf(List<AgentEvent> events) {
+  final out = <AgentEvent>[];
+  for (var i = events.length - 1; i >= 0 && out.length < _kFocusHistoryLimit; i--) {
+    if (_isFocusable(events[i])) out.add(events[i]);
+  }
+  return out;
+}
+
+class _WorkbenchFocusTabState extends ConsumerState<WorkbenchFocusTab> {
+  /// 各任务的锁定活动 id（内存级：切 tab / 切回聊天不丢锁定）。
+  static final Map<String, String> _lockedByTask = {};
+
+  void _setLocked(String? id) {
+    setState(() {
+      if (id == null) {
+        _lockedByTask.remove(widget.task.id);
+      } else {
+        _lockedByTask[widget.task.id] = id;
+      }
+    });
+  }
+
+  Future<void> _openHistory(List<AgentEvent> history, String? currentId) async {
+    final picked = await showFocusHistorySheet(
+      context,
+      history: history,
+      currentId: currentId,
+    );
+    if (picked == null || !mounted) return;
+    // 选的就是最新一条 = 回到跟随。
+    _setLocked(picked == history.firstOrNull?.id ? null : picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final task = widget.task;
     final isLoading = ref.watch(
       agentTaskEventsProvider(
         task.id,
@@ -33,14 +95,342 @@ class WorkbenchFocusTab extends ConsumerWidget {
     if (isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    // 最新的「有产物可看」的活动（跳过检查点/压缩等标记事件）。
-    final focus = ref.watch(
+    final latest = ref.watch(
       agentTimelineProvider(task.id).select((v) => v.latestFocus),
     );
+    final history = ref.watch(
+      agentTaskEventsProvider(
+        task.id,
+      ).select((a) => _historyOf(a.value ?? const [])),
+    );
+    final lockedId = _lockedByTask[task.id];
+    final lockedIndex = lockedId == null
+        ? -1
+        : history.indexWhere((e) => e.id == lockedId);
+    // 锁定的活动已滑出历史窗口：静默回到跟随。
+    final locked = lockedIndex >= 0 ? history[lockedIndex] : null;
+    final focus = locked ?? latest;
     if (focus == null) return const _EmptyFocus();
     return SafeArea(
       top: false,
-      child: _FocusView(event: focus, taskId: task.id),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _FocusTopBar(
+            locked: locked != null,
+            newer: lockedIndex < 0 ? 0 : lockedIndex,
+            historyCount: history.length,
+            onHistory: () => _openHistory(history, focus.id),
+            onBackToLatest: () => _setLocked(null),
+          ),
+          Expanded(
+            child: _FocusView(
+              key: ValueKey(focus.id),
+              event: focus,
+              taskId: task.id,
+              workspaceId: task.workspaceId,
+            ),
+          ),
+          _FocusActionDock(task: task, focus: focus, history: history),
+        ],
+      ),
+    );
+  }
+}
+
+/// 顶部状态行：跟随中 / 已锁定（N 条更新 + 回到最新），右侧「历史」按钮。
+class _FocusTopBar extends StatelessWidget {
+  const _FocusTopBar({
+    required this.locked,
+    required this.newer,
+    required this.historyCount,
+    required this.onHistory,
+    required this.onBackToLatest,
+  });
+
+  final bool locked;
+  final int newer;
+  final int historyCount;
+  final VoidCallback onHistory;
+  final VoidCallback onBackToLatest;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final muted = cs.onSurface.withValues(alpha: 0.5);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: locked
+                ? Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(LucideIcons.pin, size: 13, color: cs.primary),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            newer > 0 ? '已锁定 · 有 $newer 条更新' : '已锁定',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: cs.primary,
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: onBackToLatest,
+                          child: Text(
+                            '回到最新',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: cs.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Row(
+                    children: [
+                      Icon(LucideIcons.radio, size: 13, color: muted),
+                      const SizedBox(width: 6),
+                      Text(
+                        '跟随最新',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: muted,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: historyCount == 0 ? null : onHistory,
+            icon: const Icon(LucideIcons.history, size: 14),
+            label: Text('历史 $historyCount'),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              textStyle: theme.textTheme.labelSmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _HistoryFilter { all, command, change, failed }
+
+bool _matchesFilter(AgentEvent e, _HistoryFilter f) {
+  if (f == _HistoryFilter.all) return true;
+  if (e is! ToolCallEvent) return false;
+  return switch (f) {
+    _HistoryFilter.command => _isTerminalTool(e.toolName),
+    _HistoryFilter.change => toolChangedFilePaths(
+      e.toolName,
+      e.argsDetail ?? '',
+      resultText: e.resultDetail,
+    ).isNotEmpty,
+    _HistoryFilter.failed => e.state == AgentToolCallState.failure,
+    _HistoryFilter.all => true,
+  };
+}
+
+/// 历史条目的图标 + 一行标题。
+(IconData, String) _historyLabel(AgentEvent e) => switch (e) {
+  final ToolCallEvent t => (
+    _toolIcon(t.toolName),
+    toolCommandText(t.toolName, t.argsDetail ?? '')?.trim() ??
+        (t.argSummary.isEmpty ? t.toolName : '${t.toolName}  ${t.argSummary}'),
+  ),
+  final ReasoningEvent r => (
+    LucideIcons.brain,
+    r.streaming ? '思考中…' : '思考 · ${_firstLine(r.text)}',
+  ),
+  final AssistantTextEvent a => (
+    LucideIcons.messageSquareText,
+    '汇报 · ${_firstLine(a.text)}',
+  ),
+  final UserMessageEvent u => (
+    LucideIcons.user,
+    FinishGuards.isEngineInjected(u.text)
+        ? '系统提示'
+        : '用户 · ${_firstLine(u.text)}',
+  ),
+  PlanUpdateEvent() => (LucideIcons.listChecks, '计划更新'),
+  _ => (LucideIcons.circle, ''),
+};
+
+String _firstLine(String text) {
+  final line = text.trim().split('\n').first;
+  return line.length > 60 ? '${line.substring(0, 60)}…' : line;
+}
+
+bool _isLive(AgentEvent e) => switch (e) {
+  final ToolCallEvent t =>
+    t.state == AgentToolCallState.running ||
+        t.state == AgentToolCallState.waitingApproval,
+  final ReasoningEvent r => r.streaming,
+  final AssistantTextEvent a => a.streaming,
+  _ => false,
+};
+
+/// 底部弹出「本轮活动」面板：新→旧列出最近活动，可筛选；返回选中的
+/// 活动 id（下拉关闭返回 null）。
+Future<String?> showFocusHistorySheet(
+  BuildContext context, {
+  required List<AgentEvent> history,
+  String? currentId,
+}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => FractionallySizedBox(
+      heightFactor: 0.62,
+      child: _FocusHistorySheet(history: history, currentId: currentId),
+    ),
+  );
+}
+
+class _FocusHistorySheet extends StatefulWidget {
+  const _FocusHistorySheet({required this.history, this.currentId});
+
+  final List<AgentEvent> history;
+  final String? currentId;
+
+  @override
+  State<_FocusHistorySheet> createState() => _FocusHistorySheetState();
+}
+
+class _FocusHistorySheetState extends State<_FocusHistorySheet> {
+  _HistoryFilter _filter = _HistoryFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final muted = cs.onSurface.withValues(alpha: 0.5);
+    final items = [
+      for (final e in widget.history)
+        if (_matchesFilter(e, _filter)) e,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Container(
+            width: 32,
+            height: 4,
+            margin: const EdgeInsets.only(top: 8, bottom: 8),
+            decoration: BoxDecoration(
+              color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Text('本轮活动', style: theme.textTheme.titleSmall),
+              const Spacer(),
+              Text(
+                '${widget.history.length} 条',
+                style: theme.textTheme.labelSmall?.copyWith(color: muted),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Wrap(
+            spacing: 6,
+            children: [
+              for (final (f, label) in const [
+                (_HistoryFilter.all, '全部'),
+                (_HistoryFilter.command, '命令'),
+                (_HistoryFilter.change, '改动'),
+                (_HistoryFilter.failed, '失败'),
+              ])
+                ChoiceChip(
+                  label: Text(label),
+                  selected: _filter == f,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => setState(() => _filter = f),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: items.isEmpty
+              ? Center(
+                  child: Text(
+                    '没有符合条件的活动',
+                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final e = items[i];
+                    final (icon, title) = _historyLabel(e);
+                    final live = _isLive(e);
+                    final current = e.id == widget.currentId;
+                    Widget? trailing;
+                    if (e is ToolCallEvent) {
+                      final (label, color) = _stateLabel(context, e.state);
+                      trailing = Text(
+                        label,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: color,
+                        ),
+                      );
+                    } else if (live) {
+                      trailing = Text(
+                        '进行中',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.primary,
+                        ),
+                      );
+                    }
+                    return ListTile(
+                      dense: true,
+                      selected: current,
+                      selectedTileColor: cs.primary.withValues(alpha: 0.08),
+                      tileColor: live
+                          ? cs.primary.withValues(alpha: 0.04)
+                          : null,
+                      leading: Icon(icon, size: 16),
+                      minLeadingWidth: 18,
+                      title: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: e is ToolCallEvent ? 'monospace' : null,
+                        ),
+                      ),
+                      trailing: trailing,
+                      onTap: () => Navigator.of(context).pop(e.id),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }
@@ -303,16 +693,26 @@ List<DiffLine> _diffRowsOf(
 
 /// 当前活动的单一全屏视图：头部（活动类型/状态）+ 占满余下高度的产物区。
 class _FocusView extends StatelessWidget {
-  const _FocusView({required this.event, required this.taskId});
+  const _FocusView({
+    required this.event,
+    required this.taskId,
+    required this.workspaceId,
+    super.key,
+  });
 
   final AgentEvent event;
   final String taskId;
+  final String workspaceId;
 
   @override
   Widget build(BuildContext context) {
     final e = event;
     return switch (e) {
-      final ToolCallEvent t => _ToolFocus(event: t, taskId: taskId),
+      final ToolCallEvent t => _ToolFocus(
+        event: t,
+        taskId: taskId,
+        workspaceId: workspaceId,
+      ),
       final ReasoningEvent r => _TextFocus(
         icon: LucideIcons.brain,
         title: r.streaming
@@ -320,11 +720,13 @@ class _FocusView extends StatelessWidget {
             : (r.elapsed == null ? '思考' : '思考了 ${r.elapsed!.inSeconds}s'),
         text: r.text,
         muted: true,
+        streaming: r.streaming,
       ),
       final AssistantTextEvent a => _TextFocus(
         icon: LucideIcons.messageSquareText,
         title: a.streaming ? '汇报中…' : '汇报',
         text: a.text,
+        streaming: a.streaming,
       ),
       final UserMessageEvent u => _TextFocus(
         icon: LucideIcons.user,
@@ -387,10 +789,15 @@ class _FocusHeader extends StatelessWidget {
 /// 参数仍在流式生成时直接消费内存实时通道（每个 delta 都刷新），
 /// 不依赖落库节流。点头部打开完整详情抽屉。
 class _ToolFocus extends ConsumerWidget {
-  const _ToolFocus({required this.event, required this.taskId});
+  const _ToolFocus({
+    required this.event,
+    required this.taskId,
+    required this.workspaceId,
+  });
 
   final ToolCallEvent event;
   final String taskId;
+  final String workspaceId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -406,13 +813,29 @@ class _ToolFocus extends ConsumerWidget {
         final c = _partialStringField(args, 'command');
         if (c != null && c.isNotEmpty) cmd = c;
       }
-      final out = _tailLines(
-        event.resultDetail == null
-            ? event.resultSummary
-            : _readableResult(event.resultDetail!),
-        _kTerminalTailLines,
-      );
-      body = _MonoPane(text: '\$ $cmd\n$out', dark: true);
+      if (event.state == AgentToolCallState.running) {
+        // 执行中：直接接会话 PTY 看实况（ANSI 颜色原样渲染、自动跟随底部）。
+        body = _LiveTerminalPane(
+          workspaceId: workspaceId,
+          command: cmd,
+          sessionRef: terminalToolSessionRef(
+            argsDetail: args,
+            resultDetail: event.resultDetail,
+          ),
+        );
+      } else {
+        final out = _tailLines(
+          event.resultDetail == null
+              ? event.resultSummary
+              : _readableResult(event.resultDetail!),
+          _kTerminalTailLines,
+        );
+        body = _MonoPane(
+          text: cleanTerminalText('\$ $cmd\n$out'),
+          dark: true,
+          startAtEnd: true,
+        );
+      }
     } else {
       final pairs = _editPairsOf(args);
       if (pairs.isNotEmpty) {
@@ -455,7 +878,11 @@ class _ToolFocus extends ConsumerWidget {
         if (detail.isEmpty && args != null && args.isNotEmpty) {
           detail = _tailLines(args, _kStreamingTailLines);
         }
-        body = _MonoPane(text: detail.isEmpty ? '（暂无输出）' : detail);
+        body = _MonoPane(
+          text: detail.isEmpty ? '（暂无输出）' : detail,
+          // 参数仍在流式生成时跟随尾部。
+          follow: live != null,
+        );
       }
     }
 
@@ -487,12 +914,16 @@ class _TextFocus extends StatelessWidget {
     required this.title,
     required this.text,
     this.muted = false,
+    this.streaming = false,
   });
 
   final IconData icon;
   final String title;
   final String text;
   final bool muted;
+
+  /// 流式生成中：停在底部时自动跟随新内容。
+  final bool streaming;
 
   @override
   Widget build(BuildContext context) {
@@ -503,7 +934,9 @@ class _TextFocus extends StatelessWidget {
       children: [
         _FocusHeader(icon: icon, title: title),
         Expanded(
-          child: SingleChildScrollView(
+          child: _FollowScroll(
+            content: text,
+            follow: streaming,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: SelectableText(
               text.isEmpty ? '（尚无内容）' : text,
@@ -521,10 +954,21 @@ class _TextFocus extends StatelessWidget {
 
 /// 等宽产物面板：占满高度内部滚动；[dark] 为终端风格深底。
 class _MonoPane extends StatelessWidget {
-  const _MonoPane({required this.text, this.dark = false});
+  const _MonoPane({
+    required this.text,
+    this.dark = false,
+    this.follow = false,
+    this.startAtEnd = false,
+  });
 
   final String text;
   final bool dark;
+
+  /// 内容增长时（用户停在底部才）自动跟随。
+  final bool follow;
+
+  /// 首次显示即定位到底部（终端结果：错误通常在尾部）。
+  final bool startAtEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -539,7 +983,10 @@ class _MonoPane extends StatelessWidget {
         color: bg,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: SingleChildScrollView(
+      child: _FollowScroll(
+        content: text,
+        follow: follow,
+        startAtEnd: startAtEnd,
         padding: const EdgeInsets.all(10),
         child: SelectableText(
           text,
@@ -617,6 +1064,562 @@ class _PlanFocus extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 带「贴底跟随」的滚动容器：用户停在底部（40px 内）时 [content] 变化即
+/// 跳到底；用户往上翻看后不打扰，滚回底部恢复跟随。
+class _FollowScroll extends StatefulWidget {
+  const _FollowScroll({
+    required this.content,
+    required this.child,
+    this.follow = false,
+    this.startAtEnd = false,
+    this.padding,
+  });
+
+  final Object content;
+  final Widget child;
+  final bool follow;
+  final bool startAtEnd;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  State<_FollowScroll> createState() => _FollowScrollState();
+}
+
+class _FollowScrollState extends State<_FollowScroll> {
+  final ScrollController _controller = ScrollController();
+  bool _stick = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      if (!_controller.hasClients) return;
+      _stick = _controller.position.extentAfter < 40;
+    });
+    if (widget.startAtEnd || widget.follow) _jumpToEnd();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FollowScroll oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.follow && _stick && oldWidget.content != widget.content) {
+      _jumpToEnd();
+    }
+  }
+
+  void _jumpToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      _controller.jumpTo(_controller.position.maxScrollExtent);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    controller: _controller,
+    padding: widget.padding,
+    child: widget.child,
+  );
+}
+
+/// ANSI CSI / OSC / 字符集 / 单字符转义。
+final RegExp _ansiSeq = RegExp(
+  r'\x1b\[[0-9;?<=>!]*[ -/]*[@-~]'
+  r'|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)'
+  r'|\x1b[()][0-9A-Za-z]'
+  r'|\x1b[=>78DEHMc]',
+);
+
+/// 终端结果转纯文本：去掉 ANSI 控制序列；行内 `\r` 回车覆盖（进度条）
+/// 只保留最后一段，`\r\n` 视为普通换行。
+@visibleForTesting
+String cleanTerminalText(String text) {
+  final plain = text.replaceAll(_ansiSeq, '');
+  return plain
+      .split('\n')
+      .map((line) {
+        final l = line.endsWith('\r')
+            ? line.substring(0, line.length - 1)
+            : line;
+        final i = l.lastIndexOf('\r');
+        return i < 0 ? l : l.substring(i + 1);
+      })
+      .join('\n');
+}
+
+/// 执行中的终端命令：找到它所在的会话，直接挂会话 PTY 视图（只读）。
+/// 优先按结果 / 参数里的会话 ID / 名称，其次找本工作区里正在跑同一条
+/// 命令的 AI 会话；都找不到时显示等待提示。
+class _LiveTerminalPane extends ConsumerWidget {
+  const _LiveTerminalPane({
+    required this.workspaceId,
+    required this.command,
+    this.sessionRef,
+  });
+
+  final String workspaceId;
+  final String command;
+  final String? sessionRef;
+
+  PooledWorkspaceSession? _resolve(WorkspaceSessionPoolManager manager) {
+    final sessions = agentAliveSessions(manager, workspaceId);
+    final ref = sessionRef;
+    if (ref != null) {
+      final hit =
+          sessions.where((s) => s.id == ref).firstOrNull ??
+          sessions.where((s) => s.name == ref).firstOrNull;
+      if (hit != null) return hit;
+    }
+    final cmd = command.trim();
+    return sessions
+        .where((s) => s.busy && s.currentCommand?.trim() == cmd)
+        .firstOrNull;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final manager = ref.watch(agentSessionPoolManagerProvider);
+    return ListenableBuilder(
+      listenable: manager,
+      builder: (context, _) {
+        final session = _resolve(manager);
+        if (session == null) {
+          return _MonoPane(text: '\$ $command\n（等待会话输出…）', dark: true);
+        }
+        return _SessionLiveView(key: ValueKey(session.id), session: session);
+      },
+    );
+  }
+}
+
+class _SessionLiveView extends ConsumerStatefulWidget {
+  const _SessionLiveView({required this.session, super.key});
+
+  final PooledWorkspaceSession session;
+
+  @override
+  ConsumerState<_SessionLiveView> createState() => _SessionLiveViewState();
+}
+
+class _SessionLiveViewState extends ConsumerState<_SessionLiveView> {
+  late final SessionTerminalAttachment _view = SessionTerminalAttachment(
+    widget.session,
+  );
+
+  @override
+  void dispose() {
+    _view.detach();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fontSize = ref.watch(terminalFontSizeProvider);
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF14161B),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: MediaQuery.removePadding(
+        context: context,
+        removeTop: true,
+        removeBottom: true,
+        removeLeft: true,
+        removeRight: true,
+        child: TerminalView(
+          _view.terminal,
+          controller: _view.controller,
+          focusNode: _view.focusNode,
+          readOnly: true,
+          textStyle: TerminalStyle(fontSize: fontSize),
+          padding: const EdgeInsets.all(8),
+        ),
+      ),
+    );
+  }
+}
+
+/// 焦点底部就地操作条，按优先级只显示一种：
+/// 1. 有挂起审批 → 批准 / 拒绝 / 更多授权（不管当前看的是哪条，都置顶处理）；
+/// 2. 等待回答提问 → 问题 + 建议答案 + 自定义输入；
+/// 3. 正在看的是执行中的工具 → 终端：告知在等输入 / 在终端中查看 / 中断；
+///    其他工具：中断。
+/// 其余情况不占位。
+class _FocusActionDock extends ConsumerWidget {
+  const _FocusActionDock({
+    required this.task,
+    required this.focus,
+    required this.history,
+  });
+
+  final AgentTask task;
+  final AgentEvent focus;
+  final List<AgentEvent> history;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(agentApprovalRegistryProvider)[task.id];
+    if (pending != null) {
+      final waiting = history
+          .whereType<ToolCallEvent>()
+          .where((e) => e.state == AgentToolCallState.waitingApproval)
+          .firstOrNull;
+      return _ApprovalDock(
+        taskId: task.id,
+        title: waiting == null
+            ? pending.call.name
+            : '${waiting.toolName} ${waiting.argSummary}',
+        patterns: pending.alwaysPatterns,
+      );
+    }
+    if (task.status == AgentTaskStatus.waitingInput) {
+      final question = ref.watch(
+        agentTimelineProvider(task.id).select((v) => v.pendingQuestion),
+      );
+      if (question != null) return _QuestionDock(task: task, question: question);
+    }
+    final f = focus;
+    if (f is ToolCallEvent && f.state == AgentToolCallState.running) {
+      return _RunningToolDock(task: task, event: f);
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+/// 操作条外壳：顶部分隔线 + 内边距 + 可选强调底色。
+class _DockShell extends StatelessWidget {
+  const _DockShell({required this.child, this.accent});
+
+  final Widget child;
+  final Color? accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: accent?.withValues(alpha: 0.06) ?? cs.surface,
+        border: Border(
+          top: BorderSide(
+            color: accent?.withValues(alpha: 0.45) ?? Theme.of(context).dividerColor,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      child: child,
+    );
+  }
+}
+
+class _ApprovalDock extends ConsumerWidget {
+  const _ApprovalDock({
+    required this.taskId,
+    required this.title,
+    required this.patterns,
+  });
+
+  final String taskId;
+  final String title;
+  final List<String> patterns;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    const orange = Colors.orange;
+    void respond(AgentApprovalDecision d) =>
+        ref.read(agentApprovalRegistryProvider.notifier).respond(taskId, d);
+    return _DockShell(
+      accent: orange,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(LucideIcons.triangleAlert, size: 14, color: orange),
+              const SizedBox(width: 6),
+              Text(
+                '等待授权',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: orange,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: () =>
+                      respond(const AgentApprovalDecision(approved: true)),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('批准'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => respond(
+                    const AgentApprovalDecision(
+                      approved: false,
+                      reason: '用户拒绝',
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('拒绝'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ApprovalGrantMenuButton(
+                enabled: true,
+                patterns: patterns,
+                onSelected: respond,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuestionDock extends ConsumerStatefulWidget {
+  const _QuestionDock({required this.task, required this.question});
+
+  final AgentTask task;
+  final UserQuestionEvent question;
+
+  @override
+  ConsumerState<_QuestionDock> createState() => _QuestionDockState();
+}
+
+class _QuestionDockState extends ConsumerState<_QuestionDock> {
+  final TextEditingController _input = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit(String answer) async {
+    final text = answer.trim();
+    if (text.isEmpty || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      await ref
+          .read(agentTaskRunnerProvider.notifier)
+          .answerUserQuestion(widget.task, widget.question, text);
+      _input.clear();
+    } on StateError catch (e) {
+      if (mounted) AppToast.error(context, e.message.toString());
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final q = widget.question;
+    return _DockShell(
+      accent: cs.primary,
+      child: ConstrainedBox(
+        // 长问题 / 多建议时不挤掉上方产物区。
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.38,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    LucideIcons.messageCircleQuestion,
+                    size: 14,
+                    color: cs.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      q.question,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              for (final s in q.suggestions)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: OutlinedButton(
+                    onPressed: _submitting ? null : () => _submit(s),
+                    style: OutlinedButton.styleFrom(
+                      alignment: Alignment.centerLeft,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: Text(s, textAlign: TextAlign.left),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _input,
+                      enabled: !_submitting,
+                      minLines: 1,
+                      maxLines: 3,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: _submit,
+                      style: theme.textTheme.bodySmall,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: '自定义回答…',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton.filled(
+                    onPressed: _submitting ? null : () => _submit(_input.text),
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(LucideIcons.send, size: 16),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RunningToolDock extends ConsumerWidget {
+  const _RunningToolDock({required this.task, required this.event});
+
+  final AgentTask task;
+  final ToolCallEvent event;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final terminal = _isTerminalTool(event.toolName) &&
+        event.toolName != 'run_command';
+    final sessionRef = terminal
+        ? terminalToolSessionRef(
+            argsDetail: ref.watch(
+                  agentToolStreamProvider.select((m) => m[event.id]?.argsText),
+                ) ??
+                event.argsDetail,
+            resultDetail: event.resultDetail,
+          )
+        : null;
+
+    void markWaiting() {
+      final count = ref
+          .read(agentSessionPoolManagerProvider)
+          .markWaitingInputAll(
+            sessionRef: sessionRef,
+            workspaceId: task.workspaceId.isEmpty ? null : task.workspaceId,
+          );
+      AppToast.info(
+        context,
+        count > 0 ? '已告知 AI：命令在等交互输入' : '当前没有正在等结果的命令',
+      );
+    }
+
+    void interrupt() {
+      ref.read(agentTaskRunnerProvider.notifier).interruptTool(task.id);
+      AppToast.info(context, '已中断当前操作，AI 会根据结果继续');
+    }
+
+    return _DockShell(
+      child: Row(
+        children: [
+          if (terminal) ...[
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: markWaiting,
+                icon: const Icon(LucideIcons.keyboard, size: 14),
+                label: const Text('在等输入'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => ref
+                    .read(agentTerminalFocusProvider.notifier)
+                    .request(task.id, sessionRef: sessionRef),
+                icon: const Icon(LucideIcons.terminal, size: 14),
+                label: const Text('终端'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ] else
+            const Spacer(),
+          OutlinedButton.icon(
+            onPressed: interrupt,
+            icon: const Icon(LucideIcons.octagonX, size: 14),
+            label: const Text('中断'),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: Theme.of(context).colorScheme.error,
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.error.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -634,4 +634,26 @@ void main() {
       expect(s.alive, isFalse);
     });
   });
+  test('currentCommand：执行期间记录命令原文，结束后清空', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    expect(session.currentCommand, isNull);
+    final future = session.exec('npm run build');
+    await Future<void>.delayed(Duration.zero);
+    expect(session.currentCommand, 'npm run build');
+    final nonce = _nonceOf(shell);
+    shell.emit('ok\n__AETHER_DONE_${nonce}_0__\n');
+    await future;
+    expect(session.currentCommand, isNull);
+  });
+
+  test('currentCommand：超时后仍在跑时保留，哨兵回来才清空', () async {
+    final session = await pool.create();
+    final shell = backend.shells.single;
+    await session.exec('sleep 999', timeout: const Duration(milliseconds: 20));
+    expect(session.currentCommand, 'sleep 999');
+    shell.emit('\n__AETHER_DONE_${_nonceOf(shell)}_0__\n');
+    await Future<void>.delayed(Duration.zero);
+    expect(session.currentCommand, isNull);
+  });
 }
