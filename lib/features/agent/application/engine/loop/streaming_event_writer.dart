@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
 /// 流式思考/正文的分段落库（L6 原位 upsert 之上的写入编排）。
@@ -14,13 +15,25 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 /// 调工具、再说一句）。[sealSegments] 在工具块建事件前把当前段定稿
 /// 收尾；之后的增量另起新事件，保持与模型输出一致的交错顺序，
 /// 而不是把整轮文本合并回首段位置。
+///
+/// 实时显示：传入 [live] 时每个增量直接推内存实时通道（UI 帧级合并显示），
+/// 落库降为 [_kPersistIntervalWithLive] 一次、只承担崩溃恢复；不传时
+/// 维持原 200ms 落库（UI 靠落库刷新）。
 class StreamingEventWriter {
-  StreamingEventWriter(this._store, this._taskId);
+  StreamingEventWriter(this._store, this._taskId, {AgentLiveTextSink? live})
+    : _live = live;
 
   static const Duration _kMinWriteInterval = Duration(milliseconds: 200);
 
+  /// 有实时通道时的落库间隔（崩溃最多丢这么久的增量）。
+  static const Duration _kPersistIntervalWithLive = Duration(seconds: 1);
+
   final AgentEventStore _store;
   final String _taskId;
+  final AgentLiveTextSink? _live;
+
+  Duration get _writeInterval =>
+      _live == null ? _kMinWriteInterval : _kPersistIntervalWithLive;
 
   AssistantTextEvent? _textEvent;
   ReasoningEvent? _reasoningEvent;
@@ -60,6 +73,8 @@ class StreamingEventWriter {
     _reasoningStart ??= DateTime.now();
     _reasoning = reasoningSoFar;
     _reasoningDirty = true;
+    final event = _reasoningEvent;
+    if (event != null) _live?.update(event.id, _reasoningSegment());
     // 首个增量：立即建事件锁定 seq；后续增量走节流 update。
     if (_reasoningEvent == null) {
       _enqueue(_flush);
@@ -72,6 +87,8 @@ class StreamingEventWriter {
     if (_finished) return;
     _text = textSoFar;
     _textDirty = true;
+    final event = _textEvent;
+    if (event != null) _live?.update(event.id, _textSegment());
     if (_textEvent == null) {
       _enqueue(_flush);
     } else {
@@ -133,6 +150,7 @@ class StreamingEventWriter {
       streaming: false,
       elapsed: elapsed,
     );
+    _live?.clear(event.id);
   }
 
   Future<void> _sealText() async {
@@ -148,11 +166,12 @@ class StreamingEventWriter {
       segment.isEmpty ? event.text : segment,
       streaming: false,
     );
+    _live?.clear(event.id);
   }
 
   void _schedule() {
     if (_finished || _timer != null) return;
-    final wait = _kMinWriteInterval - DateTime.now().difference(_lastWrite);
+    final wait = _writeInterval - DateTime.now().difference(_lastWrite);
     if (wait <= Duration.zero) {
       _enqueue(_flush);
     } else {
@@ -178,6 +197,8 @@ class StreamingEventWriter {
             : await _store.updateReasoning(
                 _taskId, _reasoningEvent!, segment,
                 streaming: true);
+        // 建事件 / 落库期间可能又到了增量：按最新段补推一次实时值。
+        _live?.update(_reasoningEvent!.id, _reasoningSegment());
       }
     }
     if (_textDirty) {
@@ -191,6 +212,7 @@ class StreamingEventWriter {
                 streaming: true)
             : await _store.updateAssistantText(_taskId, _textEvent!, segment,
                 streaming: true);
+        _live?.update(_textEvent!.id, _textSegment());
       }
     }
   }

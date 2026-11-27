@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/sessio
 
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish_guards.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
@@ -744,6 +745,7 @@ class _FocusView extends StatelessWidget {
             ? '思考中…'
             : (r.elapsed == null ? '思考' : '思考了 ${r.elapsed!.inSeconds}s'),
         text: r.text,
+        liveId: r.streaming ? r.id : null,
         muted: true,
         streaming: r.streaming,
       ),
@@ -751,6 +753,7 @@ class _FocusView extends StatelessWidget {
         icon: LucideIcons.messageSquareText,
         title: a.streaming ? '汇报中…' : '汇报',
         text: a.text,
+        liveId: a.streaming ? a.id : null,
         streaming: a.streaming,
       ),
       final UserMessageEvent u => _TextFocus(
@@ -933,13 +936,14 @@ class _ToolFocus extends ConsumerWidget {
 }
 
 /// 思考/汇报/用户指令：正文占满余下高度滚动。
-class _TextFocus extends StatelessWidget {
+class _TextFocus extends ConsumerWidget {
   const _TextFocus({
     required this.icon,
     required this.title,
     required this.text,
     this.muted = false,
     this.streaming = false,
+    this.liveId,
   });
 
   final IconData icon;
@@ -947,13 +951,24 @@ class _TextFocus extends StatelessWidget {
   final String text;
   final bool muted;
 
+  /// 流式中的事件 id：正文改从实时通道取（见 agentLiveTextProvider）。
+  final String? liveId;
+
   /// 流式生成中：停在底部时自动跟随新内容。
   final bool streaming;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.55);
+    final id = liveId;
+    final text = id == null
+        ? this.text
+        : liveOrStored(
+            ref.watch(agentLiveTextProvider.select((m) => m[id])),
+            this.text,
+            streaming: true,
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

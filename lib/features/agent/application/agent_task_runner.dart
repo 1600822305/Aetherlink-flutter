@@ -24,6 +24,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/shared/services/mobile_background.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
 
 export 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart'
     show AgentRollbackResult, RollbackFileChange, RollbackFileKind;
@@ -526,6 +527,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       budget: _budgetFromSettings(),
       subagents: _subagents,
       toolStream: ref.read(agentToolStreamProvider.notifier),
+      liveText: ref.read(agentLiveTextProvider.notifier),
       stopGuard: runtime.stopGuard,
       hookStopSignal: runtime.hookStopSignal,
       onTurnStart: () {

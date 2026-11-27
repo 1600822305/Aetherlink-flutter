@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_c
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent_batch.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_context_overflow.dart';
@@ -58,6 +59,7 @@ class AgentEngine {
     required this.budget,
     this.subagents,
     this.toolStream,
+    this.liveText,
     this.stopGuard,
     this.hookStopSignal,
     this.onTurnStart,
@@ -84,6 +86,9 @@ class AgentEngine {
 
   /// 工具参数流式生成的实时通道（纯内存）；null = 不做实时预览。
   final AgentToolStreamSink? toolStream;
+
+  /// 流式思考 / 正文的实时通道（纯内存）；null = UI 靠落库刷新。
+  final AgentLiveTextSink? liveText;
 
   /// 收尾校验（stop hook）：返回 null 放行收尾；返回原因则阻止本次
   /// 收尾，原因以用户消息回填继续跑。每次运行最多阻止一次
@@ -297,12 +302,17 @@ class AgentEngine {
         );
         onTurnStart?.call();
         final events = await store.getEvents(current.id);
-        final writer = StreamingEventWriter(store, current.id);
+        final writer = StreamingEventWriter(
+          store,
+          current.id,
+          live: liveText,
+        );
         // attempt_completion 的 result 参数边生成边显示（控制工具不走预建事件）。
         final finishStream = FinishResultStreamer(
           store,
           current.id,
           kToolAttemptCompletion,
+          live: toolStream,
         );
         // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
         // UI 实时看到块；后续执行循环按 id 复用预建事件。

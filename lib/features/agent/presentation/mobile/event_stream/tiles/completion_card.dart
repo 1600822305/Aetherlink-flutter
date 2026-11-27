@@ -7,6 +7,9 @@ import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 
 /// attempt_completion 完成卡片（对标 Roo completion_result）：任务的唯一
 /// 完成标记。结果正文在卡片里边生成边显示，头部「任务完成 · N 轮」，
@@ -83,10 +86,31 @@ class CompletionCard extends StatelessWidget {
               ],
             ),
             ),
-            if (result.isNotEmpty) ...[
+            if (result.isNotEmpty || running) ...[
               const SizedBox(height: 6),
               running
-                  ? StreamingMarkdownBody(content: '$result▍', style: style)
+                  // 生成中从工具参数实时通道取 result，只重建这张卡的正文。
+                  ? Consumer(
+                      builder: (context, ref, _) {
+                        final live = ref.watch(
+                          agentToolStreamProvider.select(
+                            (m) => m[event.id]?.argsText,
+                          ),
+                        );
+                        final text = liveOrStored(
+                          live == null
+                              ? null
+                              : extractPartialStringField(live, 'result')
+                                    ?.trim(),
+                          result,
+                          streaming: true,
+                        );
+                        return StreamingMarkdownBody(
+                          content: '$text▍',
+                          style: style,
+                        );
+                      },
+                    )
                   : SettingAwareMessageSelectionArea(
                       child: AppMarkdown(content: result, style: style),
                     ),

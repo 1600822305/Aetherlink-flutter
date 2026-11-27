@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/streaming_event_writer.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
@@ -120,6 +121,17 @@ class _SeqRecordingStore implements AgentEventStore {
       throw UnimplementedError('${invocation.memberName}');
 }
 
+class _RecordingLiveText implements AgentLiveTextSink {
+  final Map<String, String> latest = {};
+  final List<String> cleared = [];
+
+  @override
+  void update(String eventId, String text) => latest[eventId] = text;
+
+  @override
+  void clear(String eventId) => cleared.add(eventId);
+}
+
 void main() {
   const taskId = 't1';
 
@@ -226,5 +238,59 @@ void main() {
     await writer.finish('');
 
     expect(store.events, isEmpty);
+  });
+  group('实时通道', () {
+    test('首增量建事件后，后续增量立即推实时通道（不等落库）', () async {
+      final store = _SeqRecordingStore();
+      final live = _RecordingLiveText();
+      final writer = StreamingEventWriter(store, taskId, live: live);
+
+      writer.onTextDelta('你');
+      // 等首增量建完事件。
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      final id = store.ordered.single.id;
+      writer.onTextDelta('你好');
+      writer.onTextDelta('你好世界');
+      // 实时通道立即是最新段；落库仍是建事件时的快照（降频到 1s）。
+      expect(live.latest[id], '你好世界');
+      expect((store.ordered.single as AssistantTextEvent).text, '你');
+      await writer.finish('你好世界');
+      expect((store.ordered.single as AssistantTextEvent).text, '你好世界');
+      expect(live.cleared, contains(id));
+    });
+
+    test('段定稿后释放实时文本', () async {
+      final store = _SeqRecordingStore();
+      final live = _RecordingLiveText();
+      final writer = StreamingEventWriter(store, taskId, live: live);
+
+      writer.onReasoningDelta('想');
+      await Future<void>.delayed(Duration.zero);
+      writer.onReasoningDelta('想一想');
+      await writer.finish('');
+      final id = store.ordered.single.id;
+      expect(live.latest[id], '想一想');
+      expect(live.cleared, contains(id));
+      expect((store.ordered.single as ReasoningEvent).streaming, isFalse);
+      expect((store.ordered.single as ReasoningEvent).text, '想一想');
+    });
+
+    test('不传实时通道时行为不变', () async {
+      final store = _SeqRecordingStore();
+      final writer = StreamingEventWriter(store, taskId);
+      writer.onTextDelta('a');
+      await writer.finish('abc');
+      expect((store.ordered.single as AssistantTextEvent).text, 'abc');
+    });
+  });
+
+  group('liveOrStored', () {
+    test('流式中实时更长用实时，否则用落库；定稿永远用落库', () {
+      expect(liveOrStored('abcd', 'ab', streaming: true), 'abcd');
+      expect(liveOrStored('a', 'ab', streaming: true), 'ab');
+      expect(liveOrStored(null, 'ab', streaming: true), 'ab');
+      expect(liveOrStored('abcd', 'ab', streaming: false), 'ab');
+    });
   });
 }

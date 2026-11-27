@@ -23,6 +23,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
 
 /// 任务标题取自首条文本的前 24 字。
 String agentTaskTitleFrom(String text) =>
@@ -437,6 +438,7 @@ class AgentSubagentRunner implements AgentSubagentLauncher {
         maxTokens: 200000,
       ),
       toolStream: _ref.read(agentToolStreamProvider.notifier),
+      liveText: _ref.read(agentLiveTextProvider.notifier),
       stopGuard: runtime.subagentStopGuard,
       hookStopSignal: runtime.hookStopSignal,
     );

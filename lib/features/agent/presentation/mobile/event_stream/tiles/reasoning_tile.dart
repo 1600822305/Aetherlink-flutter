@@ -5,6 +5,8 @@ import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
 
 /// 思考过程行（Devin 同款）：默认收起为「▸ 思考了 Xs」，
 /// 流式中显示「思考中…」并自动展开；点开看完整思考文字。
@@ -91,13 +93,24 @@ class _ReasoningTileState extends State<ReasoningTile> {
                   ),
                   child: _selectableUnlessStreaming(
                     streaming,
-                    Text(
-                      streaming ? '${widget.event.text}▍' : widget.event.text,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.7),
-                        height: 1.5,
-                      ),
-                    ),
+                    streaming
+                        // 流式中只订阅本事件的实时文本，增量只重建这段正文。
+                        ? Consumer(
+                            builder: (context, ref, _) => Text(
+                              '${liveOrStored(ref.watch(agentLiveTextProvider.select((m) => m[widget.event.id])), widget.event.text, streaming: true)}▍',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: cs.onSurface.withValues(alpha: 0.7),
+                                height: 1.5,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            widget.event.text,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurface.withValues(alpha: 0.7),
+                              height: 1.5,
+                            ),
+                          ),
                   ),
                 )
               : const SizedBox(width: double.infinity),

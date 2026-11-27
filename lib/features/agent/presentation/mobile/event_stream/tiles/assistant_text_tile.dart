@@ -5,6 +5,8 @@ import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 import 'package:aetherlink_flutter/shared/widgets/deferred_content.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_live_text.dart';
 
 /// 助手叙述行：无气泡、贴左正文段落，Markdown 渲染（与聊天页同一套）；
 /// 流式中走 [StreamingMarkdownBody]（块级记忆化，每个增量只重解析尾块）
@@ -30,7 +32,17 @@ class AssistantTextTile extends StatelessWidget {
         ),
       ),
       child: event.streaming
-          ? StreamingMarkdownBody(content: '${event.text}▍', style: style)
+          // 流式中只订阅本事件的实时文本：增量到达只重建这一行。
+          ? Consumer(
+              builder: (context, ref, _) {
+                final text = liveOrStored(
+                  ref.watch(agentLiveTextProvider.select((m) => m[event.id])),
+                  event.text,
+                  streaming: true,
+                );
+                return StreamingMarkdownBody(content: '$text▍', style: style);
+              },
+            )
           : DeferredContent(
               cost: event.text.length,
               estimatedHeight: event.text.length / 22 * lineHeight,
