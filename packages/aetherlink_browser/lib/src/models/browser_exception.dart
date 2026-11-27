@@ -26,6 +26,10 @@ enum BrowserErrorKind {
   /// 绕过，需等用户交回（browser_take_over）或换会话。
   userControlled,
 
+  /// 上一个改页面的操作超时、结果未确认：在 snapshot_dom/read/snapshot
+  /// 成功观察之前，该会话拒绝新的改动操作（防止盲目重试导致重复提交）。
+  observationRequired,
+
   /// 会话数达到上限且没有可回收的空闲会话。
   sessionLimit,
 

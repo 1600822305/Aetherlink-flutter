@@ -88,7 +88,7 @@ class _SessionBar extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
-                label: Text(info.id),
+                label: Text(browserSessionLabel(info.id)),
                 selected: info.id == selectedId,
                 avatar: info.ownership == SessionOwnership.agent
                     ? const Icon(LucideIcons.bot, size: 14)
@@ -113,9 +113,9 @@ class _OwnershipBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (label, icon) = switch (info.ownership) {
-      SessionOwnership.agent => ('智能体主导（你也可直接操作）', LucideIcons.bot),
-      SessionOwnership.delegatedToUser => ('等你操作', LucideIcons.user),
-      SessionOwnership.user => ('你在主导（智能体仍可调用）', LucideIcons.user),
+      SessionOwnership.agent => ('智能体主导', LucideIcons.bot),
+      SessionOwnership.delegatedToUser => ('等你操作（智能体已暂停）', LucideIcons.user),
+      SessionOwnership.user => ('你在主导（智能体已暂停，只能观察）', LucideIcons.user),
     };
     final note = info.handOffNote;
     return Material(
@@ -137,7 +137,7 @@ class _OwnershipBanner extends StatelessWidget {
             if (info.ownership == SessionOwnership.agent)
               TextButton(
                 onPressed: () => manager.userClaim(info.id),
-                child: const Text('接管'),
+                child: const Text('接管（暂停智能体）'),
               )
             else
               FilledButton.tonal(
@@ -178,7 +178,7 @@ class _NoLiveSessionPlaceholder extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '智能体打开页面后，这里会实时显示同一个页面；'
-              '你可以直接操作，也可点「接管」标记由你主导。',
+              '点「接管」后智能体暂停操作，由你主导。',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

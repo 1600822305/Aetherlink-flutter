@@ -6,13 +6,26 @@ import 'package:flutter/foundation.dart' show ChangeNotifier;
 import '../models/browser_exception.dart';
 import 'browser_session.dart';
 
+/// 调用类别：决定接管暂停与"超时后先观察"纪律如何生效。
+enum BrowserCallKind {
+  /// 只读观察（read/snapshot_dom/snapshot/wait/currentUrl）：
+  /// 用户主导时仍允许；成功后解除"需先观察"状态。
+  observation,
+
+  /// 改页面状态（click/input/select/run）：用户主导时拒绝；
+  /// "需先观察"状态下拒绝；超时则进入"需先观察"状态。
+  mutation,
+
+  /// 导航（open）：用户主导时拒绝；可作为恢复手段，成功后解除
+  /// "需先观察"状态。
+  navigation,
+}
+
 /// 会话工厂（可注入 mock，测试无需 WebView）。
 typedef SessionFactory = BrowserSession Function();
 
-/// 会话所有权（升级设计 §2.4 M4d，借鉴 ego-lite Task Space 模型）。
-/// 宽松共驾语义：所有权只标记“谁在主导”，不限制另一方操作——
-/// 非 agent 所有时 agent 工具仍可调用，只在结果中提示用户可能
-/// 同时在操作；用户则随时可在共驾页查看/操作任意会话。
+/// 会话所有权。非 agent 所有时为真暂停：agent 只能观察，
+/// 导航/交互一律拒绝，直到用户在共驾页点「交回给智能体」。
 enum SessionOwnership {
   /// agent 主导。
   agent,
@@ -94,11 +107,13 @@ class BrowserSessionManager extends ChangeNotifier {
   Future<T> run<T>(
     Future<T> Function(BrowserSession session) action, {
     String? sessionId,
+    BrowserCallKind kind = BrowserCallKind.observation,
   }) {
     if (_closed) {
       throw const BrowserException(BrowserErrorKind.sessionGone, '浏览器管理器已关闭');
     }
     final id = _normalize(sessionId);
+    _checkControl(_entries[id], kind);
     final entry = _entryFor(id);
     // 即将新建 WebView 时先回收触底的 LRU 会话，并等回收完成再建，
     // 保证存活 WebView 数不瞬时超过 maxSessions。
@@ -108,7 +123,7 @@ class BrowserSessionManager extends ChangeNotifier {
     entry.pending++;
     final result = entry.queue.then((_) async {
       if (evicted != null) await evicted;
-      return _runLocked(entry, action);
+      return _runLocked(entry, action, kind);
     });
     entry.queue = result.then<void>((_) {}, onError: (_) {});
     return result;
@@ -117,8 +132,16 @@ class BrowserSessionManager extends ChangeNotifier {
   Future<T> _runLocked<T>(
     _SessionEntry entry,
     Future<T> Function(BrowserSession session) action,
+    BrowserCallKind kind,
   ) async {
     entry.idleTimer?.cancel();
+    try {
+      // 排队期间用户可能已接管：出队时再查一次。
+      _checkControl(entry, kind);
+    } catch (_) {
+      entry.pending--;
+      rethrow;
+    }
     // 崩溃/挂死的会话在交给动作前主动重建（而非等调用以诡异
     // 错误失败）：渲染进程被系统杀掉 / 心跳探针无响应都算。
     final existing = entry.session;
@@ -143,8 +166,13 @@ class BrowserSessionManager extends ChangeNotifier {
     try {
       final value = await action(session);
       entry.consecutiveFailures = 0;
+      if (kind != BrowserCallKind.mutation) entry.awaitingObservation = false;
       return value;
     } on BrowserException catch (e) {
+      if (kind == BrowserCallKind.mutation && _outcomeUnknown(e)) {
+        entry.awaitingObservation = true;
+        notifyListeners();
+      }
       if (e.kind == BrowserErrorKind.navigationTimeout ||
           e.kind == BrowserErrorKind.scriptTimeout) {
         entry.consecutiveFailures++;
@@ -172,6 +200,41 @@ class BrowserSessionManager extends ChangeNotifier {
       }
     }
   }
+
+  /// 改动类操作超时/结果丢失：页面可能已经执行了它，结果未确认。
+  static bool _outcomeUnknown(BrowserException e) =>
+      e.kind == BrowserErrorKind.scriptTimeout ||
+      e.kind == BrowserErrorKind.navigationTimeout ||
+      (e.kind == BrowserErrorKind.internal && e.transient);
+
+  void _checkControl(_SessionEntry? entry, BrowserCallKind kind) {
+    if (entry == null || kind == BrowserCallKind.observation) return;
+    if (entry.ownership != SessionOwnership.agent) {
+      throw BrowserException(
+        BrowserErrorKind.userControlled,
+        entry.ownership == SessionOwnership.delegatedToUser
+            ? '该浏览器会话已交给用户处理'
+                  '${entry.handOffNote == null ? '' : '（${entry.handOffNote}）'}，'
+                  '用户点「交回给智能体」之前只能观察（read/snapshot），'
+                  '不能导航或交互。请等待用户，不要重试。'
+            : '用户已接管该浏览器会话，智能体的导航/交互已暂停；'
+                  '可以观察页面，但必须等用户交回后再操作。不要重试。',
+      );
+    }
+    if (kind == BrowserCallKind.mutation && entry.awaitingObservation) {
+      throw const BrowserException(
+        BrowserErrorKind.observationRequired,
+        '上一个页面操作超时，结果未确认，本次操作未发送。'
+        '请先用 browser_snapshot_dom 或 browser_read 确认当前页面状态，'
+        '再决定下一步；不要直接重复上一个操作（可能导致重复提交）。'
+        '页面无响应时可 browser_open 重新打开。',
+      );
+    }
+  }
+
+  /// 该会话是否处于"超时后需先观察"状态（UI/诊断用）。
+  bool requiresObservation(String? sessionId) =>
+      _entries[_normalize(sessionId)]?.awaitingObservation ?? false;
 
   /// 取/建会话条目（不触发回收；回收在 [run] 即将新建 WebView 时做）。
   _SessionEntry _entryFor(String id) {
@@ -332,6 +395,7 @@ class _SessionEntry {
   /// 排队调用在孤儿条目上重建会话。
   int pending = 0;
   int consecutiveFailures = 0;
+  bool awaitingObservation = false;
   SessionOwnership ownership = SessionOwnership.agent;
   String? handOffNote;
   String? handOffUrl;

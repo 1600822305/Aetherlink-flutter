@@ -75,13 +75,30 @@ int safeSliceIndex(String s, int index) {
 /// 单次导航的正文预览长度（open 返回首屏摘要，完整内容用 browser_read）。
 const int _kOpenPreviewChars = 1200;
 
+/// 会话按对话隔离：模型传的 `session` 只在本对话内有意义，
+/// 实际会话 id = `<对话>::<session|main>`，不同对话互不踩踏。
+Map<String, Object?> _scopeSession(String? scope, Map<String, Object?> args) {
+  final key = scope?.trim() ?? '';
+  if (key.isEmpty) return args;
+  final raw = (args['session'] as String?)?.trim();
+  return {...args, 'session': '$key::${raw == null || raw.isEmpty ? 'main' : raw}'};
+}
+
+/// 会话 id 的模型可见部分（去掉对话前缀）。
+String browserSessionLabel(String id) {
+  final i = id.indexOf('::');
+  return i < 0 ? id : id.substring(i + 2);
+}
+
 Future<McpToolResult> runBrowserTool(
   String toolName,
-  Map<String, Object?> args, {
+  Map<String, Object?> rawArgs, {
   BrowserSessionManager? manager,
   ScreenshotDirProvider? screenshotDir,
+  String? scope,
 }) async {
   final sessions = manager ?? _defaultManager();
+  final args = _scopeSession(scope, rawArgs);
   try {
     final result = await _dispatch(toolName, args, sessions, screenshotDir);
     return _withCoDriveHint(toolName, args, sessions, result);
@@ -107,8 +124,8 @@ McpToolResult _withCoDriveHint(
   final ownership = sessions.ownershipOf(args['session'] as String?);
   if (ownership == SessionOwnership.agent) return result;
   return McpToolResult(
-    '${result.text}\n（共驾提示：该会话当前由用户主导，用户可能同时在操作，'
-    '页面/旧 @N 随时可能变化；关键操作前建议重新快照。）',
+    '${result.text}\n（提示：该会话当前由用户主导，智能体只能观察；'
+    '页面/旧 @N 随时可能变化，等用户交回后再操作。）',
     imagePath: result.imagePath,
     imageMimeType: result.imageMimeType,
   );
@@ -161,7 +178,10 @@ Future<McpToolResult> _open(
   }
   final timeoutSeconds = asIntOr(args['timeout_seconds'], 30).clamp(5, 120);
   final sessionId = args['session'] as String?;
-  return sessions.run(sessionId: sessionId, (session) async {
+  return sessions.run(
+    sessionId: sessionId,
+    kind: BrowserCallKind.navigation,
+    (session) async {
     final result = await session.open(
       url,
       timeout: Duration(seconds: timeoutSeconds),
@@ -287,7 +307,10 @@ Future<McpToolResult> _click(
     );
   }
   final sessionId = args['session'] as String?;
-  return sessions.run(sessionId: sessionId, (session) async {
+  return sessions.run(
+    sessionId: sessionId,
+    kind: BrowserCallKind.mutation,
+    (session) async {
     final result = await session.click(target);
     return McpToolResult(_interactResultText('已点击「$target」', result));
   });
@@ -310,7 +333,10 @@ Future<McpToolResult> _input(
   }
   final submit = args['submit'] == true;
   final sessionId = args['session'] as String?;
-  return sessions.run(sessionId: sessionId, (session) async {
+  return sessions.run(
+    sessionId: sessionId,
+    kind: BrowserCallKind.mutation,
+    (session) async {
     final result = await session.fill(target, text, submit: submit);
     return McpToolResult(
       _interactResultText('已向「$target」输入文本${submit ? '并提交' : ''}', result),
@@ -335,7 +361,10 @@ Future<McpToolResult> _select(
     return const McpToolResult('value 不能为空', isError: true);
   }
   final sessionId = args['session'] as String?;
-  return sessions.run(sessionId: sessionId, (session) async {
+  return sessions.run(
+    sessionId: sessionId,
+    kind: BrowserCallKind.mutation,
+    (session) async {
     final result = await session.selectOption(target, value);
     return McpToolResult(
       _interactResultText('已在「$target」选择选项「$value」', result),
@@ -392,11 +421,11 @@ Future<McpToolResult> _handOff(
   }
   sessions.handOff(sessionId, note: note, url: url);
   return McpToolResult(
-    '已将浏览器会话交给用户主导${note == null ? '' : '（$note）'}。'
+    '已将浏览器会话交给用户${note == null ? '' : '（$note）'}。'
     '用户可在「浏览共驾」页面直接操作同一页面'
-    '${url == null ? '' : '（当前 $url）'}；等用户完成期间尽量不要'
-    '操作该会话（页面可能随时被用户改变），完成后用 '
-    'browser_take_over 标记收回并重新快照。',
+    '${url == null ? '' : '（当前 $url）'}。在用户点「交回给智能体」之前，'
+    '该会话的导航/交互会被拒绝，只能观察；请告诉用户需要做什么并等待，'
+    '之后用 browser_take_over 确认控制权并重新快照。',
   );
 }
 
@@ -406,7 +435,14 @@ Future<McpToolResult> _takeOver(
   Map<String, Object?> args,
 ) async {
   final sessionId = args['session'] as String?;
-  sessions.takeOver(sessionId);
+  // 真接管：控制权只能由用户在共驾页交回，智能体不能自己收回。
+  if (sessions.ownershipOf(sessionId) != SessionOwnership.agent) {
+    return const McpToolResult(
+      '用户尚未交回该浏览器会话，无法收回控制权。请提示用户完成后在'
+      '「浏览共驾」页点「交回给智能体」，期间只能观察页面。',
+      isError: true,
+    );
+  }
   String state = '';
   try {
     state = await sessions.run(sessionId: sessionId, (session) async {
@@ -417,8 +453,8 @@ Future<McpToolResult> _takeOver(
     state = '';
   }
   return McpToolResult(
-    '已收回会话主导权。$state'
-    '页面可能已被用户操作，旧 @N 编号不可信，建议先 browser_snapshot_dom。',
+    '会话已由智能体控制。$state'
+    '页面可能已被用户操作，旧 @N 编号不可信，请先 browser_snapshot_dom。',
   );
 }
 
@@ -435,7 +471,10 @@ Future<McpToolResult> _run(
   }
   final timeoutSeconds = asIntOr(args['timeout_seconds'], 60).clamp(5, 120);
   final sessionId = args['session'] as String?;
-  return sessions.run(sessionId: sessionId, (session) async {
+  return sessions.run(
+    sessionId: sessionId,
+    kind: BrowserCallKind.mutation,
+    (session) async {
     var value = await session.runScript(
       script,
       timeout: Duration(seconds: timeoutSeconds),

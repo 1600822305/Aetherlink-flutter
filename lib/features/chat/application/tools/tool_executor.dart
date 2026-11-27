@@ -86,6 +86,7 @@ class ChatToolExecutor {
               route.toolName,
               args,
               env: env,
+              sessionKey: _sessionKey,
             ) ??
             McpToolResult('工具 $exposedName 无法在本地执行', isError: true);
       case RemoteToolRoute(:final server):
@@ -361,6 +362,7 @@ class ChatToolExecutor {
             toolName,
             toolArgs,
             env: server.env,
+            sessionKey: _sessionKey,
           ) ??
           McpToolResult('工具 $toolName 无法在本地执行', isError: true);
     }

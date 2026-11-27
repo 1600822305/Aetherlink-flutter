@@ -452,45 +452,65 @@ void main() {
       expect(result.isError, isTrue);
     });
 
-    test('browser_hand_off 后工具仍可用并附共驾提示，take_over 收回', () async {
+    test('browser_hand_off 后只能观察，交互被拒；用户交回前 take_over 失败', () async {
       final session = _FakeSession()..url = 'https://a.com/login';
       final manager = _managerOf(session);
       final handOff = await runBrowserTool('browser_hand_off', {
         'note': '请完成登录',
       }, manager: manager);
       expect(handOff.isError, isFalse);
-      expect(handOff.text, contains('已将浏览器会话交给用户主导'));
+      expect(handOff.text, contains('已将浏览器会话交给用户'));
       expect(handOff.text, contains('请完成登录'));
       expect(handOff.text, contains('https://a.com/login'));
       expect(manager.ownershipOf(null), SessionOwnership.delegatedToUser);
 
-      // 宽松共驾：交接期间工具仍可调用，结果附提示。
       final duringHandOff = await runBrowserTool(
         'browser_read',
         {},
         manager: manager,
       );
       expect(duringHandOff.isError, isFalse);
-      expect(duringHandOff.text, contains('共驾提示'));
+      expect(duringHandOff.text, contains('智能体只能观察'));
 
+      final click = await runBrowserTool('browser_click', {
+        'target': '@1',
+      }, manager: manager);
+      expect(click.isError, isTrue);
+      expect(click.text, contains('userControlled'));
+
+      final early = await runBrowserTool(
+        'browser_take_over',
+        {},
+        manager: manager,
+      );
+      expect(early.isError, isTrue);
+
+      manager.takeOver(null); // 用户在共驾页交回
       final takeOver = await runBrowserTool(
         'browser_take_over',
         {},
         manager: manager,
       );
       expect(takeOver.isError, isFalse);
-      expect(takeOver.text, contains('已收回会话主导权'));
       expect(takeOver.text, contains('https://a.com/login'));
       expect(manager.ownershipOf(null), SessionOwnership.agent);
 
-      // 收回后不再附共驾提示。
       final afterTakeOver = await runBrowserTool(
         'browser_read',
         {},
         manager: manager,
       );
       expect(afterTakeOver.isError, isFalse);
-      expect(afterTakeOver.text, isNot(contains('共驾提示')));
+      expect(afterTakeOver.text, isNot(contains('智能体只能观察')));
+    });
+
+    test('scope 隔离：不同对话的同名 session 是不同会话', () async {
+      final manager = _managerOf(_FakeSession());
+      await runBrowserTool('browser_read', {}, manager: manager, scope: 'c1');
+      await runBrowserTool('browser_read', {}, manager: manager, scope: 'c2');
+      final ids = manager.sessionInfos.map((i) => i.id).toSet();
+      expect(ids, containsAll(['c1::main', 'c2::main']));
+      expect(browserSessionLabel('c1::main'), 'main');
     });
 
     test('browser_hand_off 会话未建/无 URL 也可交接', () async {

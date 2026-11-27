@@ -137,19 +137,64 @@ void main() {
     await manager.closeAll();
   });
 
-  test('handOff 只切换主导标记，不限制工具调用（宽松共驾）；takeOver 收回', () async {
+  test('handOff 后真暂停：观察可用、导航/交互被拒；takeOver 后恢复', () async {
     final manager = BrowserSessionManager(factory: _FakeSession.new);
     await manager.run((s) async {});
     manager.handOff(null, note: '请完成登录', url: 'https://example.com/login');
     expect(manager.ownershipOf(null), SessionOwnership.delegatedToUser);
-    // 宽松共驾：交接期间 agent 工具仍可调用。
-    await manager.run((s) async {});
+    await manager.run((s) async {}); // 观察仍允许
+    await expectLater(
+      () => manager.run((s) async {}, kind: BrowserCallKind.mutation),
+      throwsA(
+        isA<BrowserException>().having(
+          (e) => e.kind,
+          'kind',
+          BrowserErrorKind.userControlled,
+        ),
+      ),
+    );
+    await expectLater(
+      () => manager.run((s) async {}, kind: BrowserCallKind.navigation),
+      throwsA(isA<BrowserException>()),
+    );
     final info = manager.sessionInfos.singleWhere((i) => i.id == 'default');
     expect(info.handOffNote, '请完成登录');
     expect(info.handOffUrl, 'https://example.com/login');
     manager.takeOver(null);
     expect(manager.ownershipOf(null), SessionOwnership.agent);
-    await manager.run((s) async {});
+    await manager.run((s) async {}, kind: BrowserCallKind.mutation);
+    await manager.closeAll();
+  });
+
+  test('改动操作超时后需先观察：再次改动被拒，观察后解除', () async {
+    final manager = BrowserSessionManager(
+      factory: _FakeSession.new,
+      maxConsecutiveFailures: 99,
+    );
+    await expectLater(
+      () => manager.run<void>(
+        (s) async => throw const BrowserException(
+          BrowserErrorKind.scriptTimeout,
+          'timeout',
+        ),
+        kind: BrowserCallKind.mutation,
+      ),
+      throwsA(isA<BrowserException>()),
+    );
+    expect(manager.requiresObservation(null), isTrue);
+    await expectLater(
+      () => manager.run((s) async {}, kind: BrowserCallKind.mutation),
+      throwsA(
+        isA<BrowserException>().having(
+          (e) => e.kind,
+          'kind',
+          BrowserErrorKind.observationRequired,
+        ),
+      ),
+    );
+    await manager.run((s) async {}); // 观察
+    expect(manager.requiresObservation(null), isFalse);
+    await manager.run((s) async {}, kind: BrowserCallKind.mutation);
     await manager.closeAll();
   });
 

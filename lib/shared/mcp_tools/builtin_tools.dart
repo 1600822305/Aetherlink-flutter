@@ -22,6 +22,7 @@ Future<McpToolResult?> runBuiltinTool(
   Map<String, Object?> args, {
   DateTime? now,
   Map<String, String>? env,
+  String? sessionKey,
 }) async {
   switch (serverName) {
     case '@aether/calculator':
@@ -33,7 +34,7 @@ Future<McpToolResult?> runBuiltinTool(
     case '@aether/fetch':
       return runFetchTool(toolName, args);
     case '@aether/browser':
-      return runBrowserTool(toolName, args);
+      return runBrowserTool(toolName, args, scope: sessionKey);
     case '@aether/metaso-search':
       return runMetasoTool(toolName, args, env: env);
     case '@aether/grok-search':
