@@ -212,14 +212,6 @@ flutter:
     - assets/fonts/google_font_categories.json
     - assets/model_registry/models.json
 
-  fonts:
-    # 终端图标字体（oh-my-zsh / starship / lsd 等主题的 Nerd Font 图标）：
-    # xterm3 的 fontFamilyFallback 已列入该族名，打包后图标不再显示为方块。
-    # 仅符号、无字母（约 2.6MB，MIT，见 assets/fonts/SymbolsNerdFont-LICENSE.txt）。
-    - family: Symbols Nerd Font Mono
-      fonts:
-        - asset: assets/fonts/SymbolsNerdFontMono-Regular.ttf
-
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

@@ -5,6 +5,7 @@ import 'package:xterm3/xterm.dart';
 import 'package:xterm3/flutter.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_terminal_access.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_terminal_focus.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/session_terminal.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/terminal_extra_keys.dart';
@@ -38,6 +39,39 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
     final manager = ref.read(agentSessionPoolManagerProvider);
     manager.addListener(_onPoolChanged);
     _manager = manager;
+    // 终端 tab 是被「终端」跳转首次创建的：取走还没消费的请求。
+    final pending = ref.read(agentTerminalFocusProvider);
+    if (pending != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _applyFocus(pending));
+    }
+  }
+
+  /// 选中跳转请求指向的会话：按 ID / 名称在本任务工作区内匹配；没给会话
+  /// 时选正在忙的 AI 会话（默认会话的命令还在跑）。会话已关闭时提示。
+  void _applyFocus(AgentTerminalFocusRequest request) {
+    if (!mounted || request.taskId != widget.task.id || !request.fresh) return;
+    ref.read(agentTerminalFocusProvider.notifier).consume(request);
+    final manager = _manager;
+    if (manager == null) return;
+    final sessions = agentAliveSessions(manager, widget.task.workspaceId);
+    final target = request.sessionRef;
+    PooledWorkspaceSession? match;
+    if (target != null) {
+      match =
+          sessions.where((s) => s.id == target).firstOrNull ??
+          sessions.where((s) => s.name == target).firstOrNull;
+      if (match == null) {
+        AppToast.info(context, '会话 $target 已关闭（空闲回收、App 重启或已手动关闭）');
+        return;
+      }
+    } else {
+      final busy = sessions
+          .where((s) => s.busy && s.owner == SessionOwner.ai)
+          .toList()
+        ..sort((a, b) => b.lastUsedAt.compareTo(a.lastUsedAt));
+      match = busy.firstOrNull;
+    }
+    if (match != null) setState(() => _activeId = match!.id);
   }
 
   @override
@@ -108,6 +142,9 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(agentTerminalFocusProvider, (_, next) {
+      if (next != null) _applyFocus(next);
+    });
     final manager = ref.watch(agentSessionPoolManagerProvider);
     final sessions = agentAliveSessions(manager, widget.task.workspaceId);
     if (sessions.isEmpty) {

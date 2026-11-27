@@ -35,6 +35,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/session_terminal.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/terminal_extra_keys.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/features/workspace/application/terminal_icon_font.dart';
 
 /// 单个终端 tab：独立的 xterm 缓冲 + PTY 会话与连接状态。
 class _TerminalTab {
@@ -261,6 +262,7 @@ class _WorkspaceTerminalPageState extends ConsumerState<WorkspaceTerminalPage> {
       tab.error = null;
     });
     try {
+      unawaited(TerminalIconFont.instance.ensureLoaded());
       final session = await backend.startShell(
         columns: tab.terminal.viewWidth,
         rows: tab.terminal.viewHeight,

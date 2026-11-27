@@ -14,6 +14,7 @@ import 'package:xterm3/xterm.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/page_swipe_lock.dart';
+import 'package:aetherlink_flutter/features/workspace/application/terminal_icon_font.dart';
 
 /// 复制当前选区（长按拖拽选中后点复制键）。
 Future<void> copyTerminalSelection(
@@ -145,6 +146,8 @@ class SessionTerminalAttachment {
   }) {
     final history = session.snapshot();
     session.addViewer(this);
+    // 终端图标字体按需下载注册（已加载 / 下载中时无开销）。
+    unawaited(TerminalIconFont.instance.ensureLoaded());
     _sub = session.chunks.listen(_onChunk);
     terminal.onOutput = (data) {
       if (session.alive) {

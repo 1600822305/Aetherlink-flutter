@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/agent_terminal_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_terminal_focus.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_tool_detail.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
@@ -407,9 +409,95 @@ class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
                         ),
                       ),
                     ),
+                    // 终端命令：跳到工作台终端 tab 里这条命令所在的会话。
+                    if (_isTerminalTool(event.toolName) && widget.taskId != null)
+                      _OpenInTerminalBar(
+                        taskId: widget.taskId!,
+                        sessionRef: terminalToolSessionRef(
+                          argsDetail: argsText,
+                          resultDetail: event.resultDetail,
+                        ),
+                      ),
                   ],
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 跑在工作区长驻会话里的终端工具（run_command 是聊天侧一次性执行，不联动）。
+bool _isTerminalTool(String name) =>
+    name == 'terminal_execute' || name == 'terminal_session';
+
+/// 详情面板底部「在终端中查看」：左侧显示会话 ID 与状态（点之前就知道
+/// 会跳去哪），点击关面板并发出跳转请求（任务壳翻页 → 工作台切终端 tab
+/// → 终端 tab 选中会话）。
+class _OpenInTerminalBar extends ConsumerWidget {
+  const _OpenInTerminalBar({required this.taskId, this.sessionRef});
+
+  final String taskId;
+  final String? sessionRef;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.55);
+    final manager = ref.watch(agentSessionPoolManagerProvider);
+    final target = sessionRef;
+    final session = target == null
+        ? null
+        : manager.allSessions().where((s) => s.id == target).firstOrNull ??
+              manager.allSessions().where((s) => s.name == target).firstOrNull;
+    final String label;
+    if (target == null) {
+      label = '默认会话';
+    } else if (session == null || !session.alive) {
+      label = '会话 $target · 已关闭';
+    } else {
+      label = '会话 ${session.id} · ${session.busy ? '运行中' : '空闲'}';
+    }
+    final closed = target != null && (session == null || !session.alive);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          Icon(LucideIcons.terminal, size: 14, color: muted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: muted,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          FilledButton(
+            onPressed: closed
+                ? null
+                : () {
+                    Navigator.of(context).pop();
+                    ref
+                        .read(agentTerminalFocusProvider.notifier)
+                        .request(taskId, sessionRef: target);
+                  },
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              textStyle: theme.textTheme.labelMedium,
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('在终端中查看'),
+                SizedBox(width: 2),
+                Icon(LucideIcons.chevronRight, size: 15),
+              ],
             ),
           ),
         ],

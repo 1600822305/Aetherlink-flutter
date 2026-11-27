@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_terminal_focus.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/event_stream_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_page.dart';
@@ -70,6 +71,17 @@ class _AgentTaskShellState extends ConsumerState<AgentTaskShell> {
 
   @override
   Widget build(BuildContext context) {
+    // 事件流里点「终端」：翻到工作台页（工作台自己切到终端 tab）。
+    ref.listen(agentTerminalFocusProvider, (_, next) {
+      if (next == null || next.taskId != widget.taskId) return;
+      if (!_controller.hasClients) return;
+      _controller.animateToPage(
+        1,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+      _page.value = 1;
+    });
     ref.listen(
       agentTaskProvider(widget.taskId).select((t) => t?.status),
       (prev, next) {

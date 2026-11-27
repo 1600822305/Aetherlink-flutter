@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_terminal_focus.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_context_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/workbench_diff_tab.dart';
@@ -14,7 +16,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench/
 /// 工具/思考/叙述活动自动切内容，附最近工具列表（[WorkbenchFocusTab]）；
 /// diff 为任务工作区的未提交改动清单 + 复用 Git 只读 diff 组件
 /// （[WorkbenchDiffTab]）。
-class WorkbenchPage extends StatefulWidget {
+class WorkbenchPage extends ConsumerStatefulWidget {
   const WorkbenchPage({
     required this.task,
     this.onBackToChat,
@@ -29,10 +31,10 @@ class WorkbenchPage extends StatefulWidget {
   final VoidCallback? onBackToChat;
 
   @override
-  State<WorkbenchPage> createState() => _WorkbenchPageState();
+  ConsumerState<WorkbenchPage> createState() => _WorkbenchPageState();
 }
 
-class _WorkbenchPageState extends State<WorkbenchPage>
+class _WorkbenchPageState extends ConsumerState<WorkbenchPage>
     with SingleTickerProviderStateMixin {
   /// 各任务上次选中的 tab（内存级记忆：切回聊天再进工作台不丢选中态）。
   static final Map<String, int> _lastTabByTask = {};
@@ -72,6 +74,12 @@ class _WorkbenchPageState extends State<WorkbenchPage>
 
   @override
   Widget build(BuildContext context) {
+    // 事件流里点「终端」：切到终端 tab（首次进入会创建终端 tab，
+    // 由它在 initState 里取走请求选中会话）。
+    ref.listen(agentTerminalFocusProvider, (_, next) {
+      if (next == null || next.taskId != widget.task.id) return;
+      if (_tabController.index != 0) _tabController.animateTo(0);
+    });
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return Column(
