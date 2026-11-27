@@ -1121,23 +1121,36 @@ class RemoteSshBackend extends WorkspaceBackend {
     String? workingDirectory,
   }) async {
     final client = await _sshClient();
-    final SSHSession session;
+    final pty = SSHPtyConfig(width: columns, height: rows);
+    SSHSession session;
+    var envAccepted = true;
     try {
+      // 远端默认 POSIX 编码时 ls 中文显示成 ?、git 转义成 \346…；
+      // 像 OpenSSH 客户端 SendEnv 一样请求 UTF-8 字符集（只动 LC_CTYPE）。
       session = await client.shell(
-        pty: SSHPtyConfig(width: columns, height: rows),
-        // 远端默认 POSIX 编码时 ls 中文显示成 ?、git 转义成 \346…；
-        // 像 OpenSSH 客户端 SendEnv 一样请求 UTF-8 字符集（只动 LC_CTYPE，
-        // 不改提示语言）。sshd 未 AcceptEnv 时静默忽略。
+        pty: pty,
         environment: const {'LC_CTYPE': 'C.UTF-8'},
       );
+    } on SSHChannelRequestError {
+      // dartssh2 的 env 请求要求回复：sshd 没配 AcceptEnv（Termux 的 sshd
+      // 默认就没有）会拒绝，整条通道失败。去掉 env 重开，改在 shell 里 export。
+      envAccepted = false;
+      try {
+        session = await client.shell(pty: pty);
+      } catch (e) {
+        throw SshBackendException('打开终端失败 · $e');
+      }
     } catch (e) {
       throw SshBackendException('打开终端失败 · $e');
     }
-    if (workingDirectory != null && workingDirectory.isNotEmpty) {
-      // cd into the workspace root before handing the prompt to the user.
-      session.write(
-        Uint8List.fromList(utf8.encode('cd ${_shellQuote(workingDirectory)}\n')),
-      );
+    final setup = <String>[
+      if (!envAccepted) 'export LC_CTYPE=C.UTF-8',
+      if (workingDirectory != null && workingDirectory.isNotEmpty)
+        'cd ${_shellQuote(workingDirectory)}',
+    ];
+    if (setup.isNotEmpty) {
+      // 合成一行，在交出提示符前执行（cd 到工作区根目录）。
+      session.write(Uint8List.fromList(utf8.encode('${setup.join(' && ')}\n')));
     }
     return _SshShellSession(session);
   }
