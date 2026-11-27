@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/agent/application/agent_providers.da
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 计划纪要条（可折叠）：`▤ 计划 3/5 ▸`；点开=完整 todo + 任务信息卡
 /// （UI 稿 §4.2，取代原独立计划页）。
@@ -42,6 +43,9 @@ class _PlanPanelState extends State<PlanPanel> {
         children: [
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
+            onLongPress: () => showCopyMenu(context, [
+              CopyEntry('计划', planToText(items), icon: LucideIcons.listTodo),
+            ]),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               child: Row(

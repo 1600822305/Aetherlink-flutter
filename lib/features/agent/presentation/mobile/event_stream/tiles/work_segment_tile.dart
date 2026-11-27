@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_tool_detail.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/agent_event_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 已完成工作段的折叠摘要块：「▸ 检索查看 · 36s · 14 个操作」，
 /// 点开可回看每一行（含夹在其间的思考，UI 稿 §4.1 工作段折叠）。
@@ -66,6 +68,33 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
           ),
           child: InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
+            onLongPress: () {
+              final commands = [
+                for (final e in tools)
+                  if (toolCommandText(e.toolName, e.argsDetail ?? '') case final c?)
+                    c.trim(),
+              ];
+              showCopyMenu(context, [
+                if (commands.isNotEmpty)
+                  CopyEntry(
+                    '本段命令（${commands.length} 条）',
+                    commands.join('\n'),
+                    icon: LucideIcons.terminal,
+                  ),
+                CopyEntry(
+                  '操作清单',
+                  [
+                    for (final e in tools)
+                      '${switch (e.state) {
+                        AgentToolCallState.success => '✓',
+                        AgentToolCallState.failure => '✗',
+                        _ => '·',
+                      }} ${e.toolName} ${e.argSummary}'.trimRight(),
+                  ].join('\n'),
+                  icon: LucideIcons.list,
+                ),
+              ], title: segmentSummary(widget.block));
+            },
             borderRadius: BorderRadius.circular(8),
             child: Container(
               width: double.infinity,

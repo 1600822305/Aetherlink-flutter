@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/di/markdown_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 方案审批卡（exit_plan_mode，对标 CC ExitPlanMode 审批）：渲染模型
 /// 提交的方案全文，可先编辑再批准（编辑版回填给模型作为最终方案）；
@@ -106,7 +107,12 @@ class _PlanApprovalCardState extends ConsumerState<PlanApprovalCard> {
 
     return EventRail(
       node: Icon(LucideIcons.clipboardCheck, size: 14, color: primary),
-      child: Container(
+      child: LongPressCopy(
+        title: '方案',
+        entries: () => [
+          CopyEntry('方案', _editedPlan ?? _plan, icon: LucideIcons.clipboardCheck),
+        ],
+        child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
@@ -202,6 +208,7 @@ class _PlanApprovalCardState extends ConsumerState<PlanApprovalCard> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

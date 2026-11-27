@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 引擎注入给模型的系统提示（[系统] 续跑提醒 / [stop hook] 阻止收尾）：
 /// 这些内容是给模型看的，事件流里只显示一行弱化提示条，点击展开全文。
@@ -40,6 +41,9 @@ class _SystemHintTileState extends State<SystemHintTile> {
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
         onTap: () => setState(() => _expanded = !_expanded),
+        onLongPress: () => showCopyMenu(context, [
+          CopyEntry('系统提示', widget.event.text),
+        ]),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
           child: Column(

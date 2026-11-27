@@ -50,13 +50,36 @@ bool _isFocusable(AgentEvent e) =>
     e is UserMessageEvent ||
     e is PlanUpdateEvent;
 
-/// 最近的可聚焦活动，新→旧。
-List<AgentEvent> _historyOf(List<AgentEvent> events) {
+/// 最近的可聚焦活动（新→旧）。按元素**实例**比较相等：provider select
+/// 每次都会得到新列表，用默认 List 相等会让焦点 tab 每个事件 delta 都
+/// 重建；这里只有窗口内某条活动真的变了（DAO 对未变行复用同一实例）
+/// 才算变化，检查点 / 状态行等非焦点事件的变更不再触发重建。
+class _FocusHistory {
+  _FocusHistory(this.items);
+
+  final List<AgentEvent> items;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! _FocusHistory || other.items.length != items.length) {
+      return false;
+    }
+    for (var i = 0; i < items.length; i++) {
+      if (!identical(items[i], other.items[i])) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(items.map(identityHashCode));
+}
+
+_FocusHistory _historyOf(List<AgentEvent> events) {
   final out = <AgentEvent>[];
   for (var i = events.length - 1; i >= 0 && out.length < _kFocusHistoryLimit; i--) {
     if (_isFocusable(events[i])) out.add(events[i]);
   }
-  return out;
+  return _FocusHistory(out);
 }
 
 class _WorkbenchFocusTabState extends ConsumerState<WorkbenchFocusTab> {
@@ -98,11 +121,13 @@ class _WorkbenchFocusTabState extends ConsumerState<WorkbenchFocusTab> {
     final latest = ref.watch(
       agentTimelineProvider(task.id).select((v) => v.latestFocus),
     );
-    final history = ref.watch(
-      agentTaskEventsProvider(
-        task.id,
-      ).select((a) => _historyOf(a.value ?? const [])),
-    );
+    final history = ref
+        .watch(
+          agentTaskEventsProvider(
+            task.id,
+          ).select((a) => _historyOf(a.value ?? const [])),
+        )
+        .items;
     final lockedId = _lockedByTask[task.id];
     final lockedIndex = lockedId == null
         ? -1

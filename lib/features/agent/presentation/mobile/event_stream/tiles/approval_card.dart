@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 审批卡（内嵌事件流）：摘要 + 批准/拒绝/更多▾（UI 稿 §五）。
 /// 按钮接 [agentApprovalRegistryProvider]：引擎挂起在登记处等裁决；
@@ -32,7 +33,10 @@ class ApprovalCard extends ConsumerWidget {
 
     return EventRail(
       node: const Icon(LucideIcons.triangleAlert, size: 14, color: orange),
-      child: Container(
+      child: LongPressCopy(
+        title: event.toolName,
+        entries: () => toolCopyEntries(event),
+        child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
@@ -94,6 +98,7 @@ class ApprovalCard extends ConsumerWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

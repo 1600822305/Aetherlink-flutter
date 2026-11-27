@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/loop/finish_result_streamer.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// attempt_completion 完成卡片（对标 Roo completion_result）：任务的唯一
 /// 完成标记。结果正文在卡片里边生成边显示，头部「任务完成 · N 轮」，
@@ -29,9 +30,17 @@ class CompletionCard extends StatelessWidget {
     if (!running && !ok) {
       return EventRail(
         node: Icon(LucideIcons.circleX, size: 12, color: muted),
-        child: Text(
-          event.resultSummary.isNotEmpty ? event.resultSummary : '完成未通过',
-          style: theme.textTheme.labelSmall?.copyWith(color: muted),
+        child: LongPressCopy(
+          entries: () => [
+            CopyEntry(
+              '原因',
+              event.resultSummary.isNotEmpty ? event.resultSummary : '完成未通过',
+            ),
+          ],
+          child: Text(
+            event.resultSummary.isNotEmpty ? event.resultSummary : '完成未通过',
+            style: theme.textTheme.labelSmall?.copyWith(color: muted),
+          ),
         ),
       );
     }
@@ -55,7 +64,10 @@ class CompletionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            // 头部长按复制整段结果（正文本身可选区复制，生成中不可选）。
+            LongPressCopy(
+              entries: () => [CopyEntry('结果', result)],
+              child: Row(
               children: [
                 Icon(LucideIcons.circleCheck, size: 14, color: accent),
                 const SizedBox(width: 6),
@@ -69,6 +81,7 @@ class CompletionCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
             ),
             if (result.isNotEmpty) ...[
               const SizedBox(height: 6),

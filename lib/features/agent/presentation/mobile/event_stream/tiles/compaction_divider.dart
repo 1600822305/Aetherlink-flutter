@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// compaction 分隔线：`── ✂ 已压缩 N 条早期事件 ──`，点开看摘要；
 /// 最近一次压缩可撤销（撤销后视图恢复原样，分隔线保留作审计痕迹）。
@@ -108,6 +110,15 @@ class CompactionDivider extends ConsumerWidget {
     final canRevoke = !event.revoked && isLatestActive;
     return InkWell(
       onTap: () => _showSummary(context, ref, canRevoke),
+      onLongPress: () => showCopyMenu(context, [
+        CopyEntry('压缩摘要', event.summary),
+        if (event.restoredFiles.isNotEmpty)
+          CopyEntry(
+            '恢复的文件路径',
+            event.restoredFiles.map((f) => f.path).join('\n'),
+            icon: LucideIcons.fileText,
+          ),
+      ], title: '上下文压缩'),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(

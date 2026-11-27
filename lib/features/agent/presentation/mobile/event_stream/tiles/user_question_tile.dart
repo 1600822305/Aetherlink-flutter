@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// ask_user 提问在时间线上的紧凑记录：问题一行 + 回答状态。
 /// 实际作答走输入框上方的建议答案面板（AgentFollowupPanel）。
@@ -35,7 +36,15 @@ class UserQuestionTile extends ConsumerWidget {
         size: 14,
         color: cs.primary,
       ),
-      child: Container(
+      child: LongPressCopy(
+        title: '提问',
+        entries: () => [
+          CopyEntry('问题', event.question, icon: LucideIcons.messageCircleQuestion),
+          if (answer != null) CopyEntry('回答', answer.text),
+          if (event.suggestions.isNotEmpty)
+            CopyEntry('建议答案', event.suggestions.join('\n'), icon: LucideIcons.list),
+        ],
+        child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
@@ -75,6 +84,7 @@ class UserQuestionTile extends ConsumerWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

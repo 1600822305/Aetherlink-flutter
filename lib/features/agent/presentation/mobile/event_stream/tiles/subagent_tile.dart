@@ -9,10 +9,20 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_subag
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/agent_event_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 子任务行（初稿 §5.5 P2 子代理）：父时间线上的 spawn_subagent 工具
 /// 调用渲染为「子任务」卡——类型徽标 + 标题 + 状态/结论摘要，点击
 /// 展开底部抽屉回看子代理完整事件流（全落库，防失忆）。
+String _promptOf(ToolCallEvent event) {
+  try {
+    final args = jsonDecode(event.argsDetail ?? '') as Map<String, dynamic>;
+    return (args['prompt'] as String? ?? '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
 class SubagentTile extends StatelessWidget {
   const SubagentTile({required this.event, super.key});
 
@@ -62,6 +72,16 @@ class SubagentTile extends StatelessWidget {
           : Icon(icon, size: 14, color: iconColor),
       child: InkWell(
         onTap: () => _showSubagentSheet(context, event),
+        onLongPress: () => showCopyMenu(context, [
+          CopyEntry('任务描述', _promptOf(event), icon: LucideIcons.bot),
+          CopyEntry(
+            '结果',
+            readableToolResult(event.resultDetail).isNotEmpty
+                ? readableToolResult(event.resultDetail)
+                : event.resultSummary,
+          ),
+          CopyEntry('参数', prettyArgs(event.argsDetail), icon: LucideIcons.braces),
+        ], title: '子代理'),
         borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

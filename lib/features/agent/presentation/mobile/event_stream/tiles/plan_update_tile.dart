@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 计划更新行：▤ 计划已更新 3/5 · 当前：xxx（弱化单行，
 /// 让 update_plan 在时间线里有即时反馈；完整清单看顶部计划纪要条）。
@@ -29,11 +30,16 @@ class PlanUpdateTile extends StatelessWidget {
             : '计划已更新 $done/${items.length}';
     return EventRail(
       node: Icon(LucideIcons.listTodo, size: 13, color: muted),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.labelSmall?.copyWith(color: muted),
+      child: LongPressCopy(
+        entries: () => [
+          CopyEntry('计划', planToText(items), icon: LucideIcons.listTodo),
+        ],
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelSmall?.copyWith(color: muted),
+        ),
       ),
     );
   }

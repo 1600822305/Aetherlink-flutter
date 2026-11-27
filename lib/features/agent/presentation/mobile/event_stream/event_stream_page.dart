@@ -133,6 +133,14 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
     final showPlanReady =
         mode == AgentSessionMode.plan && status == AgentTaskStatus.done;
     final trailing = (showWorking ? 1 : 0) + (showPlanReady ? 1 : 0);
+    // 行身份：块按事件 id 定键。工作段收拢 / 新事件插入时下标整体平移，
+    // 不定键的话 Flutter 按下标复用 State，展开态 / 选区 / 延迟物化会
+    // 「串」到相邻行上；findChildIndexCallback 让挪了位的行找回原 State。
+    final keys = [for (final b in blocks) _blockKey(b)];
+    final indexOfKey = <String, int>{
+      for (var i = 0; i < keys.length; i++) keys[i]: i,
+      if (trailing > 0) _kTrailingKey: blocks.length,
+    };
 
     return Column(
       children: [
@@ -162,7 +170,14 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                     physics: const NoImplicitScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
                     itemCount: blocks.length + trailing,
-                    itemBuilder: (context, i) => i >= blocks.length
+                    findChildIndexCallback: (key) => key is ValueKey<String>
+                        ? indexOfKey[key.value]
+                        : null,
+                    itemBuilder: (context, i) => KeyedSubtree(
+                      key: ValueKey<String>(
+                        i >= blocks.length ? _kTrailingKey : keys[i],
+                      ),
+                      child: i >= blocks.length
                         ? (showPlanReady
                             ? _TaskBuilder(
                                 taskId: widget.taskId,
@@ -186,6 +201,7 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                                 taskId: widget.taskId,
                               ),
                           },
+                    ),
                   ),
                 ),
               ),
@@ -216,6 +232,16 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
     );
   }
 }
+
+/// 列表尾部（工作中指示 / 方案已就绪卡）的固定键。
+const String _kTrailingKey = '__trailing__';
+
+/// 时间线块的稳定键：单事件按事件 id；工作段按段首事件 id（段首在段
+/// 收尾前后不变），加前缀避免与同一事件的单块键冲突。
+String _blockKey(TimelineBlock block) => switch (block) {
+  final SingleBlock b => 'e:${b.event.id}',
+  final SegmentBlock b => 's:${b.events.first.id}',
+};
 
 /// 需要完整任务对象的子件各自订阅，任务字段刷新只重建它们自己。
 class _TaskBuilder extends ConsumerWidget {

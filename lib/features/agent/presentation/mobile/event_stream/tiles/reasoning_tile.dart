@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/message_selection_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 思考过程行（Devin 同款）：默认收起为「▸ 思考了 Xs」，
 /// 流式中显示「思考中…」并自动展开；点开看完整思考文字。
@@ -41,6 +42,10 @@ class _ReasoningTileState extends State<ReasoningTile> {
       children: [
         InkWell(
           onTap: () => setState(() => _expanded = !expanded),
+          // 收起 / 生成中时正文不可选区，头部长按复制全文。
+          onLongPress: () => showCopyMenu(context, [
+            CopyEntry('思考过程', widget.event.text, icon: LucideIcons.brain),
+          ]),
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),

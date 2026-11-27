@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tool_detail_sheet.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 工具行（方案 C）：命令类工具用深色终端小块显示完整命令（最多 2 行）
 /// + 元信息行；其余工具一行「中文动词 · 对象（文件名/关键词）· 右侧结果」。
@@ -154,6 +155,11 @@ class ToolRow extends StatelessWidget {
           : Icon(icon, size: 14, color: iconColor),
       child: InkWell(
         onTap: () => showToolDetailSheet(context, event, taskId: taskId),
+        onLongPress: () => showCopyMenu(
+          context,
+          toolCopyEntries(event),
+          title: event.toolName,
+        ),
         borderRadius: BorderRadius.circular(6),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),

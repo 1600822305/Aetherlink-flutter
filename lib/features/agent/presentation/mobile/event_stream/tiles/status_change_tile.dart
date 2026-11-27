@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_copy_menu.dart';
 
 /// 状态迁移行：◆ 节点 + 弱化文字（出错/暂停/恢复……）。
 class StatusChangeTile extends StatelessWidget {
@@ -17,9 +18,12 @@ class StatusChangeTile extends StatelessWidget {
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.5);
     return EventRail(
       node: Icon(LucideIcons.diamond, size: 12, color: muted),
-      child: Text(
-        visibleStatusText(event.description),
-        style: theme.textTheme.labelSmall?.copyWith(color: muted),
+      child: LongPressCopy(
+        entries: () => [CopyEntry('状态', visibleStatusText(event.description))],
+        child: Text(
+          visibleStatusText(event.description),
+          style: theme.textTheme.labelSmall?.copyWith(color: muted),
+        ),
       ),
     );
   }
