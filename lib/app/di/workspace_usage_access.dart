@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_profile_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_providers.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 
 /// 工作区被其他功能引用的情况，以及「移除工作区」时的连带解绑。
@@ -112,6 +113,15 @@ class WorkspaceRemoval {
 
   Future<void> _detach(Set<String> ids) async {
     if (ids.isEmpty) return;
+
+    // 关掉被移除工作区的终端会话：否则 SSH / PRoot 进程与后台命令
+    // 要残留到空闲回收（有视图接入时甚至不回收）。
+    final pools = _ref.read(workspaceSessionPoolManagerProvider);
+    for (final id in ids) {
+      try {
+        await pools.closeWorkspace(id);
+      } catch (_) {}
+    }
 
     final profiles = _ref.read(agentProfilesProvider.notifier);
     for (final p in _ref.read(agentProfilesProvider)) {

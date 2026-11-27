@@ -19,7 +19,8 @@ part 'workspace_session_pool.g.dart';
 /// 会话空闲多久后自动释放进程（无任务 N 分钟后自动释放）。
 const Duration kSessionIdleTimeout = Duration(minutes: 10);
 
-/// 单个后端的并发会话上限（Agent 并发时按需扩容的上限）。
+/// 单个工作区池内、每类创建者（AI / 用户）各自的并发会话上限：
+/// AI 跑满长任务不会挤占用户「新建会话」的名额，反之亦然。
 const int kMaxPooledSessions = 4;
 
 /// 无终端视图接入时会话 PTY 的默认尺寸；接入视图后按视图实际尺寸同步。
@@ -42,6 +43,16 @@ const Duration kInteractiveCheckInterval = Duration(seconds: 2);
 /// 中断（Ctrl-C）后等 shell 回到提示符的上限：期间会话保持 busy，
 /// 避免下一条命令被仍在收尾的旧进程（如 npm install）当 stdin 吃掉。
 const Duration kInterruptSettleTimeout = Duration(seconds: 2);
+
+/// 工作区后端配置指纹：这些字段任一变化，旧会话就跑在错误的地方。
+/// 名称不算（改名不应杀会话）。
+String workspaceConfigKey({
+  required String backendType,
+  required String root,
+  String? connectionId,
+  String? scope,
+  bool isolatedHome = false,
+}) => '$backendType|${connectionId ?? ''}|$root|${scope ?? ''}|$isolatedHome';
 
 /// 会话创建者：AI 工具建的会话 vs 用户在工作台 / 终端页手动新建的会话。
 /// AI 不指定 session 时只复用自己的会话，不会闯进用户的会话。
@@ -571,6 +582,7 @@ class WorkspaceSessionPool {
     required String Function() nextId,
     this.workspaceLabel = '',
     this.workspaceId,
+    this.configKey,
     void Function()? onChanged,
   }) : _nextId = nextId,
        _onChanged = onChanged;
@@ -581,8 +593,13 @@ class WorkspaceSessionPool {
   /// 会话集合变化（新建 / 关闭 / 回收）时通知，供终端页联动刷新。
   final void Function()? _onChanged;
 
-  /// 池所属工作区的展示名，赋给新建的会话。
-  final String workspaceLabel;
+  /// 池所属工作区的展示名，赋给新建的会话（工作区改名后由管理器更新）。
+  String workspaceLabel;
+
+  /// 建池时工作区的后端配置指纹（类型 / 连接 / 根目录 / 作用域 / 独立 HOME）。
+  /// 管理器发现指纹变了就关掉旧池重建，避免改了 SSH 主机或根目录后
+  /// 命令仍跑在旧地方。
+  final String? configKey;
 
   /// 池所属工作区的 ID（双作用域设计稿 §3.1）；裸后端默认池为 null。
   final String? workspaceId;
@@ -613,10 +630,13 @@ class WorkspaceSessionPool {
     SessionOwner owner = SessionOwner.ai,
   }) async {
     _prune();
-    if (_sessions.length >= kMaxPooledSessions) {
-      throw const WorkspaceSessionException(
-        '会话数已达上限（$kMaxPooledSessions 个）：可用 terminal_session '
-        'action=close 关掉不用的会话，或 action=interrupt 中断卡住的命令',
+    final sameOwner = _sessions.values.where((s) => s.owner == owner).length;
+    if (sameOwner >= kMaxPooledSessions) {
+      throw WorkspaceSessionException(
+        owner == SessionOwner.user
+            ? '手动会话已达上限（$kMaxPooledSessions 个）：先关掉不用的会话'
+            : 'AI 会话数已达上限（$kMaxPooledSessions 个）：可用 terminal_session '
+                  'action=close 关掉不用的会话，或 action=interrupt 中断卡住的命令',
       );
     }
     final shell = await _backend.startShell(
@@ -735,20 +755,53 @@ class WorkspaceSessionPoolManager extends ChangeNotifier {
   /// [backend] 上工作区 [workspaceId] 的会话池；首次访问时创建，
   /// [workspaceLabel] 赋给其新会话。[workspaceId] 为 null 时（未锚定
   /// 工作区的裸后端）退化为按后端实例一个池。
+  ///
+  /// [configKey]（见 [workspaceConfigKey]）与已有池不一致，或后端实例已换
+  /// （SSH 连接改绑），则关掉旧池的全部会话并重建——配置变更后不再
+  /// 把命令发到旧主机 / 旧目录。
   WorkspaceSessionPool poolFor(
     WorkspaceBackend backend, {
     String workspaceLabel = '',
     String? workspaceId,
-  }) => _pools.putIfAbsent(
-    workspaceId ?? backend,
-    () => WorkspaceSessionPool(
+    String? configKey,
+  }) {
+    final key = workspaceId ?? backend;
+    final existing = _pools[key];
+    if (existing != null) {
+      final stale =
+          !identical(existing.backend, backend) ||
+          (configKey != null &&
+              existing.configKey != null &&
+              existing.configKey != configKey);
+      if (!stale) {
+        if (workspaceLabel.isNotEmpty) {
+          existing.workspaceLabel = workspaceLabel;
+        }
+        return existing;
+      }
+      _pools.remove(key);
+      unawaited(existing.closeAll().whenComplete(notifyListeners));
+    }
+    final pool = WorkspaceSessionPool(
       backend,
       nextId: () => 's${_nextId++}-$_bootTag',
       workspaceLabel: workspaceLabel,
       workspaceId: workspaceId,
+      configKey: configKey,
       onChanged: notifyListeners,
-    ),
-  );
+    );
+    _pools[key] = pool;
+    return pool;
+  }
+
+  /// 关掉工作区 [workspaceId] 的会话池（移除工作区时调用）：进程不再
+  /// 残留到空闲回收，后台命令随之终止。
+  Future<void> closeWorkspace(String workspaceId) async {
+    final pool = _pools.remove(workspaceId);
+    if (pool == null) return;
+    await pool.closeAll();
+    notifyListeners();
+  }
 
   /// 所有池里的所有会话。
   List<PooledWorkspaceSession> allSessions() => [

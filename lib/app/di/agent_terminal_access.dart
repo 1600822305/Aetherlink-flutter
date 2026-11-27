@@ -55,6 +55,13 @@ Future<PooledWorkspaceSession> createAgentTerminalSession(
         backend,
         workspaceLabel: workspace.name,
         workspaceId: workspace.id,
+        configKey: workspaceConfigKey(
+          backendType: workspace.backendType.name,
+          root: workspace.root,
+          connectionId: workspace.connectionId,
+          scope: workspace.scope.name,
+          isolatedHome: workspace.isolatedHome,
+        ),
       )
       .create(
         name: name,

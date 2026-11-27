@@ -858,7 +858,10 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
         ref,
         task.workspaceId.isNotEmpty ? task.workspaceId : _profile.workspaceId,
       ),
-      ...await _customSubagentsSection(ref),
+      ...await _customSubagentsSection(
+        ref,
+        task.workspaceId.isNotEmpty ? task.workspaceId : _profile.workspaceId,
+      ),
     ].join('\n');
   }
 
@@ -916,13 +919,18 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 
   /// 自定义子代理档案清单（工作区 .aetherlink/agents / .cursor/agents 的
   /// markdown 定义）：spawn_subagent 的 type 可填档案名按需委派。
-  Future<List<String>> _customSubagentsSection(Ref ref) async {
+  /// [workspaceId] 取任务当前绑定的工作区（话题切换工作区后跟着变），
+  /// 与 spawn_subagent 实际加载档案的工作区一致。
+  Future<List<String>> _customSubagentsSection(
+    Ref ref,
+    String? workspaceId,
+  ) async {
     if (!_catalog.current.hasTool(kToolSpawnSubagent)) {
       return const [];
     }
     List<AgentSubagentProfile> profiles;
     try {
-      profiles = await loadCustomSubagentProfiles(ref, _profile.workspaceId);
+      profiles = await loadCustomSubagentProfiles(ref, workspaceId);
     } catch (_) {
       return const [];
     }

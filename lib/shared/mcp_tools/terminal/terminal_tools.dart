@@ -189,9 +189,13 @@ class _ExecTarget {
     required this.label,
     this.defaultCwd,
     this.workspaceId,
+    this.configKey,
     this.environment = const {},
     this.greeting,
   });
+
+  /// 工作区后端配置指纹（见 workspaceConfigKey），内置终端默认目标为 null。
+  final String? configKey;
 
   final WorkspaceBackend backend;
 
@@ -232,6 +236,13 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
       label: workspace.name,
       defaultCwd: workspace.root,
       workspaceId: workspace.id,
+      configKey: workspaceConfigKey(
+        backendType: workspace.backendType.name,
+        root: workspace.root,
+        connectionId: workspace.connectionId,
+        scope: workspace.scope.name,
+        isolatedHome: workspace.isolatedHome,
+      ),
       greeting: workspace.backendType == WorkspaceBackendType.prootLocal
           ? buildProotGreeting(name: workspace.name, root: workspace.root)
           : null,
@@ -324,6 +335,7 @@ Future<McpToolResult> _execute(
           target.backend,
           workspaceLabel: target.label,
           workspaceId: target.workspaceId,
+          configKey: target.configKey,
         )
         .acquireDefault(
           workingDirectory: target.defaultCwd,
@@ -460,6 +472,7 @@ Future<PooledWorkspaceSession> _createNamedSession(
         target.backend,
         workspaceLabel: target.label,
         workspaceId: target.workspaceId,
+        configKey: target.configKey,
       )
       .create(
         name: name,

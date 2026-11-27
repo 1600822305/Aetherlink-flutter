@@ -502,4 +502,136 @@ void main() {
       await futureA;
     });
   });
+  group('工作区生命周期：配置变化重建 / 上限分开 / 移除关闭', () {
+    Future<void> settle() async {
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    String key({String root = '/a', String? conn}) => workspaceConfigKey(
+      backendType: 'ssh',
+      root: root,
+      connectionId: conn ?? 'c1',
+      scope: 'project',
+    );
+
+    test('配置指纹不变：复用同一个池，改名只更新展示名', () async {
+      final m = WorkspaceSessionPoolManager();
+      final p1 = m.poolFor(
+        backend,
+        workspaceId: 'ws',
+        workspaceLabel: '旧名',
+        configKey: key(),
+      );
+      final s = await p1.create();
+      final p2 = m.poolFor(
+        backend,
+        workspaceId: 'ws',
+        workspaceLabel: '新名',
+        configKey: key(),
+      );
+      expect(identical(p1, p2), isTrue);
+      expect(p2.workspaceLabel, '新名');
+      expect(s.alive, isTrue);
+    });
+
+    test('根目录 / 连接变了：关掉旧池会话并重建', () async {
+      final m = WorkspaceSessionPoolManager();
+      final p1 = m.poolFor(backend, workspaceId: 'ws', configKey: key());
+      final a = await p1.create();
+      final b = await p1.create(owner: SessionOwner.user);
+      final p2 = m.poolFor(
+        backend,
+        workspaceId: 'ws',
+        configKey: key(root: '/b'),
+      );
+      await settle();
+      expect(identical(p1, p2), isFalse);
+      expect(a.alive, isFalse);
+      expect(b.alive, isFalse);
+      expect(m.find(a.id), isNull);
+      expect(m.allSessions(), isEmpty);
+
+      final p3 = m.poolFor(
+        backend,
+        workspaceId: 'ws',
+        configKey: key(root: '/b', conn: 'c2'),
+      );
+      expect(identical(p2, p3), isFalse);
+    });
+
+    test('后端实例换了（SSH 连接改绑）：即使不传指纹也重建', () async {
+      final m = WorkspaceSessionPoolManager();
+      final p1 = m.poolFor(backend, workspaceId: 'ws');
+      final s = await p1.create();
+      final other = _FakeExecBackend();
+      final p2 = m.poolFor(other, workspaceId: 'ws');
+      await settle();
+      expect(identical(p1, p2), isFalse);
+      expect(s.alive, isFalse);
+      expect(identical(p2.backend, other), isTrue);
+    });
+
+    test('旧池未记录指纹（null）时不因指纹误判重建', () async {
+      final m = WorkspaceSessionPoolManager();
+      final p1 = m.poolFor(backend, workspaceId: 'ws');
+      final p2 = m.poolFor(backend, workspaceId: 'ws', configKey: key());
+      expect(identical(p1, p2), isTrue);
+    });
+
+    test('上限按创建者分开计数：AI 满了用户仍可新建，反之亦然', () async {
+      for (var i = 0; i < kMaxPooledSessions; i++) {
+        await pool.create();
+      }
+      await expectLater(
+        pool.create(),
+        throwsA(isA<WorkspaceSessionException>()),
+      );
+      for (var i = 0; i < kMaxPooledSessions; i++) {
+        await pool.create(owner: SessionOwner.user);
+      }
+      await expectLater(
+        pool.create(owner: SessionOwner.user),
+        throwsA(
+          isA<WorkspaceSessionException>().having(
+            (e) => e.message,
+            'message',
+            contains('手动会话'),
+          ),
+        ),
+      );
+      expect(pool.list(), hasLength(kMaxPooledSessions * 2));
+    });
+
+    test('closeWorkspace 关掉该工作区全部会话，不影响其他工作区', () async {
+      final m = WorkspaceSessionPoolManager();
+      final a1 = await m.poolFor(backend, workspaceId: 'ws-a').create();
+      final a2 = await m
+          .poolFor(backend, workspaceId: 'ws-a')
+          .create(owner: SessionOwner.user);
+      final b1 = await m.poolFor(backend, workspaceId: 'ws-b').create();
+      var notified = 0;
+      m.addListener(() => notified++);
+      await m.closeWorkspace('ws-a');
+      expect(a1.alive, isFalse);
+      expect(a2.alive, isFalse);
+      expect(b1.alive, isTrue);
+      expect(m.allSessions().map((s) => s.id), [b1.id]);
+      expect(notified, greaterThan(0));
+      // 再关一次 / 关不存在的工作区：无副作用。
+      await m.closeWorkspace('ws-a');
+      await m.closeWorkspace('nope');
+    });
+
+    test('closeWorkspace 让后台等哨兵的 exec 收尾，不悬挂', () async {
+      final m = WorkspaceSessionPoolManager();
+      final s = await m.poolFor(backend, workspaceId: 'ws').create();
+      await s.exec('sleep 999', timeout: const Duration(milliseconds: 20));
+      expect(s.busy, isTrue);
+      await m.closeWorkspace('ws');
+      await settle();
+      expect(s.alive, isFalse);
+    });
+  });
 }
