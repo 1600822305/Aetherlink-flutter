@@ -1517,6 +1517,7 @@ class _McpAgentToolExecutor extends AgentToolExecutor {
         overflowPath: spilled.path,
         imagePath: result.imagePath,
         imageMimeType: result.imageMimeType,
+        previewPath: result.previewPath,
       );
     } on Object catch (e) {
       return AgentToolResult(ok: false, summary: '执行异常 ✗', detail: '$e');

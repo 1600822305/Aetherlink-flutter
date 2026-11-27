@@ -359,4 +359,5 @@ ToolCallEvent _withClearedResult(
   resultOverflowPath: event.resultOverflowPath,
   imagePath: event.imagePath,
   imageMimeType: event.imageMimeType,
+  previewPath: event.previewPath,
 );

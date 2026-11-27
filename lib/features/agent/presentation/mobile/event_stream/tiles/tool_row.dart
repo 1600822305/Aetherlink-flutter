@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_tool_detail.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_blocks.dart';
@@ -166,6 +169,9 @@ class ToolRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               body,
+              if (event.previewPath != null &&
+                  event.toolName.startsWith('browser_'))
+                _BrowserStepPreview(path: event.previewPath!),
               // 自动检测漏网时的手动兜底：用户看到命令在等交互输入，
               // 点一下让正在等结果的 exec 提前把控制权和已有输出还给模型。
               if (running && event.toolName == 'terminal_execute')
@@ -174,6 +180,42 @@ class ToolRow extends StatelessWidget {
                   taskId: taskId,
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 浏览器步骤卡片：该步操作后的页面缩略图，点开内置浏览器看实时页面。
+class _BrowserStepPreview extends StatelessWidget {
+  const _BrowserStepPreview({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 2),
+      child: GestureDetector(
+        onTap: () => context.push(AppRouter.browserCoDrivePath),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220, maxHeight: 140),
+            child: Image.file(
+              File(path),
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+              cacheWidth: 440,
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
           ),
         ),
       ),

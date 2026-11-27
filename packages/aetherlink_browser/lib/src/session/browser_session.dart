@@ -774,6 +774,26 @@ $script
   Future<bool> canGoForward() async =>
       await _controller?.canGoForward() ?? false;
 
+  /// 界面缩略图（事件流步骤卡片用）：不改视口尺寸、不触发重排，
+  /// 低质量 JPEG 按宽度缩放；未打开页面/失败返回 null，从不抛异常。
+  Future<Uint8List?> thumbnail({int width = 360}) async {
+    final controller = _controller;
+    if (_disposed || _crashed || controller == null) return null;
+    try {
+      return await controller
+          .takeScreenshot(
+            screenshotConfiguration: ScreenshotConfiguration(
+              compressFormat: CompressFormat.JPEG,
+              quality: 45,
+              snapshotWidth: width.toDouble(),
+            ),
+          )
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 新窗口：交给 [onOpenWindow] 新开标签（同样过 SSRF 复检）。
   Future<bool> handleCreateWindow(
     InAppWebViewController controller,

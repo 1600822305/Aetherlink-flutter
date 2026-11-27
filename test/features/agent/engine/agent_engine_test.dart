@@ -214,6 +214,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
     String? resultOverflowPath,
     String? imagePath,
     String? imageMimeType,
+    String? previewPath,
     Duration? elapsed,
   }) async {
     final updated = ToolCallEvent(
@@ -230,6 +231,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
       resultOverflowPath: resultOverflowPath ?? event.resultOverflowPath,
       imagePath: imagePath ?? event.imagePath,
       imageMimeType: imageMimeType ?? event.imageMimeType,
+      previewPath: previewPath ?? event.previewPath,
     );
     _upsert(taskId, updated);
     return updated;

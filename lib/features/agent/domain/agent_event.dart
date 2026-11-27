@@ -177,6 +177,7 @@ class ToolCallEvent extends AgentEvent {
     this.resultOverflowPath,
     this.imagePath,
     this.imageMimeType,
+    this.previewPath,
   });
 
   /// 例：`read_file` / `terminal_execute`。
@@ -207,6 +208,9 @@ class ToolCallEvent extends AgentEvent {
 
   /// [imagePath] 图片的 MIME 类型（如 `image/jpeg`）。
   final String? imageMimeType;
+
+  /// 仅界面展示的缩略图路径（浏览器步骤卡片；不注入模型）。
+  final String? previewPath;
 }
 
 /// update_plan 产生的计划快照（全量覆盖）。

@@ -110,7 +110,14 @@ Future<McpToolResult> runBrowserTool(
   final args = _scopeSession(scope, rawArgs);
   try {
     final result = await _dispatch(toolName, args, sessions, screenshotDir);
-    return _withCoDriveHint(toolName, args, sessions, result);
+    final hinted = _withCoDriveHint(toolName, args, sessions, result);
+    return await _withPreview(
+      toolName,
+      args,
+      sessions,
+      hinted,
+      screenshotDir ?? _defaultScreenshotDir,
+    );
   } on BrowserException catch (e) {
     return McpToolResult('浏览器错误（${e.kind.name}）：${e.message}', isError: true);
   } catch (e) {
@@ -137,7 +144,50 @@ McpToolResult _withCoDriveHint(
     '页面/旧 @N 随时可能变化，等用户交回后再操作。）',
     imagePath: result.imagePath,
     imageMimeType: result.imageMimeType,
+    previewPath: result.previewPath,
   );
+}
+
+/// 会改变页面的步骤在成功后附一张缩略图（只给界面看，不进模型上下文）。
+const Set<String> _kPreviewTools = {
+  'browser_open',
+  'browser_click',
+  'browser_input',
+  'browser_select',
+  'browser_press',
+  'browser_scroll',
+  'browser_run',
+};
+
+Future<McpToolResult> _withPreview(
+  String toolName,
+  Map<String, Object?> args,
+  BrowserSessionManager sessions,
+  McpToolResult result,
+  ScreenshotDirProvider screenshotDir,
+) async {
+  if (result.isError || !_kPreviewTools.contains(toolName)) return result;
+  final session = sessions.peekSession(args['session'] as String?);
+  if (session is! HeadlessBrowserSession) return result;
+  final bytes = await session.thumbnail();
+  if (bytes == null || bytes.isEmpty) return result;
+  try {
+    final dir = Directory('${(await screenshotDir()).path}/previews');
+    await dir.create(recursive: true);
+    final suffix = Random().nextInt(0xffffff).toRadixString(16);
+    final path =
+        '${dir.path}/${DateTime.now().microsecondsSinceEpoch}_$suffix.jpg';
+    await File(path).writeAsBytes(bytes);
+    return McpToolResult(
+      result.text,
+      isError: result.isError,
+      imagePath: result.imagePath,
+      imageMimeType: result.imageMimeType,
+      previewPath: path,
+    );
+  } catch (_) {
+    return result;
+  }
 }
 
 Future<McpToolResult> _dispatch(

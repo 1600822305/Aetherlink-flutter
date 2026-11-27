@@ -99,4 +99,5 @@ kelivo 依赖到的外部件需要替换的：`ToolCallCancellation`（→ 用�
 - P1：会话按对话隔离（`<对话>::<session>`）；真接管（用户主导时只允许观察）；改动超时后需先观察。
 - P2：快照覆盖 shadow DOM / 同源 iframe；@N 身份校验；CSS 深度查询与歧义报错；交互前滚动 + 遮挡检测；输入/选择回读校验；新增 browser_press / browser_scroll；审批按风险分级。
 - P3：共驾页改为内置浏览器页（标签条可关闭、地址栏、前进/后退/刷新，用户导航自动接管）；页面弹窗在同对话新开 tabN 会话（不继承 opener）。
-- 未做：事件流步骤截图卡片、书签/历史/下载、弹窗保留 opener 关系。
+- P3b：事件流步骤截图卡片。新增 `previewPath`（McpToolResult → AgentToolResult → ToolCallEvent → 持久化），只给界面展示、不注入模型；open/click/input/select/press/scroll/run 成功后用 `HeadlessBrowserSession.thumbnail()`（不改视口、360 宽低质 JPEG）落盘到 `browser_screenshots/previews/`，删任务/回滚时一并清理；点缩略图进入内置浏览器页。
+- 未做：书签/历史/下载、弹窗保留 opener 关系。

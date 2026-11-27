@@ -25,6 +25,7 @@ class McpToolResult {
     this.isError = false,
     this.imagePath,
     this.imageMimeType,
+    this.previewPath,
     this.imageUrls,
     this.videoUrls,
   });
@@ -38,6 +39,10 @@ class McpToolResult {
 
   /// [imagePath] 图片的 MIME 类型（如 `image/jpeg`）。
   final String? imageMimeType;
+
+  /// 仅供界面展示的缩略图落盘路径（如浏览器每步操作后的页面缩略图）。
+  /// 与 [imagePath] 不同：不会注入给模型，不消耗图片 token。
+  final String? previewPath;
 
   /// 生成的图片 URL 列表（`generate_image` 工具用）：http(s) 或 data URL，
   /// 由聊天层落成 IMAGE 消息块直接展示，不回填给模型。

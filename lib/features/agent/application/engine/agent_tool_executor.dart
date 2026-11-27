@@ -10,6 +10,7 @@ class AgentToolResult {
     this.overflowPath,
     this.imagePath,
     this.imageMimeType,
+    this.previewPath,
   });
 
   final bool ok;
@@ -29,6 +30,9 @@ class AgentToolResult {
 
   /// [imagePath] 图片的 MIME 类型（如 `image/jpeg`）。
   final String? imageMimeType;
+
+  /// 仅界面展示的缩略图路径（不注入模型）。
+  final String? previewPath;
 }
 
 /// 同一只读并发段内最多并行执行的工具数（对标 CC

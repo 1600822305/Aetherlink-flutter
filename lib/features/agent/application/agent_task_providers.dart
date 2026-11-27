@@ -199,6 +199,7 @@ class AgentTasks extends _$AgentTasks {
       for (final e in events.whereType<ToolCallEvent>()) {
         await deleteAgentOverflowFile(e.resultOverflowPath);
         await deleteAgentOverflowFile(e.imagePath);
+        await deleteAgentOverflowFile(e.previewPath);
       }
     } catch (_) {}
   }

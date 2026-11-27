@@ -75,6 +75,7 @@ abstract class AgentEventStore {
     String? resultOverflowPath,
     String? imagePath,
     String? imageMimeType,
+    String? previewPath,
     Duration? elapsed,
   });
 
@@ -340,6 +341,7 @@ class DriftAgentEventStore implements AgentEventStore {
     String? resultOverflowPath,
     String? imagePath,
     String? imageMimeType,
+    String? previewPath,
     Duration? elapsed,
   }) async {
     final updated = ToolCallEvent(
@@ -356,6 +358,7 @@ class DriftAgentEventStore implements AgentEventStore {
       resultOverflowPath: resultOverflowPath ?? event.resultOverflowPath,
       imagePath: imagePath ?? event.imagePath,
       imageMimeType: imageMimeType ?? event.imageMimeType,
+      previewPath: previewPath ?? event.previewPath,
     );
     await _dao.upsertEvents(taskId, [updated]);
     return updated;
