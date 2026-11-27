@@ -155,6 +155,66 @@ void main() {
       final filter = SentinelDisplayFilter();
       expect(filter.feed('hello\r\n# '), 'hello\r\n# ');
     });
+
+    test('单个 _ 尾巴被扣住，flush 后放行（键入 my_var 不卡）', () {
+      final filter = SentinelDisplayFilter();
+      // 整段未完行一起扣住（行尾像标记前缀），限时放行。
+      expect(filter.feed('my_'), '');
+      expect(filter.hasPending, isTrue);
+      expect(filter.flush(), 'my_');
+      expect(filter.hasPending, isFalse);
+      expect(filter.feed('var'), 'var');
+    });
+
+    test('已含完整标记的尾巴 flush 不放行，等行尾再判', () {
+      final filter = SentinelDisplayFilter();
+      expect(filter.feed('__AETHER_DONE_ab'), '');
+      expect(filter.flush(), '');
+      expect(filter.feed('c_0__\r\n# '), '# ');
+    });
+
+    test('beginEcho：{ / > cmd / > }; printf 回显替换成一行干净命令', () {
+      final filter = SentinelDisplayFilter()..beginEcho('npm run build');
+      final visible = filter.feed(
+        '[ws]:/root # {\r\n'
+        '> npm run build\r\n'
+        "> }; printf '\\n__AETHER_DONE_abc_%s__\\n' \"\$?\"\r\n"
+        'built\r\n'
+        '\r\n'
+        '__AETHER_DONE_abc_0__\r\n'
+        '[ws]:/root # ',
+      );
+      expect(
+        visible,
+        '[ws]:/root # npm run build\r\nbuilt\r\n\r\n[ws]:/root # ',
+      );
+      expect(filter.hasPending, isFalse);
+    });
+
+    test('beginEcho：多行命令与分块到达', () {
+      final filter = SentinelDisplayFilter()..beginEcho('cd a\nls');
+      final a = filter.feed('{\r\n> cd a\r\n> l');
+      final b = filter.feed(
+        "s\r\n> }; printf '\\n__AETHER_DONE_x_%s__\\n' \"\$?\"\r\nf1\r\n",
+      );
+      expect(a + b, 'cd a\r\nls\r\nf1\r\n');
+    });
+
+    test('beginEcho(show: false)：探针回显整段丢掉', () {
+      final filter = SentinelDisplayFilter()..beginEcho(':', show: false);
+      final visible = filter.feed(
+        "{\r\n> :\r\n> }; printf '\\n__AETHER_DONE_p1_%s__\\n' \"\$?\"\r\n"
+        '__AETHER_DONE_p1_0__\r\n# ',
+      );
+      expect(visible, '# ');
+    });
+
+    test('回显预算用完即结束屏蔽，不吞后续输出', () {
+      final filter = SentinelDisplayFilter()..beginEcho('x');
+      // 预算 3 行：{ / x / printf；这里没出现标记也按预算结束。
+      final visible = filter.feed('{\r\n> x\r\n> y\r\nout\r\n');
+      expect(visible, 'x\r\nout\r\n');
+    });
   });
 
   group('buildProotGreeting', () {

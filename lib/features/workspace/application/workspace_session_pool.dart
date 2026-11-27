@@ -24,8 +24,10 @@ const Duration kSessionIdleTimeout = Duration(minutes: 10);
 const int kMaxPooledSessions = 4;
 
 /// 无终端视图接入时会话 PTY 的默认尺寸；接入视图后按视图实际尺寸同步。
-const int kDefaultSessionColumns = 200;
-const int kDefaultSessionRows = 50;
+/// 原 200 列：手机上打开回放历史时整屏断行错位。120 列兼顾 AI 读输出
+/// 的可读性（表格 / 进度条不过窄）与回放观感。
+const int kDefaultSessionColumns = 120;
+const int kDefaultSessionRows = 40;
 
 /// 用户键入半行后多久仍视为占用会话；超过后视为遗留半行，由 Ctrl-U 兜底清掉。
 const Duration kUserTypingHold = Duration(seconds: 30);
@@ -157,16 +159,41 @@ class PooledWorkspaceSession {
   int _viewers = 0;
   bool get hasViewers => _viewers > 0;
 
+  /// 各视图上报的窗口尺寸（[viewer] → 列/行）。同一会话同时开在工作台
+  /// tab 与终端页时取最小值：两边不再互相改尺寸导致另一边排版错乱。
+  final Map<Object, (int, int)> _viewerSizes = {};
+
   /// 终端视图接入 / 断开时调用（见 SessionTerminalAttachment）。
-  void addViewer() {
+  void addViewer([Object? viewer]) {
     _viewers++;
     lastUsedAt = DateTime.now();
   }
 
-  void removeViewer() {
+  void removeViewer([Object? viewer]) {
     if (_viewers > 0) _viewers--;
+    if (viewer != null && _viewerSizes.remove(viewer) != null) {
+      _applyViewerSize();
+    }
     // 视图关闭重新计时，不因围观期间未输入而立刻被回收。
     lastUsedAt = DateTime.now();
+  }
+
+  /// 视图 [viewer] 的布局尺寸变化：按所有在场视图的最小尺寸同步 PTY。
+  void resizeFor(Object viewer, int columns, int rows) {
+    if (columns <= 0 || rows <= 0) return;
+    _viewerSizes[viewer] = (columns, rows);
+    _applyViewerSize();
+  }
+
+  void _applyViewerSize() {
+    if (_viewerSizes.isEmpty) return;
+    var c = 1 << 30;
+    var r = 1 << 30;
+    for (final (vc, vr) in _viewerSizes.values) {
+      if (vc < c) c = vc;
+      if (vr < r) r = vr;
+    }
+    resize(c, r);
   }
 
   final WorkspaceShellSession _shell;
@@ -266,9 +293,26 @@ class PooledWorkspaceSession {
     _cancelPendingExec?.call();
   }
 
+  /// 显示过滤扣住尾巴（疑似哨兵前缀 / 回显屏蔽期）时的限时放行定时器。
+  Timer? _displayFlushTimer;
+
   void _append(String chunk) {
     if (!_raw.isClosed) _raw.add(chunk);
-    final visible = _displayFilter.feed(chunk);
+    _emitVisible(_displayFilter.feed(chunk));
+    _scheduleDisplayFlush();
+  }
+
+  void _scheduleDisplayFlush() {
+    if (!_displayFilter.hasPending || _displayFlushTimer != null) return;
+    _displayFlushTimer = Timer(kDisplayHoldFlush, () {
+      _displayFlushTimer = null;
+      if (!_alive) return;
+      _emitVisible(_displayFilter.flush());
+      _scheduleDisplayFlush();
+    });
+  }
+
+  void _emitVisible(String visible) {
     if (visible.isEmpty) return;
     _buffer.write(visible);
     if (_buffer.length > kSessionBufferLimit) {
@@ -278,7 +322,9 @@ class PooledWorkspaceSession {
       var cut = text.length - kSessionBufferLimit ~/ 2;
       final nl = text.indexOf('\n', cut);
       if (nl >= 0 && nl + 1 < text.length) cut = nl + 1;
-      const marker = '…（缓冲已截断，更早输出已丢弃）\r\n';
+      // 先复位 SGR：被截掉的头部里可能有未闭合的颜色/样式，回放时不至于
+      // 整屏染色。
+      const marker = '\x1b[0m…（缓冲已截断，更早输出已丢弃）\r\n';
       // 截掉 cut 个、补进 marker.length 个：基偏移同步调整，
       // 保证 outputCursor 截断前后连续。
       _streamBase += cut - marker.length;
@@ -435,6 +481,8 @@ class PooledWorkspaceSession {
       // Ctrl-E 先移到行尾再 Ctrl-U：Ctrl-U 只删光标前内容，用户把光标
       // 移到行中留下的半行尾巴会拼进命令。
       _shell.write(const [0x05, 0x15]);
+      // 显示流里把 `{` / `> cmd` / `> }; printf` 回显替换成一行干净命令。
+      _displayFilter.beginEcho(command);
       _shell.write(
         utf8.encode(
           buildSentinelInput(command, nonce, splitStderr: splitStderr),
@@ -521,6 +569,7 @@ class PooledWorkspaceSession {
       if (!seen.isCompleted && marker.hasMatch(window)) seen.complete();
     });
     try {
+      _displayFilter.beginEcho(':', show: false);
       _shell.write(utf8.encode(buildSentinelInput(':', nonce)));
       await seen.future.timeout(kInterruptSettleTimeout, onTimeout: () {});
     } catch (_) {
@@ -563,6 +612,8 @@ class PooledWorkspaceSession {
 
   Future<void> close() async {
     _alive = false;
+    _displayFlushTimer?.cancel();
+    _displayFlushTimer = null;
     // 让正在等哨兵的 exec（含超时后的后台等待）立即出错返回，
     // 避免调用方永久悬挂 / 监听器泄漏。
     _failPendingExec?.call();

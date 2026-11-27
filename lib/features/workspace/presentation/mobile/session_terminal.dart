@@ -144,14 +144,16 @@ class SessionTerminalAttachment {
     String Function(String)? transform,
   }) {
     final history = session.snapshot();
-    session.addViewer();
+    session.addViewer(this);
     _sub = session.chunks.listen(_onChunk);
     terminal.onOutput = (data) {
       if (session.alive) {
         session.writeUserInput(transform == null ? data : transform(data));
       }
     };
-    terminal.onResize = (width, height, _, __) => session.resize(width, height);
+    // 多视图同时接入同一会话时取最小尺寸（见 resizeFor），不互相抢尺寸。
+    terminal.onResize = (width, height, _, __) =>
+        session.resizeFor(this, width, height);
     // 历史可达数百 KB，构造常发生在 build 里：推迟到事件循环下一轮再
     // 回放，期间到达的实时输出先暂存，保证与历史的先后顺序。
     ready = Future<void>(() {
@@ -159,6 +161,10 @@ class SessionTerminalAttachment {
       _pending = null;
       if (pending == null) return;
       // 缓冲里就是 PTY 原始字节（含 \r\n 与 ANSI 序列），直接回放。
+      // 历史按当时的窗口宽度排版，换了屏宽可能错位：先给一行分隔提示。
+      if (history.isNotEmpty) {
+        terminal.write('\x1b[2m── 历史输出（按当时窗口宽度排版）──\x1b[0m\r\n');
+      }
       terminal.write(history);
       pending.forEach(terminal.write);
     });
@@ -188,7 +194,7 @@ class SessionTerminalAttachment {
   Future<void> detach() async {
     if (!_detached) {
       _detached = true;
-      session.removeViewer();
+      session.removeViewer(this);
     }
     _pending = null;
     terminal.onOutput = null;

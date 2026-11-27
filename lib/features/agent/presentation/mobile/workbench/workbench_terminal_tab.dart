@@ -116,6 +116,8 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
     final active =
         sessions.where((s) => s.id == _activeId).firstOrNull ?? sessions.first;
     final view = _viewFor(active);
+    // 与工作区终端页共用「终端字号」设置。
+    final fontSize = ref.watch(terminalFontSizeProvider);
     return Container(
       color: const Color(0xFF14161B),
       child: SafeArea(
@@ -172,7 +174,7 @@ class _WorkbenchTerminalTabState extends ConsumerState<WorkbenchTerminalTab> {
                   view.terminal,
                   controller: view.controller,
                   focusNode: view.focusNode,
-                  textStyle: const TerminalStyle(fontSize: 13),
+                  textStyle: TerminalStyle(fontSize: fontSize),
                   padding: const EdgeInsets.all(8),
                 ),
                 ),

@@ -27,6 +27,26 @@ import '../domain/workspace_text_ops.dart' as text_ops;
 /// §3.3): [readFile] above this throws so callers fall back to a range read.
 const int kSshReadFileMaxBytes = 10 * 1024 * 1024;
 
+/// 跨块 UTF-8 流式解码的实时输出回调：多字节字符（中文 3 字节）被切在
+/// 两块之间时不会各自解成 `�`，残余字节留到下一块再拼。
+class _LiveTextSink implements Sink<String> {
+  _LiveTextSink(this._onText);
+  final void Function(String) _onText;
+  @override
+  void add(String data) {
+    if (data.isNotEmpty) _onText(data);
+  }
+
+  @override
+  void close() {}
+}
+
+ByteConversionSink? _liveDecoder(void Function(String chunk)? onOutput) =>
+    onOutput == null
+    ? null
+    : const Utf8Decoder(allowMalformed: true)
+          .startChunkedConversion(_LiveTextSink(onOutput));
+
 const Duration _kConnectTimeout = Duration(seconds: 20);
 
 /// How often the external-change poller re-lists watched directories (SSH-4).
@@ -998,16 +1018,19 @@ class RemoteSshBackend extends WorkspaceBackend {
 
     final out = BytesBuilder(copy: false);
     final err = BytesBuilder(copy: false);
-    void collect(BytesBuilder sink, List<int> chunk) {
+    // stdout / stderr 各一个流式解码器（字节流互不相干，不能共用残余）。
+    final outLive = _liveDecoder(onOutput);
+    final errLive = _liveDecoder(onOutput);
+    void collect(BytesBuilder sink, ByteConversionSink? live, List<int> chunk) {
       sink.add(chunk);
-      onOutput?.call(utf8.decode(chunk, allowMalformed: true));
+      live?.add(chunk);
     }
 
     // forEach（而非 listen+cancel）：session.done 在通道关闭时就完成，
     // 此刻流里可能还有已缓冲未派发的最后一块输出（短命令的全部 stdout
     // 就在这一块里）——cancel 会把它丢掉，必须等流自然结束再取字节。
-    final outDone = session.stdout.forEach((c) => collect(out, c));
-    final errDone = session.stderr.forEach((c) => collect(err, c));
+    final outDone = session.stdout.forEach((c) => collect(out, outLive, c));
+    final errDone = session.stderr.forEach((c) => collect(err, errLive, c));
 
     var timedOut = false;
     var canceled = false;
@@ -1039,6 +1062,8 @@ class RemoteSshBackend extends WorkspaceBackend {
       // 被杀 / 异常关闭时流可能不结束，限时收尾避免永久挂起。
       await Future.wait([outDone, errDone])
           .timeout(const Duration(seconds: 2), onTimeout: () => const []);
+      outLive?.close();
+      errLive?.close();
     }
 
     var stdout = utf8.decode(out.takeBytes(), allowMalformed: true);
@@ -1100,6 +1125,10 @@ class RemoteSshBackend extends WorkspaceBackend {
     try {
       session = await client.shell(
         pty: SSHPtyConfig(width: columns, height: rows),
+        // 远端默认 POSIX 编码时 ls 中文显示成 ?、git 转义成 \346…；
+        // 像 OpenSSH 客户端 SendEnv 一样请求 UTF-8 字符集（只动 LC_CTYPE，
+        // 不改提示语言）。sshd 未 AcceptEnv 时静默忽略。
+        environment: const {'LC_CTYPE': 'C.UTF-8'},
       );
     } catch (e) {
       throw SshBackendException('打开终端失败 · $e');

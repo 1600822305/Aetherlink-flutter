@@ -116,12 +116,25 @@ String stripSessionEcho(String head, String command, String nonce) {
   return kept.join('\n');
 }
 
+/// 显示流里扣住的「疑似哨兵前缀」尾巴最多扣多久就放行（由会话定时
+/// 调 [SentinelDisplayFilter.flush]）：否则用户键入 `_`、或输出以 `_`
+/// 结尾时要等下一个字节才显示。
+const Duration kDisplayHoldFlush = Duration(milliseconds: 300);
+
+/// AI 命令回显（`{` / `> cmd` / `> }; printf …`）最多屏蔽多久：回显关闭
+/// 等异常情况下不让后续输出被一直吞掉。
+const Duration kEchoSuppressLimit = Duration(seconds: 1);
+
 /// 逐块过滤 PTY 显示流里的哨兵噪音（终端页联动视图 / 回看缓冲用）：
 /// 丢掉所有含 `__AETHER_` 标记（DONE 哨兵 / ERR 分隔）的行——哨兵
 /// 结果行和回显的 printf 行都会命中。
 /// 块可能在行中间截断：若未完行有成为哨兵行的可能（已含标记、或行尾是
 /// 标记的前缀），先扣住等下一块再判；否则立即放行（提示符等无换行内容
-/// 不能卡住不显示）。
+/// 不能卡住不显示）。只是「像前缀」的尾巴由 [flush] 限时放行。
+///
+/// [beginEcho]：AI 每条命令以 `{\n<cmd>\n}; printf 哨兵` 包裹写入，PTY 会把
+/// 这几行原样回显（`{` 跟在提示符后，其余带 PS2 `> `）。调用后把这段回显
+/// 替换成一行干净的 `<提示符><cmd>`，直到回显的哨兵 printf 行为止。
 class SentinelDisplayFilter {
   static const String _marker = '__AETHER_';
 
@@ -129,6 +142,34 @@ class SentinelDisplayFilter {
   static const int _holdLimit = 4096;
 
   String _pending = '';
+
+  /// 非 null 时处于回显屏蔽期：值为替换显示的命令（show=false 时为空串）。
+  String? _echoReplacement;
+  bool _echoShow = true;
+  bool _echoFirst = false;
+  int _echoBudget = 0;
+  DateTime _echoSince = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 有扣住待放行的内容（或处于回显屏蔽期）：会话据此安排 [flush]。
+  bool get hasPending => _pending.isNotEmpty || _echoReplacement != null;
+
+  /// 即将写入一条 AI 命令（见类注释）。[show] 为 false 时（内部探针）
+  /// 回显整段丢掉，不显示替换行。
+  void beginEcho(String command, {bool show = true}) {
+    final trimmed = command.trimRight();
+    _echoReplacement = show ? trimmed.replaceAll('\n', '\r\n') : '';
+    _echoShow = show;
+    _echoFirst = true;
+    // `{` + 命令各行 + `}; printf …`。
+    _echoBudget = '\n'.allMatches(trimmed).length + 3;
+    _echoSince = DateTime.now();
+  }
+
+  void _endEcho() {
+    _echoReplacement = null;
+    _echoFirst = false;
+    _echoBudget = 0;
+  }
 
   /// 喂入一块原始输出，返回应显示的部分。
   String feed(String chunk) {
@@ -140,8 +181,22 @@ class SentinelDisplayFilter {
       final nl = text.indexOf('\n', start);
       if (nl < 0) break;
       final line = text.substring(start, nl + 1);
-      if (!line.contains(_marker)) out.write(line);
       start = nl + 1;
+      final replacement = _echoReplacement;
+      if (replacement != null) {
+        if (_echoFirst) {
+          _echoFirst = false;
+          if (_echoShow) {
+            // 保留 `{` 前的提示符（同一块到达时），接上干净的命令。
+            final prefix = line.replaceFirst(RegExp(r'\{\s*$'), '');
+            out.write('$prefix$replacement\r\n');
+          }
+        }
+        _echoBudget--;
+        if (line.contains(_marker) || _echoBudget <= 0) _endEcho();
+        continue;
+      }
+      if (!line.contains(_marker)) out.write(line);
     }
     final tail = text.substring(start);
     if (_shouldHold(tail)) {
@@ -152,8 +207,26 @@ class SentinelDisplayFilter {
     return out.toString();
   }
 
-  static bool _shouldHold(String tail) {
+  /// 限时放行（会话在 [kDisplayHoldFlush] 后调用）：只是「像标记前缀」的
+  /// 尾巴（如单个 `_`）放出来；已含完整标记的尾巴继续扣到行尾。回显
+  /// 屏蔽期超过 [kEchoSuppressLimit] 时结束屏蔽。
+  String flush() {
+    if (_echoReplacement != null) {
+      if (DateTime.now().difference(_echoSince) < kEchoSuppressLimit) {
+        return '';
+      }
+      _endEcho();
+    }
+    if (_pending.isEmpty || _pending.contains(_marker)) return '';
+    final released = _pending;
+    _pending = '';
+    return released;
+  }
+
+  bool _shouldHold(String tail) {
     if (tail.isEmpty || tail.length > _holdLimit) return false;
+    // 回显屏蔽期：半行回显也扣住，避免 `{` / `> ` 漏显。
+    if (_echoReplacement != null) return true;
     if (tail.contains(_marker)) return true;
     final max = _marker.length - 1;
     for (var i = max < tail.length ? max : tail.length; i > 0; i--) {

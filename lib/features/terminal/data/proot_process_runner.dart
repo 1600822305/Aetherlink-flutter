@@ -60,13 +60,15 @@ class ProotProcessRunner {
 
     final out = BytesBuilder(copy: false);
     final err = BytesBuilder(copy: false);
-    void collect(BytesBuilder sink, List<int> chunk) {
+    final outLive = _liveDecoder(onOutput);
+    final errLive = _liveDecoder(onOutput);
+    void collect(BytesBuilder sink, ByteConversionSink? live, List<int> chunk) {
       sink.add(chunk);
-      onOutput?.call(utf8.decode(chunk, allowMalformed: true));
+      live?.add(chunk);
     }
 
-    final outDone = process.stdout.forEach((c) => collect(out, c));
-    final errDone = process.stderr.forEach((c) => collect(err, c));
+    final outDone = process.stdout.forEach((c) => collect(out, outLive, c));
+    final errDone = process.stderr.forEach((c) => collect(err, errLive, c));
 
     var timedOut = false;
     var canceled = false;
@@ -95,6 +97,8 @@ class ProotProcessRunner {
     // 否则这里会永久挂起、工具调用不返回。
     await Future.wait([outDone, errDone])
         .timeout(const Duration(seconds: 2), onTimeout: () => const []);
+    outLive?.close();
+    errLive?.close();
 
     return ProotExecResult(
       stdout: utf8.decode(out.takeBytes(), allowMalformed: true),
@@ -175,3 +179,23 @@ class ProotPtySession {
 
   Future<void> kill() => _session.kill();
 }
+
+/// 跨块 UTF-8 流式解码的实时输出回调：多字节字符（中文 3 字节）被切在
+/// 两块之间时不会各自解成 `�`，残余字节留到下一块再拼。
+class _LiveTextSink implements Sink<String> {
+  _LiveTextSink(this._onText);
+  final void Function(String) _onText;
+  @override
+  void add(String data) {
+    if (data.isNotEmpty) _onText(data);
+  }
+
+  @override
+  void close() {}
+}
+
+ByteConversionSink? _liveDecoder(void Function(String chunk)? onOutput) =>
+    onOutput == null
+    ? null
+    : const Utf8Decoder(allowMalformed: true)
+          .startChunkedConversion(_LiveTextSink(onOutput));

@@ -6,6 +6,8 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_stor
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 
+export 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart'
+    show terminalFontSizeProvider;
 export 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart'
     show
         PooledWorkspaceSession,
