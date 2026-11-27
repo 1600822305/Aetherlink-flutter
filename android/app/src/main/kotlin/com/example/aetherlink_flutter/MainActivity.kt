@@ -68,6 +68,8 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PublicDownloads.CHANNEL)
+            .setMethodCallHandler(PublicDownloads(this))
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -75,6 +77,8 @@ class MainActivity : FlutterActivity() {
         // （那会清空任务、停前台服务，把仍在跑的后台任务一并杀掉）。
         backgroundRuntime.detachActivity(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, termuxChannel)
+            .setMethodCallHandler(null)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PublicDownloads.CHANNEL)
             .setMethodCallHandler(null)
         pendingRunCommand?.second?.error("activity-destroyed", "Activity destroyed", null)
         pendingRunCommand = null

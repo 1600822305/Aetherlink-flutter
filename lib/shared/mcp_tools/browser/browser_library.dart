@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:aetherlink_browser/aetherlink_browser.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// 书签 / 浏览历史 / 下载：内置浏览器的本地资料库。
@@ -170,7 +173,17 @@ class BrowserLibrary extends ChangeNotifier {
 
   // ---- 下载 ----
 
+  static const _channel = MethodChannel('aetherlink/downloads');
+
   Future<Directory> _downloadDir() async {
+    if (Platform.isAndroid) {
+      // Android 先下到缓存，完成后交给系统存入公共「下载/AetherLink」。
+      final tmp = Directory(
+        '${(await getTemporaryDirectory()).path}${Platform.pathSeparator}browser_dl',
+      );
+      await tmp.create(recursive: true);
+      return tmp;
+    }
     Directory? base;
     try {
       base = await getDownloadsDirectory();
@@ -268,6 +281,8 @@ class BrowserLibrary extends ChangeNotifier {
           }
         },
       );
+      item.mimeType = mimeType;
+      if (Platform.isAndroid) await _publishAndroid(item);
       item.status = BrowserDownloadStatus.done;
     } on DioException catch (e) {
       item.status = CancelToken.isCancel(e)
@@ -288,7 +303,66 @@ class BrowserLibrary extends ChangeNotifier {
     }
   }
 
+  /// 把缓存里下完的文件交给系统存进公共下载目录；Android 9 及以下先
+  /// 申请存储权限。失败时保留在应用缓存并在条目上注明原因。
+  Future<void> _publishAndroid(BrowserDownload item) async {
+    final temp = item.path;
+    if (temp == null) return;
+    Future<Map?> save() async =>
+        await _channel.invokeMethod<Map>('save', {
+          'source': temp,
+          'name': item.fileName,
+          'mime': item.mimeType,
+        });
+    Map? saved;
+    try {
+      saved = await save();
+    } on PlatformException catch (e) {
+      if (e.code == 'permission-required' &&
+          await Permission.storage.request().isGranted) {
+        saved = await save();
+      } else {
+        item.error = '未能存入系统下载目录（${e.message ?? e.code}），文件仍在应用缓存';
+        return;
+      }
+    }
+    if (saved == null) return;
+    item.contentUri = saved['uri'] as String?;
+    item.fileName = saved['name'] as String? ?? item.fileName;
+    item.mimeType = saved['mime'] as String? ?? item.mimeType;
+    try {
+      await File(temp).delete();
+    } catch (_) {}
+    item.path = saved['path'] as String?;
+  }
+
+  /// 用系统里能处理该类型的应用打开下载好的文件。
+  Future<String?> openDownload(BrowserDownload item) async {
+    try {
+      final uri = item.contentUri;
+      if (Platform.isAndroid && uri != null) {
+        await _channel.invokeMethod('open', {'uri': uri, 'mime': item.mimeType});
+        return null;
+      }
+      final path = item.path;
+      if (path == null || !await File(path).exists()) return '文件已不存在';
+      final ok = await launchUrl(Uri.file(path));
+      return ok ? null : '没有能打开该文件的应用';
+    } on PlatformException catch (e) {
+      return e.message ?? e.code;
+    }
+  }
+
   Future<void> _deletePartial(BrowserDownload item) async {
+    final uri = item.contentUri;
+    if (Platform.isAndroid && uri != null) {
+      try {
+        await _channel.invokeMethod('delete', {'uri': uri});
+      } catch (_) {}
+      item.contentUri = null;
+      item.path = null;
+      return;
+    }
     final path = item.path;
     if (path == null) return;
     try {
@@ -363,6 +437,8 @@ class BrowserDownload {
     this.received = 0,
     this.total,
     this.error,
+    this.contentUri,
+    this.mimeType,
   });
 
   factory BrowserDownload.fromJson(Map json) => BrowserDownload(
@@ -375,6 +451,8 @@ class BrowserDownload {
     received: json['received'] as int? ?? 0,
     total: json['total'] as int?,
     error: json['error'] as String?,
+    contentUri: json['contentUri'] as String?,
+    mimeType: json['mimeType'] as String?,
   );
 
   final String id;
@@ -385,6 +463,10 @@ class BrowserDownload {
   int received;
   int? total;
   String? error;
+
+  /// Android 公共下载目录里的 content:// URI（打开/删除用）。
+  String? contentUri;
+  String? mimeType;
 
   double? get progress =>
       total == null || total == 0 ? null : (received / total!).clamp(0, 1);
@@ -398,5 +480,7 @@ class BrowserDownload {
     'received': received,
     'total': total,
     'error': error,
+    'contentUri': contentUri,
+    'mimeType': mimeType,
   };
 }

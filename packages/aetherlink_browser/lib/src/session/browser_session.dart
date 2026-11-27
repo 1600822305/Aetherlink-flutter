@@ -775,6 +775,11 @@ $script
   /// 最后一次加载完成时的页面标题。
   String? get lastTitle => _lastTitle;
 
+  /// 可见 WebView 报告标题变化（SPA 改标题不触发 loadStop）。
+  void noteTitle(String? title) {
+    if (title != null && title.trim().isNotEmpty) _lastTitle = title.trim();
+  }
+
   Future<void> handleLoadStop(
     InAppWebViewController controller,
     WebUri? url,

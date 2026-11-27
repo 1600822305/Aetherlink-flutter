@@ -27,7 +27,7 @@ class BrowserStartPage extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Text(
-                '在上方输入网址或搜索词即可浏览，登录态会保留。\n'
+                '在地址栏输入网址或搜索词即可浏览，登录态会保留。\n'
                 '点地址栏右侧的星标收藏页面，收藏和最近访问会显示在这里。',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(color: muted),
@@ -369,6 +369,16 @@ class _DownloadsList extends StatelessWidget {
           children: [
             for (final d in items)
               ListTile(
+                onTap: d.status == BrowserDownloadStatus.done
+                    ? () async {
+                        final error = await library.openDownload(d);
+                        if (error != null && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error)),
+                          );
+                        }
+                      }
+                    : null,
                 leading: Icon(switch (d.status) {
                   BrowserDownloadStatus.running => LucideIcons.download,
                   BrowserDownloadStatus.done => LucideIcons.fileCheck,
@@ -388,7 +398,8 @@ class _DownloadsList extends StatelessWidget {
                     : Text(
                         switch (d.status) {
                           BrowserDownloadStatus.done =>
-                            '${_size(d.received)} · ${d.path ?? ''}',
+                            '${_size(d.received)} · ${d.path ?? ''}'
+                                '${d.error == null ? '' : '\n${d.error}'}',
                           BrowserDownloadStatus.failed =>
                             '失败：${d.error ?? '未知错误'}',
                           BrowserDownloadStatus.cancelled => '已取消',
@@ -406,7 +417,14 @@ class _DownloadsList extends StatelessWidget {
                       )
                     : PopupMenuButton<String>(
                         onSelected: (v) async {
-                          if (v == 'copy' && d.path != null) {
+                          if (v == 'open') {
+                            final error = await library.openDownload(d);
+                            if (error != null && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(error)),
+                              );
+                            }
+                          } else if (v == 'copy' && d.path != null) {
                             await Clipboard.setData(
                               ClipboardData(text: d.path!),
                             );
@@ -420,7 +438,15 @@ class _DownloadsList extends StatelessWidget {
                           }
                         },
                         itemBuilder: (_) => [
-                          if (d.path != null && File(d.path!).existsSync())
+                          if (d.status == BrowserDownloadStatus.done &&
+                              (d.contentUri != null ||
+                                  (d.path != null &&
+                                      File(d.path!).existsSync())))
+                            const PopupMenuItem(
+                              value: 'open',
+                              child: Text('打开'),
+                            ),
+                          if (d.path != null)
                             const PopupMenuItem(
                               value: 'copy',
                               child: Text('复制文件路径'),

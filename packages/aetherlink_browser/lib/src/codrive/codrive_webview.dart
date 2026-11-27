@@ -8,12 +8,24 @@ import '../session/browser_session.dart';
 /// 原生 WebView（同页面、同登录态、同 JS 状态）。keepAlive 保证退出
 /// 共驾页后原生 WebView 不销毁，agent 工具继续可用。
 class CoDriveWebView extends StatefulWidget {
-  const CoDriveWebView({super.key, required this.session, this.onUrlChanged});
+  const CoDriveWebView({
+    super.key,
+    required this.session,
+    this.onUrlChanged,
+    this.onProgress,
+    this.onTitleChanged,
+  });
 
   /// 要可见化的会话（必须是 headless 实现）。
   final HeadlessBrowserSession session;
 
   final ValueChanged<String>? onUrlChanged;
+
+  /// 加载进度 0~1（地址栏进度条用）。
+  final ValueChanged<double>? onProgress;
+
+  /// 页面标题变化。
+  final ValueChanged<String?>? onTitleChanged;
 
   @override
   State<CoDriveWebView> createState() => _CoDriveWebViewState();
@@ -50,6 +62,12 @@ class _CoDriveWebViewState extends State<CoDriveWebView> {
       onRenderProcessUnresponsive: session.handleRenderProcessUnresponsive,
       onWebContentProcessDidTerminate:
           session.handleWebContentProcessTerminated,
+      onProgressChanged: (controller, progress) =>
+          widget.onProgress?.call(progress / 100.0),
+      onTitleChanged: (controller, title) {
+        session.noteTitle(title);
+        widget.onTitleChanged?.call(title);
+      },
       onUpdateVisitedHistory: (controller, url, isReload) {
         final s = url?.toString();
         if (s != null) widget.onUrlChanged?.call(s);
