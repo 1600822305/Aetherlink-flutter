@@ -68,6 +68,15 @@ class _FakeExecBackend extends WorkspaceBackend {
   }
 }
 
+/// 中断收尾的探针哨兵 nonce（`p` 前缀）。
+String _probeNonceOf(_FakeShell shell) {
+  final match = RegExp(
+    '__AETHER_DONE_(p[a-z0-9]+)_',
+  ).firstMatch(shell.written.toString());
+  expect(match, isNotNull, reason: '中断后应写入探针哨兵');
+  return match!.group(1)!;
+}
+
 String _nonceOf(_FakeShell shell) {
   final match = RegExp(
     '__AETHER_DONE_([a-z0-9]+)_',
@@ -288,14 +297,42 @@ void main() {
     expect(session.isUserTyping, isFalse);
   });
 
-  test('exec 期间 interrupt 立即收尾（Ctrl-C 后哨兵不会再来），会话释放', () async {
+  test('exec 期间 interrupt 立即返回结果，但等探针回来（shell 回到提示符）才释放', () async {
     final session = await pool.create();
+    final shell = backend.shells.single;
     final future = session.exec('sleep 999');
     await Future<void>.delayed(Duration.zero);
     session.interrupt();
     final result = await future;
     expect(result.canceled, isTrue);
+    // 旧进程可能还在收尾：先保持占用。
+    expect(session.busy, isTrue);
+    final probe = _probeNonceOf(shell);
+    // 回显里的 `%s__` 原文不算数。
+    shell.emit("printf '\\n__AETHER_DONE_${probe}_%s__\\n'\n");
+    await Future<void>.delayed(Duration.zero);
+    expect(session.busy, isTrue);
+    shell.emit('\n__AETHER_DONE_${probe}_0__\n');
+    await Future<void>.delayed(Duration.zero);
     expect(session.busy, isFalse);
+  });
+
+  test('interrupt 后探针一直不回来：最多等 kInterruptSettleTimeout 后释放', () {
+    fakeAsync((async) {
+      late PooledWorkspaceSession session;
+      pool.create().then((s) => session = s);
+      async.flushMicrotasks();
+      session.exec('npm install');
+      async.flushMicrotasks();
+      session.interrupt();
+      async.flushMicrotasks();
+      expect(session.busy, isTrue);
+      async.elapse(kInterruptSettleTimeout - const Duration(milliseconds: 100));
+      expect(session.busy, isTrue);
+      async.elapse(const Duration(milliseconds: 200));
+      async.flushMicrotasks();
+      expect(session.busy, isFalse);
+    });
   });
 
   test('超时后 interrupt 释放仍在等哨兵的 busy 会话', () async {
@@ -304,6 +341,11 @@ void main() {
     await session.exec('sleep 999', timeout: const Duration(milliseconds: 20));
     expect(session.busy, isTrue);
     session.writeInput('\x03');
+    await Future<void>.delayed(Duration.zero);
+    // 等 shell 回到提示符（探针哨兵）才释放。
+    expect(session.busy, isTrue);
+    final probe = _probeNonceOf(shell);
+    shell.emit('\n__AETHER_DONE_${probe}_130__\n');
     await Future<void>.delayed(Duration.zero);
     expect(session.busy, isFalse);
     shell.written.clear();
@@ -428,6 +470,36 @@ void main() {
       expect(s.hasViewers, isFalse);
       s.addViewer();
       expect(s.hasViewers, isTrue);
+    });
+  });
+  group('会话 ID 与跨工作区标记', () {
+    test('管理器分配的会话 ID 带启动标识（s1-xxx），不同启动不撞号', () async {
+      final m1 = WorkspaceSessionPoolManager();
+      final s = await m1.poolFor(backend).create();
+      expect(s.id, matches(RegExp(r'^s1-[a-z0-9]{3}$')));
+      // 不传 name 时 name 与 id 一致。
+      expect(s.name, s.id);
+    });
+
+    test('markWaitingInputAll 传 workspaceId 只标记该工作区的同名会话', () async {
+      final manager = WorkspaceSessionPoolManager();
+      final a = await manager
+          .poolFor(backend, workspaceId: 'ws-a')
+          .create(name: 'build');
+      final b = await manager
+          .poolFor(backend, workspaceId: 'ws-b')
+          .create(name: 'build');
+      final futureA = a.exec('make');
+      final futureB = b.exec('make');
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        manager.markWaitingInputAll(sessionRef: 'build', workspaceId: 'ws-b'),
+        1,
+      );
+      expect((await futureB).waitingInput, isTrue);
+      expect(a.busy, isTrue);
+      a.markWaitingInput();
+      await futureA;
     });
   });
 }

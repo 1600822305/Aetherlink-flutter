@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_task_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_tool_detail.dart';
 import 'package:aetherlink_flutter/features/agent/application/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
@@ -163,7 +164,10 @@ class ToolRow extends StatelessWidget {
               // 自动检测漏网时的手动兜底：用户看到命令在等交互输入，
               // 点一下让正在等结果的 exec 提前把控制权和已有输出还给模型。
               if (running && event.toolName == 'terminal_execute')
-                _WaitingInputButton(argsDetail: event.argsDetail),
+                _WaitingInputButton(
+                  argsDetail: event.argsDetail,
+                  taskId: taskId,
+                ),
             ],
           ),
         ),
@@ -253,7 +257,10 @@ String _meta(ToolCallEvent e) {
 /// session 时）或所有正在等命令结果的会话标记为等交互，对应 exec 带
 /// 已有输出提前返回，模型随即可写 stdin 回答。
 class _WaitingInputButton extends ConsumerWidget {
-  const _WaitingInputButton({this.argsDetail});
+  const _WaitingInputButton({this.argsDetail, required this.taskId});
+
+  /// 所属任务：标记限定在任务绑定工作区的会话内，不误伤其他工作区同名会话。
+  final String taskId;
 
   /// 工具调用的完整参数 JSON；解析出 session 参数时只标记该会话，
   /// 避免并行任务时把无关的长命令也提前打断。
@@ -288,9 +295,19 @@ class _WaitingInputButton extends ConsumerWidget {
         icon: const Icon(LucideIcons.keyboard, size: 13),
         label: Text('在等交互输入？点此告知 AI', style: theme.textTheme.labelSmall),
         onPressed: () {
+          final workspaceId = ref
+              .read(agentTasksProvider)
+              .where((t) => t.id == taskId)
+              .firstOrNull
+              ?.workspaceId;
           final count = ref
               .read(workspaceSessionPoolManagerProvider)
-              .markWaitingInputAll(sessionRef: _sessionRef());
+              .markWaitingInputAll(
+                sessionRef: _sessionRef(),
+                workspaceId: (workspaceId == null || workspaceId.isEmpty)
+                    ? null
+                    : workspaceId,
+              );
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(count > 0 ? '已告知 AI：命令在等交互输入' : '当前没有正在等结果的命令'),

@@ -39,6 +39,10 @@ const Duration kInteractiveSilenceThreshold = Duration(seconds: 10);
 /// 静默检测的轮询周期。
 const Duration kInteractiveCheckInterval = Duration(seconds: 2);
 
+/// 中断（Ctrl-C）后等 shell 回到提示符的上限：期间会话保持 busy，
+/// 避免下一条命令被仍在收尾的旧进程（如 npm install）当 stdin 吃掉。
+const Duration kInterruptSettleTimeout = Duration(seconds: 2);
+
 /// 会话创建者：AI 工具建的会话 vs 用户在工作台 / 终端页手动新建的会话。
 /// AI 不指定 session 时只复用自己的会话，不会闯进用户的会话。
 enum SessionOwner { ai, user }
@@ -395,6 +399,26 @@ class PooledWorkspaceSession {
       );
       if (match != null && !done.isCompleted) done.complete(match);
     });
+    var released = false;
+    void releaseNow() {
+      if (released) return;
+      released = true;
+      _busy = false;
+      lastUsedAt = DateTime.now();
+      _failPendingExec = null;
+      _cancelPendingExec = null;
+      sub.cancel();
+    }
+
+    // 被中断时先等 shell 回到提示符（探针哨兵回来或超时）再释放 busy。
+    void release() {
+      if (canceled && _alive) {
+        unawaited(_settleAfterInterrupt().whenComplete(releaseNow));
+      } else {
+        releaseNow();
+      }
+    }
+
     try {
       _hasPendingUserLine = false;
       // Ctrl-E 先移到行尾再 Ctrl-U：Ctrl-U 只删光标前内容，用户把光标
@@ -409,13 +433,7 @@ class PooledWorkspaceSession {
         // 主动后台：不等哨兵，保持 busy，后台等哨兵回来才释放。
         releaseInFinally = false;
         unawaited(
-          done.future.then<void>((_) {}, onError: (_) {}).whenComplete(() {
-            _busy = false;
-            lastUsedAt = DateTime.now();
-            _failPendingExec = null;
-            _cancelPendingExec = null;
-            sub.cancel();
-          }),
+          done.future.then<void>((_) {}, onError: (_) {}).whenComplete(release),
         );
         return const WorkspaceSessionExecResult(
           output: '',
@@ -434,13 +452,7 @@ class PooledWorkspaceSession {
       // 前台被占用的会话当空闲复用，新命令被旧进程当 stdin 吃掉。
       releaseInFinally = false;
       unawaited(
-        done.future.then<void>((_) {}, onError: (_) {}).whenComplete(() {
-          _busy = false;
-          lastUsedAt = DateTime.now();
-          _failPendingExec = null;
-          _cancelPendingExec = null;
-          sub.cancel();
-        }),
+        done.future.then<void>((_) {}, onError: (_) {}).whenComplete(release),
       );
       return WorkspaceSessionExecResult(
         output: stripSessionEcho(collected.toString(), command, nonce),
@@ -449,6 +461,8 @@ class PooledWorkspaceSession {
         canceled: canceled,
       );
     } on _SessionExecCanceled {
+      releaseInFinally = false;
+      release();
       return WorkspaceSessionExecResult(
         output: stripSessionEcho(collected.toString(), command, nonce),
         exitCode: null,
@@ -458,13 +472,7 @@ class PooledWorkspaceSession {
       // 命令还在前台等输入：与超时同样保持 busy，后台等哨兵回来才释放。
       releaseInFinally = false;
       unawaited(
-        done.future.then<void>((_) {}, onError: (_) {}).whenComplete(() {
-          _busy = false;
-          lastUsedAt = DateTime.now();
-          _failPendingExec = null;
-          _cancelPendingExec = null;
-          sub.cancel();
-        }),
+        done.future.then<void>((_) {}, onError: (_) {}).whenComplete(release),
       );
       return WorkspaceSessionExecResult(
         output: stripSessionEcho(collected.toString(), command, nonce),
@@ -483,6 +491,31 @@ class PooledWorkspaceSession {
         lastUsedAt = DateTime.now();
         await sub.cancel();
       }
+    }
+  }
+
+  /// 中断后的收尾：写一条空命令探针哨兵，等它带真实退出码回来（说明 shell
+  /// 已回到提示符、旧进程已退出），最多等 [kInterruptSettleTimeout]。
+  /// 探针若被仍在跑的程序读走也无害：超时后照常释放。
+  Future<void> _settleAfterInterrupt() async {
+    if (!_alive || _raw.isClosed) return;
+    final nonce = 'p${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+    // 回显里的哨兵是 `%s__` 原文，只认带数字退出码的真实哨兵。
+    final marker = RegExp('__AETHER_DONE_${nonce}_\\d+__');
+    final seen = Completer<void>();
+    var window = '';
+    final sub = _raw.stream.listen((chunk) {
+      window += chunk;
+      if (window.length > 512) window = window.substring(window.length - 512);
+      if (!seen.isCompleted && marker.hasMatch(window)) seen.complete();
+    });
+    try {
+      _shell.write(utf8.encode(buildSentinelInput(':', nonce)));
+      await seen.future.timeout(kInterruptSettleTimeout, onTimeout: () {});
+    } catch (_) {
+      // 会话已关闭等：直接释放。
+    } finally {
+      await sub.cancel();
     }
   }
 
@@ -692,6 +725,13 @@ class WorkspaceSessionPoolManager extends ChangeNotifier {
   final Map<Object, WorkspaceSessionPool> _pools = {};
   int _nextId = 1;
 
+  /// 本次进程启动的标识，拼进会话 ID（`s1-k3f`）：App 重启后序号从 1
+  /// 重新数，不带它时历史上下文里的旧 `s2` 会静默命中新建的 `s2`
+  /// （cwd / 环境都已不同）。
+  final String _bootTag = (DateTime.now().microsecondsSinceEpoch % 46656)
+      .toRadixString(36)
+      .padLeft(3, '0');
+
   /// [backend] 上工作区 [workspaceId] 的会话池；首次访问时创建，
   /// [workspaceLabel] 赋给其新会话。[workspaceId] 为 null 时（未锚定
   /// 工作区的裸后端）退化为按后端实例一个池。
@@ -703,7 +743,7 @@ class WorkspaceSessionPoolManager extends ChangeNotifier {
     workspaceId ?? backend,
     () => WorkspaceSessionPool(
       backend,
-      nextId: () => 's${_nextId++}',
+      nextId: () => 's${_nextId++}-$_bootTag',
       workspaceLabel: workspaceLabel,
       workspaceId: workspaceId,
       onChanged: notifyListeners,
@@ -736,9 +776,12 @@ class WorkspaceSessionPoolManager extends ChangeNotifier {
   /// 把正在等命令结果的会话标记为「在等交互输入」（工具卡片上用户
   /// 手动兜底的入口），返回命中数。传 [sessionRef]（ID 或名称）时只标记
   /// 对应会话，避免并行任务时把无关的长命令也提前打断；不传时标记全部。
-  int markWaitingInputAll({String? sessionRef}) {
+  ///
+  /// [workspaceId] 非空时只在该工作区的会话里找（同名会话跨工作区不误伤）。
+  int markWaitingInputAll({String? sessionRef, String? workspaceId}) {
     var count = 0;
     for (final session in allSessions()) {
+      if (workspaceId != null && session.workspaceId != workspaceId) continue;
       if (sessionRef != null &&
           session.id != sessionRef &&
           session.name != sessionRef) {

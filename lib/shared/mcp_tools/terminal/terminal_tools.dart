@@ -301,14 +301,22 @@ Future<McpToolResult> _execute(
       optionalString(args, 'session') ?? optionalString(args, 'session_id');
   final PooledWorkspaceSession session;
   if (sessionRef != null) {
-    session =
-        _findSession(
-          manager,
-          sessionRef,
-          workspaceId: await _scopedWorkspaceId(ref, args),
-          scopeStrict: true,
-        ) ??
-        await _createNamedSession(ref, args, sessionRef);
+    final found = _findSession(
+      manager,
+      sessionRef,
+      workspaceId: await _scopedWorkspaceId(ref, args),
+      scopeStrict: true,
+    );
+    // 形如自动 ID（s2 / s2-k3f）却查不到：多半是 App 重启或会话已被回收，
+    // 旧会话的 cwd / 环境都没了。明确报错，不静默以同名新建一个「假」旧会话。
+    if (found == null && _kAutoSessionId.hasMatch(sessionRef)) {
+      return fileEditorError(
+        '会话 $sessionRef 已不存在（App 重启、空闲回收或已关闭），之前的 cd / '
+        '环境变量已丢失。请不传 session 使用默认会话，或传一个新的会话名字，'
+        '并重新进入所需目录。',
+      );
+    }
+    session = found ?? await _createNamedSession(ref, args, sessionRef);
   } else {
     final target = await _resolveTarget(ref, args);
     session = await manager
@@ -395,6 +403,9 @@ Future<McpToolResult> _execute(
           'PTY 合流：stderr 已合并在 stdout 里；需要分流时传 split_stderr=true（仅适合非交互命令）。',
   });
 }
+
+/// 会话池自动分配的会话 ID 形态（旧版 `s2`，现版 `s2-k3f`）。
+final RegExp _kAutoSessionId = RegExp(r'^s\d+(-[a-z0-9]+)?$');
 
 /// 按 ID 或名称查会话（名称重名时取最近使用的一个）。
 ///
