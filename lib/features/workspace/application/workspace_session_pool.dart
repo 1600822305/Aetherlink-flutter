@@ -39,6 +39,10 @@ const Duration kInteractiveSilenceThreshold = Duration(seconds: 10);
 /// 静默检测的轮询周期。
 const Duration kInteractiveCheckInterval = Duration(seconds: 2);
 
+/// 会话创建者：AI 工具建的会话 vs 用户在工作台 / 终端页手动新建的会话。
+/// AI 不指定 session 时只复用自己的会话，不会闯进用户的会话。
+enum SessionOwner { ai, user }
+
 /// Thrown by session operations with a user-facing message.
 class WorkspaceSessionException implements Exception {
   const WorkspaceSessionException(this.message);
@@ -103,6 +107,7 @@ class PooledWorkspaceSession {
     required this.workspaceLabel,
     required this.workspaceId,
     required WorkspaceShellSession shell,
+    this.owner = SessionOwner.ai,
   }) : _shell = shell,
        createdAt = DateTime.now(),
        lastUsedAt = DateTime.now() {
@@ -126,8 +131,28 @@ class PooledWorkspaceSession {
   /// 双作用域设计稿 §3.1：会话按工作区隔离的过滤键。
   final String? workspaceId;
 
+  /// 会话创建者（见 [SessionOwner]）。
+  final SessionOwner owner;
+
   final DateTime createdAt;
   DateTime lastUsedAt;
+
+  /// 当前接入的终端视图数（工作台 tab / 终端页）。>0 时空闲回收跳过它：
+  /// 用户开着视图围观时会话不该被 10 分钟回收掉。
+  int _viewers = 0;
+  bool get hasViewers => _viewers > 0;
+
+  /// 终端视图接入 / 断开时调用（见 SessionTerminalAttachment）。
+  void addViewer() {
+    _viewers++;
+    lastUsedAt = DateTime.now();
+  }
+
+  void removeViewer() {
+    if (_viewers > 0) _viewers--;
+    // 视图关闭重新计时，不因围观期间未输入而立刻被回收。
+    lastUsedAt = DateTime.now();
+  }
 
   final WorkspaceShellSession _shell;
   StreamSubscription<String>? _outputSub;
@@ -552,6 +577,7 @@ class WorkspaceSessionPool {
     String? workingDirectory,
     Map<String, String> environment = const {},
     String? greeting,
+    SessionOwner owner = SessionOwner.ai,
   }) async {
     _prune();
     if (_sessions.length >= kMaxPooledSessions) {
@@ -578,6 +604,7 @@ class WorkspaceSessionPool {
       workspaceLabel: workspaceLabel,
       workspaceId: workspaceId,
       shell: shell,
+      owner: owner,
     );
     _sessions[id] = session;
     _ensureReaper();
@@ -585,8 +612,9 @@ class WorkspaceSessionPool {
     return session;
   }
 
-  /// 取默认长驻会话（第一个空闲的），没有就新建——「默认保留 1 个长驻 shell，
-  /// 毫秒级复用」。
+  /// 取默认长驻会话（第一个空闲的 AI 会话），没有就新建——「默认保留 1 个
+  /// 长驻 shell，毫秒级复用」。跳过用户手动新建的会话（cwd / 环境是用户的
+  /// 调试现场）和用户正在键入半行的会话（否则 exec 必然被拒）。
   Future<PooledWorkspaceSession> acquireDefault({
     String? workingDirectory,
     Map<String, String> environment = const {},
@@ -594,7 +622,10 @@ class WorkspaceSessionPool {
   }) async {
     _prune();
     for (final session in _sessions.values) {
-      if (session.alive && !session.busy) return session;
+      if (session.owner != SessionOwner.ai) continue;
+      if (session.alive && !session.busy && !session.isUserTyping) {
+        return session;
+      }
     }
     return create(
       workingDirectory: workingDirectory,
@@ -635,7 +666,9 @@ class WorkspaceSessionPool {
       final expired = _sessions.values
           .where(
             (s) =>
-                !s.busy && now.difference(s.lastUsedAt) > kSessionIdleTimeout,
+                !s.busy &&
+                !s.hasViewers &&
+                now.difference(s.lastUsedAt) > kSessionIdleTimeout,
           )
           .map((s) => s.id)
           .toList();

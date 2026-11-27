@@ -1398,11 +1398,16 @@ class _McpAgentToolExecutor extends AgentToolExecutor {
         detail: '工具参数不是合法 JSON：$e',
       );
     }
-    if (_boundWorkspaceId != null &&
-        (route is TerminalToolRoute || route is FileEditorToolRoute) &&
-        (args['workspace'] == null ||
-            args['workspace'].toString().trim().isEmpty)) {
-      args = {...args, 'workspace': _boundWorkspaceId};
+    // 任务绑定工作区硬隔离：终端/文件工具一律锚定**当前**绑定工作区，
+    // 覆盖模型显式传入的 workspace。话题切换工作区（A→B）后，历史上下文里
+    // 残留的 `workspace: A` / A 的会话 ID 会让模型继续在 A 的终端里执行，
+    // 而工作台终端 tab 只显示 B 的会话——两边错位。强制覆盖后 A 的会话 ID
+    // 在 B 池内查不到，会按名字在 B 里新建，行为与工作台一致。
+    final bound = _boundWorkspaceId;
+    if (bound != null &&
+        bound.isNotEmpty &&
+        (route is TerminalToolRoute || route is FileEditorToolRoute)) {
+      args = {...args, 'workspace': bound};
     }
 
     // 协作取消 → runTool 的 cancelSignal（terminal_execute 可被中途打断）。
@@ -1638,7 +1643,11 @@ class _PolicyApprovalGate implements ApprovalGate {
     var args = _decodeArgs(call.argsJson);
     // 与执行器一致：缺省 workspace 参数按任务绑定工作区评估（执行时
     // 也会注入同一缺省，审批与实际执行目标不错位）。
+    // 与执行器一致：绑定工作区时强制覆盖 workspace（见 execute 注释）。
     if ((route is TerminalToolRoute || route is FileEditorToolRoute) &&
+        task.workspaceId.isNotEmpty) {
+      args = {...args, 'workspace': task.workspaceId};
+    } else if ((route is TerminalToolRoute || route is FileEditorToolRoute) &&
         (args['workspace'] == null ||
             args['workspace'].toString().trim().isEmpty)) {
       args = {...args, 'workspace': task.workspaceId};

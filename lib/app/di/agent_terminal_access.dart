@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_p
 export 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart'
     show
         PooledWorkspaceSession,
+        SessionOwner,
         WorkspaceSessionException,
         WorkspaceSessionPoolManager;
 
@@ -66,5 +67,7 @@ Future<PooledWorkspaceSession> createAgentTerminalSession(
         greeting: workspace.backendType == WorkspaceBackendType.prootLocal
             ? buildProotGreeting(name: workspace.name, root: workspace.root)
             : null,
+        // 用户手动新建：AI 不指定 session 时不会复用它。
+        owner: SessionOwner.user,
       );
 }

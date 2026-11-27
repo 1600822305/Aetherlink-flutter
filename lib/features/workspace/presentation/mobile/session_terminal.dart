@@ -144,6 +144,7 @@ class SessionTerminalAttachment {
     String Function(String)? transform,
   }) {
     final history = session.snapshot();
+    session.addViewer();
     _sub = session.chunks.listen(_onChunk);
     terminal.onOutput = (data) {
       if (session.alive) {
@@ -182,7 +183,13 @@ class SessionTerminalAttachment {
     }
   }
 
+  bool _detached = false;
+
   Future<void> detach() async {
+    if (!_detached) {
+      _detached = true;
+      session.removeViewer();
+    }
     _pending = null;
     terminal.onOutput = null;
     terminal.onResize = null;

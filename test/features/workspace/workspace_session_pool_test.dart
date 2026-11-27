@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
@@ -352,5 +353,81 @@ void main() {
     b.markWaitingInput();
     a.markWaitingInput();
     await futureA;
+  });
+  group('会话归属：AI 与用户不抢会话', () {
+    test('acquireDefault 跳过用户手动新建的空闲会话', () async {
+      final user = await pool.create(name: 'mine', owner: SessionOwner.user);
+      expect(user.owner, SessionOwner.user);
+      final ai = await pool.acquireDefault();
+      expect(ai.id, isNot(user.id));
+      expect(ai.owner, SessionOwner.ai);
+      // 再取一次复用同一个 AI 会话，不会落到用户会话上。
+      final again = await pool.acquireDefault();
+      expect(again.id, ai.id);
+    });
+
+    test('acquireDefault 跳过用户正在键入半行的 AI 会话', () async {
+      final typing = await pool.create();
+      typing.writeUserInput('git sta'); // 半行未回车
+      expect(typing.isUserTyping, isTrue);
+      final picked = await pool.acquireDefault();
+      expect(picked.id, isNot(typing.id));
+    });
+
+    test('用户回车后半行清除，会话重新可被复用', () async {
+      final s = await pool.create();
+      s.writeUserInput('ls');
+      expect(s.isUserTyping, isTrue);
+      s.writeUserInput('\r');
+      expect(s.isUserTyping, isFalse);
+      final picked = await pool.acquireDefault();
+      expect(picked.id, s.id);
+    });
+
+    test('create 默认 owner 为 ai（兼容旧调用）', () async {
+      final s = await pool.create();
+      expect(s.owner, SessionOwner.ai);
+    });
+  });
+
+  group('视图接入期间不被空闲回收', () {
+    test('有视图时跳过回收，视图断开后照常回收', () {
+      fakeAsync((async) {
+        late PooledWorkspaceSession s;
+        pool.create().then((v) => s = v);
+        async.flushMicrotasks();
+
+        s.addViewer();
+        expect(s.hasViewers, isTrue);
+        s.lastUsedAt = DateTime.now().subtract(
+          kSessionIdleTimeout + const Duration(minutes: 1),
+        );
+        async.elapse(const Duration(minutes: 1, seconds: 1));
+        async.flushMicrotasks();
+        expect(s.alive, isTrue, reason: '有视图接入不应被回收');
+
+        s.removeViewer();
+        expect(s.hasViewers, isFalse);
+        // removeViewer 重新计时：刚断开不立刻回收。
+        async.elapse(const Duration(minutes: 1));
+        async.flushMicrotasks();
+        expect(s.alive, isTrue, reason: '断开视图后应重新计时');
+
+        s.lastUsedAt = DateTime.now().subtract(
+          kSessionIdleTimeout + const Duration(minutes: 1),
+        );
+        async.elapse(const Duration(minutes: 1));
+        async.flushMicrotasks();
+        expect(s.alive, isFalse, reason: '无视图且空闲超时应被回收');
+      });
+    });
+
+    test('removeViewer 不会减到负数', () async {
+      final s = await pool.create();
+      s.removeViewer();
+      expect(s.hasViewers, isFalse);
+      s.addViewer();
+      expect(s.hasViewers, isTrue);
+    });
   });
 }
