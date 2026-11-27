@@ -1,22 +1,20 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/theme_mode_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
 import 'package:aetherlink_flutter/features/theming/application/theme_controller.dart';
 import 'package:aetherlink_flutter/features/theming/application/theme_presets.dart';
 import 'package:aetherlink_flutter/features/theming/domain/theme_preset.dart';
+import 'package:aetherlink_flutter/features/theming/domain/theme_spec.dart';
 
-/// The "主题风格" sub-page (外观设置 → this page), a port of the original
-/// `src/pages/Settings/ThemeStyleSettings.tsx` + `ThemeStyleSelector.tsx`.
-///
-/// Renders the ten built-in presets ([themePresets]) as a responsive grid of
-/// preview cards (gradient swatch + simulated UI bars, icon, name, description,
-/// color dots and a "当前" chip on the active one). Tapping a card hot-swaps the
-/// whole app theme via [ThemeController.useStyle] and persists the choice.
+/// 「主题风格」页（外观设置 → 主题风格）：顶部「跟随系统 / 浅色 / 深色」
+/// 分段切换，下面三列迷你界面卡片——每张卡用该主题真实的色板画一个小
+/// 手机界面（顶栏 + 用户 / AI 气泡 + 输入条），并跟随当前明暗模式取
+/// light / dark 色板，选之前就能看到实际效果。点卡片即时换主题并持久化。
 class ThemeStyleSettingsPage extends ConsumerWidget {
   const ThemeStyleSettingsPage({super.key});
 
@@ -58,290 +56,254 @@ class ThemeStyleSettingsPage extends ConsumerWidget {
       ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
+          12,
+          12,
+          12,
           16 + MediaQuery.paddingOf(context).bottom,
         ),
-        children: [
-          // The original wraps the selector in a Paper (radius 3, divider border,
-          // subtle shadow) with `p: { xs: 2 }` inner padding.
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: theme.dividerColor),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0D000000), // rgba(0,0,0,0.05)
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _title,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const ThemeStyleSelector(),
-                ],
-              ),
+        children: const [ThemeStyleSelector()],
+      ),
+    );
+  }
+}
+
+/// 页面主体（明暗切换 + 主题网格），不带外层卡片，可嵌入其他页面。
+class ThemeStyleSelector extends ConsumerWidget {
+  const ThemeStyleSelector({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final mode = ref.watch(themeModeControllerProvider);
+    final currentStyleId = ref.watch(themeControllerProvider).id;
+    // 迷你界面按实际生效的明暗模式取色板。
+    final dark = switch (mode) {
+      AppThemeMode.dark => true,
+      AppThemeMode.light => false,
+      AppThemeMode.system =>
+        MediaQuery.platformBrightnessOf(context) == Brightness.dark,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ModeSwitch(
+          value: mode,
+          onChanged: ref.read(themeModeControllerProvider.notifier).use,
+        ),
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            '主题风格',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+        ),
+        _ThemeGrid(currentStyleId: currentStyleId, dark: dark),
+      ],
+    );
+  }
+}
+
+/// 跟随系统 / 浅色 / 深色 分段切换。
+class _ModeSwitch extends StatelessWidget {
+  const _ModeSwitch({required this.value, required this.onChanged});
+
+  final AppThemeMode value;
+  final ValueChanged<AppThemeMode> onChanged;
+
+  static const _items = [
+    (AppThemeMode.system, '跟随系统', LucideIcons.monitorSmartphone),
+    (AppThemeMode.light, '浅色', LucideIcons.sun),
+    (AppThemeMode.dark, '深色', LucideIcons.moon),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          for (final (mode, label, icon) in _items)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onChanged(mode),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: mode == value ? cs.surface : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                    boxShadow: mode == value
+                        ? [
+                            BoxShadow(
+                              color: cs.shadow.withValues(alpha: 0.08),
+                              blurRadius: 2,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        icon,
+                        size: 14,
+                        color: mode == value
+                            ? cs.onSurface
+                            : cs.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        label,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: mode == value
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: mode == value
+                              ? cs.onSurface
+                              : cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-/// The 主题风格 selector body — description, preset grid and the tip box —
-/// without any surrounding card chrome, so it can live both on this standalone
-/// page and embedded in the 外观设置 主题字体 tab's card.
-class ThemeStyleSelector extends ConsumerWidget {
-  const ThemeStyleSelector({super.key});
-
-  static const String _description = '选择您喜欢的界面设计风格，每种风格都有独特的色彩搭配和视觉效果';
-  static const String _tip =
-      '💡 提示：主题风格会影响整个应用的色彩搭配、按钮样式和视觉效果。您可以随时在设置中更改主题风格，更改会立即生效。';
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final currentStyleId = ref.watch(themeControllerProvider).id;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          _description,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontSize: 12.8,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 16),
-        _ThemeGrid(currentStyleId: currentStyleId),
-        const SizedBox(height: 24),
-        // 主题特性说明 tip box.
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Text(
-            _tip,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontSize: 12.8,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Lucide icon per style id (the original `themeIcons` map).
-const Map<String, IconData> _themeIcons = {
-  'default': LucideIcons.palette,
-  'claude': LucideIcons.sparkles,
-  'nature': LucideIcons.leaf,
-  'tech': LucideIcons.zap,
-  'soft': LucideIcons.heart,
-  'ocean': LucideIcons.waves,
-  'sunset': LucideIcons.sunrise,
-  'cinnamonSlate': LucideIcons.coffee,
-  'horizonGreen': LucideIcons.mountain,
-  'cherryCoded': LucideIcons.cherry,
-};
-
-/// The responsive card grid. Ports the original CSS
-/// `grid-template-columns: repeat(auto-fill, minmax(160px, 1fr))` — the column
-/// count is the most 160px-wide tiles (plus 16px gaps) that fit, and cards in a
-/// row stretch to equal width.
+/// 三列网格（宽屏自动增列，单格最小约 100px）。
 class _ThemeGrid extends StatelessWidget {
-  const _ThemeGrid({required this.currentStyleId});
+  const _ThemeGrid({required this.currentStyleId, required this.dark});
 
   final String currentStyleId;
+  final bool dark;
 
-  static const double _minTile = 160;
-  static const double _gap = 16;
+  static const double _gap = 9;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = math.max(
-          1,
-          ((constraints.maxWidth + _gap) / (_minTile + _gap)).floor(),
-        );
-
-        final rows = <Widget>[];
-        for (var start = 0; start < themePresets.length; start += columns) {
-          final end = math.min(start + columns, themePresets.length);
-          final rowItems = themePresets.sublist(start, end);
-          rows.add(
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var column = 0; column < columns; column++) ...[
-                    if (column > 0) const SizedBox(width: _gap),
-                    Expanded(
-                      child: column < rowItems.length
-                          ? _ThemeCard(
-                              preset: rowItems[column],
-                              isSelected: rowItems[column].id == currentStyleId,
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          );
-          if (end < themePresets.length) {
-            rows.add(const SizedBox(height: _gap));
-          }
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: rows,
+        final columns = ((constraints.maxWidth + _gap) / (100 + _gap))
+            .floor()
+            .clamp(3, 6);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          itemCount: themePresets.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            mainAxisSpacing: _gap,
+            crossAxisSpacing: _gap,
+            childAspectRatio: 0.78,
+          ),
+          itemBuilder: (context, i) => _ThemeTile(
+            preset: themePresets[i],
+            selected: themePresets[i].id == currentStyleId,
+            dark: dark,
+          ),
         );
       },
     );
   }
 }
 
-/// A single theme preview card (the original `ThemePreviewCard`).
-class _ThemeCard extends ConsumerWidget {
-  const _ThemeCard({required this.preset, required this.isSelected});
+class _ThemeTile extends ConsumerWidget {
+  const _ThemeTile({
+    required this.preset,
+    required this.selected,
+    required this.dark,
+  });
 
   final ThemePreset preset;
-  final bool isSelected;
+  final bool selected;
+  final bool dark;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
-
-    // The original previews each theme in its light variant regardless of the
-    // current mode (`getThemePreviewColors`).
-    final light = preset.spec.colors.light;
-    final previewPrimary = Color(light.primary);
-    final previewSecondary = Color(light.secondary);
-    final previewPaper = Color(light.surface);
-    final accent = light.accent;
-
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+    final ring = theme.colorScheme.primary;
+    final colors = dark ? preset.spec.colors.dark : preset.spec.colors.light;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: preset.spec.name,
+      child: GestureDetector(
         onTap: () =>
             ref.read(themeControllerProvider.notifier).useStyle(preset.id),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isSelected ? primary : theme.dividerColor,
-              width: 2,
+              color: selected ? ring : theme.dividerColor,
+              width: selected ? 2 : 1,
             ),
           ),
+          clipBehavior: Clip.antiAlias,
           child: Stack(
             children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _PreviewSwatch(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _MiniUi(
+                      colors: colors,
                       gradientStart: Color(preset.gradientStart),
-                      gradientEnd: Color(preset.gradientEnd),
-                      primary: previewPrimary,
-                      secondary: previewSecondary,
-                      paper: previewPaper,
                     ),
-                    const SizedBox(height: 10), // mb 1.2
-                    Row(
-                      children: [
-                        Icon(
-                          _themeIcons[preset.id] ?? LucideIcons.palette,
-                          size: 20,
-                          color: previewPrimary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            preset.spec.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontSize: 15.2, // 0.95rem
-                              fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6), // mb 0.8
-                    // The original clamps the description to two lines and always
-                    // reserves their height (`minHeight: 2.7em`).
-                    SizedBox(
-                      height: 12.8 * 1.35 * 2,
-                      child: Text(
-                        preset.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: 12.8, // 0.8rem
-                          height: 1.35,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 6, 4, 7),
+                    child: Text(
+                      preset.spec.name,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
-                    const SizedBox(height: 8), // mb 1
-                    Row(
-                      children: [
-                        _ColorDot(color: previewPrimary),
-                        const SizedBox(width: 4),
-                        _ColorDot(color: previewSecondary),
-                        if (accent != null) ...[
-                          const SizedBox(width: 4),
-                          _ColorDot(color: Color(accent)),
-                        ],
-                        if (isSelected) ...[
-                          const Spacer(),
-                          _CurrentChip(primary: primary),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              if (isSelected)
+              if (selected)
                 Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Icon(
-                    LucideIcons.circleCheck,
-                    size: 20,
-                    color: primary,
+                  top: 5,
+                  right: 5,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: ring,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: theme.colorScheme.surface,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Icon(
+                      LucideIcons.check,
+                      size: 11,
+                      color: theme.colorScheme.onPrimary,
+                    ),
                   ),
                 ),
             ],
@@ -352,108 +314,96 @@ class _ThemeCard extends ConsumerWidget {
   }
 }
 
-/// The gradient swatch with the two simulated UI bars at the top of each card.
-class _PreviewSwatch extends StatelessWidget {
-  const _PreviewSwatch({
-    required this.gradientStart,
-    required this.gradientEnd,
-    required this.primary,
-    required this.secondary,
-    required this.paper,
-  });
+/// 用主题真实色板画的迷你手机界面：顶栏 + AI 气泡 + 用户气泡 + 输入条。
+class _MiniUi extends StatelessWidget {
+  const _MiniUi({required this.colors, required this.gradientStart});
 
+  final ColorRoleSet colors;
   final Color gradientStart;
-  final Color gradientEnd;
-  final Color primary;
-  final Color secondary;
-  final Color paper;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 70,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [gradientStart, gradientEnd],
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A000000), // rgba(0,0,0,0.1)
-            blurRadius: 8,
-            offset: Offset(0, 2),
+    final primary = Color(colors.primary);
+    final bg = Color(colors.background);
+    final surface = Color(colors.surface);
+    final aiBubble = Color(colors.bubbleAi);
+    final userBubble = Color(colors.bubbleUser);
+    final muted = Color(colors.textSecondary);
+
+    Widget pill(double widthFactor, Color color, {bool right = false}) =>
+        Align(
+          alignment: right ? Alignment.centerRight : Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: widthFactor,
+            child: Container(
+              height: 9,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(5),
+              ),
+            ),
           ),
-        ],
-      ),
-      child: Stack(
+        );
+
+    return ColoredBox(
+      color: bg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top "title bar": a dot + a faded line.
-          Positioned(
-            top: 8,
-            left: 8,
-            right: 8,
-            height: 20,
+          Container(
+            height: 14,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            alignment: Alignment.centerLeft,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [gradientStart, primary]),
+            ),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              width: 18,
+              height: 3,
               decoration: BoxDecoration(
-                color: paper,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: primary,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Container(
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: primary.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                ],
+                color: Colors.white.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
-          // Bottom "toolbar": two pills.
-          Positioned(
-            bottom: 8,
-            left: 8,
-            right: 8,
-            height: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: paper.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Row(
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 5),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  pill(0.72, aiBubble),
+                  pill(0.5, userBubble, right: true),
+                  pill(0.6, aiBubble),
                   Container(
-                    width: 12,
-                    height: 8,
+                    height: 11,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
-                      color: secondary,
-                      borderRadius: BorderRadius.circular(4),
+                      color: surface,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: muted.withValues(alpha: 0.25)),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Container(
-                    width: 20,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: primary.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: muted.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -461,65 +411,6 @@ class _PreviewSwatch extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A 12px color dot with a paper-colored ring (the original color preview dot).
-class _ColorDot extends StatelessWidget {
-  const _ColorDot({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 12,
-      height: 12,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        border: Border.all(
-          color: Theme.of(context).colorScheme.surface,
-          width: 1.5,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x26000000), // rgba(0,0,0,0.15)
-            blurRadius: 2,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The "当前" chip shown on the active card.
-class _CurrentChip extends StatelessWidget {
-  const _CurrentChip({required this.primary});
-
-  final Color primary;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 18,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Text(
-        '当前',
-        style: TextStyle(
-          fontSize: 10.4, // 0.65rem
-          fontWeight: FontWeight.w600,
-          color: primary,
-          height: 1,
-        ),
       ),
     );
   }
