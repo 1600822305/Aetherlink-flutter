@@ -6,6 +6,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../engine/windows_environment.dart';
 import '../interaction/interaction_js.dart';
 import '../models/browser_exception.dart';
 import '../models/interact_result.dart';
@@ -693,62 +694,117 @@ $script
     }
   }
 
+  WebViewEnvironment? _environment;
+
+  /// Windows 持久 profile（其它平台为 null）；可见挂载必须用同一个。
+  WebViewEnvironment? get environment => _environment;
+
+  /// headless 与可见挂载共用的同一份设置。
+  InAppWebViewSettings get viewSettings => InAppWebViewSettings(
+    javaScriptCanOpenWindowsAutomatically: true,
+    supportMultipleWindows: true,
+    allowFileAccess: false,
+    allowFileAccessFromFileURLs: false,
+    allowUniversalAccessFromFileURLs: false,
+    mediaPlaybackRequiresUserGesture: true,
+    useShouldOverrideUrlLoading: true,
+  );
+
+  // ---- 全套回调：headless 与 CoDriveWebView 必须挂同一套，转可见后
+  // 对话框/新窗口/崩溃处理不能丢，否则一个 alert 就把页面 JS 卡死。----
+
+  void handleLoadStart(InAppWebViewController _, WebUri? url) =>
+      notifyLoadStart(url?.toString());
+
+  void handleLoadStop(InAppWebViewController _, WebUri? url) =>
+      notifyLoadStop(url?.toString());
+
+  Future<NavigationActionPolicy> handleNavigation(
+    InAppWebViewController _,
+    NavigationAction action,
+  ) => policeNavigation(action);
+
+  /// 新窗口：暂在当前窗口打开（同样过 SSRF 复检）。真多标签/opener
+  /// 关系在 v2 服务层（多 tab）落地。
+  Future<bool> handleCreateWindow(
+    InAppWebViewController controller,
+    CreateWindowAction action,
+  ) async {
+    final target = action.request.url;
+    if (target != null &&
+        target.toString() != 'about:blank' &&
+        await policeNavigation(action) == NavigationActionPolicy.ALLOW) {
+      await controller.loadUrl(urlRequest: URLRequest(url: target));
+    }
+    return false;
+  }
+
+  Future<JsAlertResponse?> handleJsAlert(
+    InAppWebViewController _,
+    JsAlertRequest request,
+  ) async => JsAlertResponse(
+    handledByClient: true,
+    action: JsAlertResponseAction.CONFIRM,
+  );
+
+  Future<JsConfirmResponse?> handleJsConfirm(
+    InAppWebViewController _,
+    JsConfirmRequest request,
+  ) async => JsConfirmResponse(
+    handledByClient: true,
+    action: JsConfirmResponseAction.CANCEL,
+  );
+
+  Future<JsPromptResponse?> handleJsPrompt(
+    InAppWebViewController _,
+    JsPromptRequest request,
+  ) async => JsPromptResponse(
+    handledByClient: true,
+    action: JsPromptResponseAction.CANCEL,
+  );
+
+  void handleRenderProcessGone(
+    InAppWebViewController _,
+    RenderProcessGoneDetail detail,
+  ) {
+    _crashed = true;
+  }
+
+  Future<WebViewRenderProcessAction?> handleRenderProcessUnresponsive(
+    InAppWebViewController _,
+    WebUri? url,
+  ) async {
+    _crashed = true;
+    return WebViewRenderProcessAction.TERMINATE;
+  }
+
+  void handleWebContentProcessTerminated(InAppWebViewController _) {
+    _crashed = true;
+  }
+
   Future<InAppWebViewController> _ensureWebView() async {
     final existing = _controller;
     if (existing != null) return existing;
+    _environment ??= await BrowserWindowsEnvironment.instance.get();
     final created = Completer<InAppWebViewController>();
     final headless = HeadlessInAppWebView(
-      initialSize: const Size(1024, 1536),
-      initialSettings: InAppWebViewSettings(
-        javaScriptCanOpenWindowsAutomatically: false,
-        // headless 不支持真多窗口：开启后 target=_blank 等走
-        // onCreateWindow 降级为当前窗口导航，而不是点了没反应。
-        supportMultipleWindows: true,
-        allowFileAccess: false,
-        allowFileAccessFromFileURLs: false,
-        allowUniversalAccessFromFileURLs: false,
-      ),
+      webViewEnvironment: _environment,
+      // 桌面常见视口，避免被识别成奇怪的超高窗口。
+      initialSize: const Size(1280, 900),
+      initialSettings: viewSettings,
       onWebViewCreated: (controller) {
         if (!created.isCompleted) created.complete(controller);
       },
-      onLoadStart: (controller, url) => notifyLoadStart(url?.toString()),
-      onLoadStop: (controller, url) => notifyLoadStop(url?.toString()),
-      // 重定向/页内导航逐跳复检（设计稿 §15.2 第 3 条）。
-      shouldOverrideUrlLoading: (controller, action) =>
-          policeNavigation(action),
-      // 新窗口降级：target=_blank / window.open 在当前窗口导航
-      //（同样过 SSRF 复检），不创建新 WebView。
-      onCreateWindow: (controller, action) async {
-        final target = action.request.url;
-        if (target != null &&
-            await policeNavigation(action) == NavigationActionPolicy.ALLOW) {
-          await controller.loadUrl(urlRequest: URLRequest(url: target));
-        }
-        return false;
-      },
-      // JS 对话框自动处理（对齐 Playwright 缺省 dismiss 语义）：
-      // headless 无人可点，不处理会阻塞页面 JS，后续求值全部超时。
-      onJsAlert: (controller, request) async => JsAlertResponse(
-        handledByClient: true,
-        action: JsAlertResponseAction.CONFIRM,
-      ),
-      onJsConfirm: (controller, request) async => JsConfirmResponse(
-        handledByClient: true,
-        action: JsConfirmResponseAction.CANCEL,
-      ),
-      onJsPrompt: (controller, request) async => JsPromptResponse(
-        handledByClient: true,
-        action: JsPromptResponseAction.CANCEL,
-      ),
-      // 渲染进程崩溃/无响应（Android 低内存常见）：标记后会话
-      // 管理器在下次调用前主动重建并透明恢复，不等调用诡异失败。
-      onRenderProcessGone: (controller, detail) {
-        _crashed = true;
-      },
-      onRenderProcessUnresponsive: (controller, url) async {
-        _crashed = true;
-        return WebViewRenderProcessAction.TERMINATE;
-      },
+      onLoadStart: handleLoadStart,
+      onLoadStop: handleLoadStop,
+      shouldOverrideUrlLoading: handleNavigation,
+      onCreateWindow: handleCreateWindow,
+      onJsAlert: handleJsAlert,
+      onJsConfirm: handleJsConfirm,
+      onJsPrompt: handleJsPrompt,
+      onRenderProcessGone: handleRenderProcessGone,
+      onRenderProcessUnresponsive: handleRenderProcessUnresponsive,
+      onWebContentProcessDidTerminate: handleWebContentProcessTerminated,
     );
     _headless = headless;
     await headless.run();
@@ -759,7 +815,9 @@ $script
   /// 按未完成处理而非向外抛——否则一次探活失败会把整次等待打死。
   Future<bool> _probeReadyState() async {
     try {
-      return (await _evaluate("document.readyState")) == 'complete';
+      // DOMContentLoaded 即可交互；不等所有图片/字体/广告（旧实现
+      // 等 complete，重站点经常整页超时）。
+      return (await _evaluate("document.readyState")) != 'loading';
     } on BrowserException {
       return false;
     }

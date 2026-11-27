@@ -28,14 +28,26 @@ class _CoDriveWebViewState extends State<CoDriveWebView> {
       // 由同一个 keepAlive 复挂原生 WebView。
       headlessWebView: session.headlessWebView,
       keepAlive: session.keepAlive,
+      webViewEnvironment: session.environment,
+      initialSettings: session.viewSettings,
       onWebViewCreated: session.attachVisible,
-      // 与 headless 同一套导航门控 / URL 安全复检，agent 工具的
-      // 加载判定在可见挂载下继续成立。
-      onLoadStart: (controller, url) =>
-          session.notifyLoadStart(url?.toString()),
-      onLoadStop: (controller, url) => session.notifyLoadStop(url?.toString()),
-      shouldOverrideUrlLoading: (controller, action) =>
-          session.policeNavigation(action),
+      // 与 headless 完全同一套回调：导航门控、SSRF 复检、对话框、
+      // 新窗口、崩溃处理，转可见后都不能丢。
+      onLoadStart: (controller, url) {
+        session.handleLoadStart(controller, url);
+      },
+      onLoadStop: (controller, url) {
+        session.handleLoadStop(controller, url);
+      },
+      shouldOverrideUrlLoading: session.handleNavigation,
+      onCreateWindow: session.handleCreateWindow,
+      onJsAlert: session.handleJsAlert,
+      onJsConfirm: session.handleJsConfirm,
+      onJsPrompt: session.handleJsPrompt,
+      onRenderProcessGone: session.handleRenderProcessGone,
+      onRenderProcessUnresponsive: session.handleRenderProcessUnresponsive,
+      onWebContentProcessDidTerminate:
+          session.handleWebContentProcessTerminated,
       onUpdateVisitedHistory: (controller, url, isReload) {
         final s = url?.toString();
         if (s != null) widget.onUrlChanged?.call(s);

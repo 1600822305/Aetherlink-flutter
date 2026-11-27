@@ -5,6 +5,7 @@
 library;
 
 export 'src/codrive/codrive_webview.dart';
+export 'src/engine/windows_environment.dart';
 export 'src/models/browser_exception.dart';
 export 'src/models/page_load_result.dart';
 export 'src/security/private_networks.dart';
