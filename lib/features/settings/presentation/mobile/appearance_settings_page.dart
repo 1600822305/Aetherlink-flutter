@@ -8,11 +8,8 @@ import 'package:aetherlink_flutter/features/settings/application/dev_tools_butto
 import 'package:aetherlink_flutter/features/settings/application/display_refresh_rate_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/perf_monitor_controller.dart';
-import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
-import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/font_picker.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
-import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The "外观设置" second-level page (hub "外观" → this page), originally a 1:1
 /// reproduction of the original `src/pages/Settings/AppearanceSettings.tsx`.
@@ -89,7 +86,6 @@ class _AppearanceSettingsPageState extends ConsumerState<AppearanceSettingsPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final mode = ref.watch(themeModeControllerProvider);
     final fontSize = ref.watch(fontSizeControllerProvider);
 
     return Scaffold(
@@ -153,10 +149,6 @@ class _AppearanceSettingsPageState extends ConsumerState<AppearanceSettingsPage>
                   _TabList(
                     children: [
                       _ThemeAndFontCard(
-                        mode: mode,
-                        onModeChanged: (next) => ref
-                            .read(themeModeControllerProvider.notifier)
-                            .use(next),
                         fontSize: fontSize,
                         onFontSizeChanged: (next) => ref
                             .read(fontSizeControllerProvider.notifier)
@@ -373,7 +365,7 @@ class _ThemeStyleCard extends StatelessWidget {
     icon: LucideIcons.palette,
     accent: Color(0xFF9333EA), // purple
     title: '主题风格',
-    description: '选择应用的整体设计风格和色彩主题',
+    description: '浅色 / 深色模式与整体色彩主题',
     route: AppRouter.themeStyleSettingsPath,
   );
 
@@ -387,32 +379,19 @@ class _ThemeStyleCard extends StatelessWidget {
 /// and the font-family field. Only the theme select is wired this milestone.
 class _ThemeAndFontCard extends StatelessWidget {
   const _ThemeAndFontCard({
-    required this.mode,
-    required this.onModeChanged,
     required this.fontSize,
     required this.onFontSizeChanged,
   });
 
-  final AppThemeMode mode;
-  final ValueChanged<AppThemeMode> onModeChanged;
   final int fontSize;
   final ValueChanged<int> onFontSizeChanged;
 
   static const String _title = '主题和字体';
-  static const String _description = '自定义应用的外观主题和全局字体大小设置';
-  static const String _themeLabel = '主题';
-  static const String _themeHelper = '选择应用的外观主题，跟随系统将自动适配设备的深色/浅色模式';
+  static const String _description = '自定义应用的语言和全局字体大小设置';
   static const String _languageLabel = '语言';
   static const String _languageHelper = '选择应用的显示语言，更改后界面将立即更新';
   static const String _fontSizeLabel = '全局字体大小';
   static const String _fontSizeHelper = '调整应用中所有文本的基础字体大小，影响聊天消息、界面文字等全局显示效果';
-
-  // The original theme `MenuItem` labels (`settings.{light,dark,system}`).
-  static const List<(AppThemeMode, String)> _themeOptions = [
-    (AppThemeMode.light, '浅色'),
-    (AppThemeMode.dark, '深色'),
-    (AppThemeMode.system, '跟随系统'),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -429,15 +408,6 @@ class _ThemeAndFontCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 主题选择 — the one wired control: drives MaterialApp.themeMode.
-                _ThemeSelect(
-                  label: _themeLabel,
-                  helper: _themeHelper,
-                  value: mode,
-                  options: _themeOptions,
-                  onChanged: onModeChanged,
-                ),
-                const SizedBox(height: 16), // original `mb: 3`
                 // 语言选择 — static display (Flutter has no i18n yet).
                 const _LanguageSelect(
                   label: _languageLabel,
@@ -459,38 +429,6 @@ class _ThemeAndFontCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// The original 主题 `Select`: an outlined `borderRadius: 2` (16px) dropdown with
-/// a floating label and a helper line. Wired to [onChanged].
-class _ThemeSelect extends StatelessWidget {
-  const _ThemeSelect({
-    required this.label,
-    required this.helper,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String helper;
-  final AppThemeMode value;
-  final List<(AppThemeMode, String)> options;
-  final ValueChanged<AppThemeMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSelectField<AppThemeMode>(
-      label: label,
-      hint: helper,
-      value: value,
-      options: [
-        for (final (mode, text) in options)
-          AppSelectOption<AppThemeMode>(value: mode, label: text),
-      ],
-      onChanged: onChanged,
     );
   }
 }

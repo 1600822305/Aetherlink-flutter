@@ -62,10 +62,10 @@ const List<SettingsSearchEntry> kSettingsSearchIndex = <SettingsSearchEntry>[
   SettingsSearchEntry(
     icon: LucideIcons.sun,
     title: '主题和字体',
-    description: '自定义应用的外观主题和全局字体大小设置',
+    description: '自定义应用的语言和全局字体大小设置',
     route: AppRouter.appearancePath,
     group: '外观',
-    keywords: ['theme', '主题', '字体大小', '深色模式', '浅色模式', '跟随系统', 'font'],
+    keywords: ['字体大小', '语言', 'font'],
   ),
   SettingsSearchEntry(
     icon: LucideIcons.type,
@@ -78,10 +78,22 @@ const List<SettingsSearchEntry> kSettingsSearchIndex = <SettingsSearchEntry>[
   SettingsSearchEntry(
     icon: LucideIcons.paintbrush,
     title: '主题风格',
-    description: '选择预设的主题风格配色方案',
+    description: '浅色 / 深色模式与预设配色方案',
     route: AppRouter.themeStyleSettingsPath,
     group: '外观',
-    keywords: ['theme style', '配色', '风格', '色彩'],
+    keywords: [
+      'theme style',
+      '配色',
+      '风格',
+      '色彩',
+      'theme',
+      '主题',
+      '深色模式',
+      '浅色模式',
+      '跟随系统',
+      'dark',
+      'light',
+    ],
   ),
   SettingsSearchEntry(
     icon: LucideIcons.messageSquare,
