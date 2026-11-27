@@ -314,6 +314,7 @@ class AgentEngine {
           kToolAttemptCompletion,
           live: toolStream,
         );
+        controlFlow.completionCardLookup = finishStream.cardFor;
         // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
         // UI 实时看到块；后续执行循环按 id 复用预建事件。
         const engineTools = {

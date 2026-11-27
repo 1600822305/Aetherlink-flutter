@@ -16,19 +16,39 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_
 /// 取代原来的正文 + 「任务完成」状态行两段式，避免看起来重复。
 /// 被拒（缺 result / stop hook 拦下）时退化成一行弱化提示（仍挂在时间线上）。
 /// 正常完成/提交中的卡片是最终交付物，不挂时间线左轨，占满整行宽度。
-class CompletionCard extends StatelessWidget {
+class CompletionCard extends ConsumerWidget {
   const CompletionCard({required this.event, super.key});
 
   final ToolCallEvent event;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final muted = cs.onSurface.withValues(alpha: 0.5);
     final running = event.state == AgentToolCallState.running;
     final ok = event.state == AgentToolCallState.success;
-    final result = completionResultOf(event);
+    // 生成中从工具参数实时通道取（比落库快照新）。
+    final liveArgs = running
+        ? ref.watch(
+            agentToolStreamProvider.select((m) => m[event.id]?.argsText),
+          )
+        : null;
+    final stored = completionResultOf(event);
+    final result = running
+        ? liveOrStored(
+            liveArgs == null
+                ? null
+                : extractPartialStringField(liveArgs, 'result')?.trim(),
+            stored,
+            streaming: true,
+          )
+        : stored;
+    // 参数已流完 = 结果已定稿：立即按完成显示，引擎收尾（落库 / stop hook /
+    // 状态迁移）在后台进行，不再停在「正在提交结果…」。
+    final settled =
+        running && completionArgsFinal(liveArgs ?? event.argsDetail);
+    final generating = running && !settled;
 
     if (!running && !ok) {
       return EventRail(
@@ -49,9 +69,9 @@ class CompletionCard extends StatelessWidget {
     }
 
     final accent = Colors.green.shade600;
-    final title = running
-        ? '正在提交结果…'
-        : '任务完成${event.resultSummary.isNotEmpty ? ' · ${event.resultSummary}' : ''}';
+    final title = generating
+        ? '正在生成结果…'
+        : '任务完成${ok && event.resultSummary.isNotEmpty ? ' · ${event.resultSummary}' : ''}';
     final style = theme.textTheme.bodyMedium?.copyWith(height: 1.5);
 
     return Padding(
@@ -86,31 +106,10 @@ class CompletionCard extends StatelessWidget {
               ],
             ),
             ),
-            if (result.isNotEmpty || running) ...[
+            if (result.isNotEmpty || generating) ...[
               const SizedBox(height: 6),
-              running
-                  // 生成中从工具参数实时通道取 result，只重建这张卡的正文。
-                  ? Consumer(
-                      builder: (context, ref, _) {
-                        final live = ref.watch(
-                          agentToolStreamProvider.select(
-                            (m) => m[event.id]?.argsText,
-                          ),
-                        );
-                        final text = liveOrStored(
-                          live == null
-                              ? null
-                              : extractPartialStringField(live, 'result')
-                                    ?.trim(),
-                          result,
-                          streaming: true,
-                        );
-                        return StreamingMarkdownBody(
-                          content: '$text▍',
-                          style: style,
-                        );
-                      },
-                    )
+              generating
+                  ? StreamingMarkdownBody(content: '$result▍', style: style)
                   : SettingAwareMessageSelectionArea(
                       child: AppMarkdown(content: result, style: style),
                     ),

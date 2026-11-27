@@ -44,6 +44,38 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   /// 「回到最新」按钮可见性（解除跟随时显示），随滚动通知刷新。
   bool _showJumpToLatest = false;
 
+  /// 行组件缓存：块键 → (块内事件实例, 已建好的行组件)。事件实例未变
+  /// （DAO 对未变行复用同一实例）就返回同一个 Widget 实例，Flutter 对
+  /// identical 的子组件直接跳过重建——时间线有任何 delta 时只有真正变了
+  /// 的那几行重建，而不是视口内所有行。
+  final Map<String, (List<AgentEvent>, Widget)> _rowCache = {};
+
+  Widget _rowFor(String key, TimelineBlock block) {
+    final events = switch (block) {
+      final SingleBlock b => [b.event],
+      final SegmentBlock b => b.events,
+    };
+    final cached = _rowCache[key];
+    if (cached != null && _sameEvents(cached.$1, events)) return cached.$2;
+    final row = switch (block) {
+      final SegmentBlock b => WorkSegmentTile(block: b, taskId: widget.taskId),
+      final SingleBlock b => AgentEventTile(
+        event: b.event,
+        taskId: widget.taskId,
+      ),
+    };
+    _rowCache[key] = (events, row);
+    return row;
+  }
+
+  static bool _sameEvents(List<AgentEvent> a, List<AgentEvent> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
   /// 上次键盘 inset，用于换算滚动补偿（与聊天页 bottomReserve 同一机制）。
   double _lastKeyboardInset = 0;
 
@@ -67,6 +99,7 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   void didUpdateWidget(covariant EventStreamPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.taskId != oldWidget.taskId) {
+      _rowCache.clear();
       PerfMonitor.instance.resetPageContext();
       _autoScroll.pinToBottom();
     }
@@ -141,6 +174,10 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
       for (var i = 0; i < keys.length; i++) keys[i]: i,
       if (trailing > 0) _kTrailingKey: blocks.length,
     };
+    // 已不在时间线里的行（段收拢后被合并的单块等）出缓存，防无界增长。
+    if (_rowCache.length > keys.length + 32) {
+      _rowCache.removeWhere((k, _) => !indexOfKey.containsKey(k));
+    }
 
     return Column(
       children: [
@@ -181,6 +218,7 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                         ? (showPlanReady
                             ? _TaskBuilder(
                                 taskId: widget.taskId,
+                                watchKey: (t) => (t.status, t.mode),
                                 builder: (task) => PlanReadyCard(task: task),
                               )
                             : WorkingIndicatorTile(
@@ -191,16 +229,7 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                                     .firstOrNull
                                     ?.content,
                               ))
-                        : switch (blocks[i]) {
-                            final SegmentBlock b => WorkSegmentTile(
-                                block: b,
-                                taskId: widget.taskId,
-                              ),
-                            final SingleBlock b => AgentEventTile(
-                                event: b.event,
-                                taskId: widget.taskId,
-                              ),
-                          },
+                        : _rowFor(keys[i], blocks[i]),
                     ),
                   ),
                 ),
@@ -222,10 +251,12 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
         _CompactionProgressBanner(taskId: widget.taskId),
         _TaskBuilder(
           taskId: widget.taskId,
+          watchKey: (t) => t.status,
           builder: (task) => AgentFollowupPanel(task: task),
         ),
         _TaskBuilder(
           taskId: widget.taskId,
+          watchKey: (t) => (t.status, t.mode, t.workspaceId),
           builder: (task) => AgentInputBar(task: task),
         ),
       ],
@@ -244,15 +275,34 @@ String _blockKey(TimelineBlock block) => switch (block) {
 };
 
 /// 需要完整任务对象的子件各自订阅，任务字段刷新只重建它们自己。
+///
+/// [watchKey] 给出时只在这些字段变化时重建（轮数 / token / 耗时 / 摘要
+/// 等运行中高频写回的字段不再重建输入栏等子件），构建时读取最新任务。
+/// 子件里的操作回调须在触发时自己读最新任务，不能缓存这里传入的快照
+/// 去 copyWith 写回（否则会用旧的轮数 / token 覆盖）。
 class _TaskBuilder extends ConsumerWidget {
-  const _TaskBuilder({required this.taskId, required this.builder});
+  const _TaskBuilder({
+    required this.taskId,
+    required this.builder,
+    this.watchKey,
+  });
 
   final String taskId;
   final Widget Function(AgentTask task) builder;
+  final Object? Function(AgentTask task)? watchKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final task = ref.watch(agentTaskProvider(taskId));
+    final key = watchKey;
+    final AgentTask? task;
+    if (key == null) {
+      task = ref.watch(agentTaskProvider(taskId));
+    } else {
+      final present = ref.watch(
+        agentTaskProvider(taskId).select((t) => t == null ? null : (key(t),)),
+      );
+      task = present == null ? null : ref.read(agentTaskProvider(taskId));
+    }
     return task == null ? const SizedBox.shrink() : builder(task);
   }
 }

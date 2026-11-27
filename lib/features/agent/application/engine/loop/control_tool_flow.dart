@@ -64,6 +64,10 @@ class ControlToolFlow {
   final void Function(String message, String type)? onNotification;
   final void Function()? onTaskEnd;
 
+  /// 本轮预建完成卡片的查找（引擎每轮按 FinishResultStreamer.cardFor 设置）。
+  /// 设置了就直接用它，不再全量读回话题事件去找卡片。
+  ToolCallEvent? Function(String callId)? completionCardLookup;
+
   /// 处理一个控制工具调用；非控制工具返回 null（走普通执行路径）。
   /// [failPendingToolEvents] 回填本轮剩余预建事件；
   /// [resolvePlanApproval] 为方案审批裁决，返回 true 表示已批准并
@@ -278,14 +282,17 @@ class ControlToolFlow {
     final current = tx.current;
     final result = stringArgOf(call, 'result')?.trim() ?? '';
     // 流式阶段已建好的完成卡片（FinishResultStreamer）；非流式路径为 null。
-    final card = (await store.getEvents(current.id))
-        .whereType<ToolCallEvent>()
-        .where(
-          (e) =>
-              e.toolName == kToolAttemptCompletion &&
-              e.state == AgentToolCallState.running,
-        )
-        .lastOrNull;
+    final lookup = completionCardLookup;
+    final card = lookup != null
+        ? lookup(call.id)
+        : (await store.getEvents(current.id))
+              .whereType<ToolCallEvent>()
+              .where(
+                (e) =>
+                    e.toolName == kToolAttemptCompletion &&
+                    e.state == AgentToolCallState.running,
+              )
+              .lastOrNull;
 
     Future<void> settle({
       required bool ok,

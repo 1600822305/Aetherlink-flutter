@@ -75,15 +75,15 @@ class UserMessageTile extends StatelessWidget {
                     alignment: WrapAlignment.end,
                     children: [
                       for (final a in event.attachments)
-                        if (a.kind == AgentAttachmentKind.image &&
-                            _decodeImage(a.base64Data) != null)
+                        if (_thumbnailOf(a, context) case final image?)
                           ClipRRect(
                             borderRadius: BorderRadius.circular(6),
-                            child: Image.memory(
-                              _decodeImage(a.base64Data)!,
-                              width: 120,
-                              height: 120,
+                            child: Image(
+                              image: image,
+                              width: _kThumbSize,
+                              height: _kThumbSize,
                               fit: BoxFit.cover,
+                              gaplessPlayback: true,
                               errorBuilder: (_, __, ___) =>
                                   _chip(theme, a),
                             ),
@@ -100,15 +100,41 @@ class UserMessageTile extends StatelessWidget {
     );
   }
 
-  // 损坏的 base64 会在 build 期直接抛 FormatException（Image.memory 的
-  // errorBuilder 接不住解码前的异常），这里兜底退回附件 chip。
-  static Uint8List? _decodeImage(String? data) {
+  static const double _kThumbSize = 120;
+
+  /// 附件缩略图 provider 缓存（按附件实例，弱引用随事件回收）。
+  ///
+  /// 原实现每次 build 都 base64Decode 两遍（判空一遍、显示一遍）并新建
+  /// Image.memory——每次都是新字节数组，ImageCache 按字节身份做键永远
+  /// 不命中，流式期间整行重建一次就把原图（可能数 MB）重新解码一次。
+  /// 这里每个附件只解码 base64 一次，provider 实例稳定 → ImageCache 命中；
+  /// ResizeImage 按 120dp × 屏幕像素比解码，不再把整张原图解进内存。
+  static final Expando<ImageProvider> _thumbCache = Expando();
+
+  /// 损坏的 base64 会在 build 期直接抛 FormatException（Image 的
+  /// errorBuilder 接不住解码前的异常），这里兜底返回 null 退回附件 chip。
+  static ImageProvider? _thumbnailOf(AgentUserAttachment a, BuildContext context) {
+    if (a.kind != AgentAttachmentKind.image) return null;
+    final cached = _thumbCache[a];
+    if (cached != null) return cached;
+    final data = a.base64Data;
     if (data == null) return null;
+    final Uint8List bytes;
     try {
-      return base64Decode(data);
+      bytes = base64Decode(data);
     } on FormatException {
       return null;
     }
+    final px = (_kThumbSize * MediaQuery.devicePixelRatioOf(context)).round();
+    // 只限宽（cover 裁剪需保比例，限宽 + policy 自动按比例算高）。
+    final provider = ResizeImage(
+      MemoryImage(bytes),
+      width: px,
+      policy: ResizeImagePolicy.fit,
+      allowUpscaling: false,
+    );
+    _thumbCache[a] = provider;
+    return provider;
   }
 
   Widget _chip(ThemeData theme, AgentUserAttachment a) {

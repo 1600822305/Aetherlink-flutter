@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
@@ -51,6 +52,21 @@ class FinishResultStreamer {
   }
 
   final Map<String, ToolCallEvent> _events = {};
+
+  /// 工具调用 id → 流式键（[onToolCall] 时登记），供 [cardFor] 反查。
+  final Map<String, String> _keyByCallId = {};
+
+  /// 引擎处理 attempt_completion 时直接取本轮预建的完成卡片（仍 running），
+  /// 不再为找它全量读回整个话题的事件。本轮没有预建卡片返回 null。
+  ToolCallEvent? cardFor(String callId) {
+    final key =
+        _keyByCallId[callId] ??
+        (_events.length == 1 ? _events.keys.first : null);
+    final event = key == null ? null : _events[key];
+    return event != null && event.state == AgentToolCallState.running
+        ? event
+        : null;
+  }
   final Map<String, String> _latestArgs = {};
   final Map<String, DateTime> _lastWrite = {};
   Timer? _timer;
@@ -96,6 +112,7 @@ class FinishResultStreamer {
     final key = streamKey ??
         (_latestArgs.length == 1 ? _latestArgs.keys.first : null);
     if (key == null) return Future.value();
+    _keyByCallId[call.id] = key;
     _latestArgs[key] = call.argsJson;
     return _enqueue(() async {
       if (!_events.containsKey(key)) {
@@ -224,6 +241,24 @@ String? extractPartialStringField(String json, String field) {
     i += 2;
   }
   return buf.toString();
+}
+
+/// 完成参数是否已定稿：参数 JSON 完整可解析且 result 非空。模型参数一流完
+/// 最终结果就已确定（引擎后续的落库 / stop hook / 状态迁移不改结果），
+/// 完成卡片据此立即显示「任务完成」，收尾在后台进行，用户无感。
+/// 流式中的半截参数解析必失败；先看结尾是不是 `}`，免得每帧都跑解码。
+bool completionArgsFinal(String? args) {
+  if (args == null) return false;
+  final trimmed = args.trimRight();
+  if (!trimmed.endsWith('}')) return false;
+  try {
+    final decoded = jsonDecode(trimmed);
+    if (decoded is! Map) return false;
+    final result = decoded['result'];
+    return result is String && result.trim().isNotEmpty;
+  } catch (_) {
+    return false;
+  }
 }
 
 /// 完成卡片 / 子代理结论读取 result 的统一入口。

@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/agent/application/timeline_view.dart
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 
 // 面板是事件流页 Column 里的非弹性子项，内容不封顶会挤掉上方的
 // Expanded 列表，长问题时列表被压到 0 高、无法滑动。
@@ -33,7 +34,11 @@ class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
     try {
       await ref
           .read(agentTaskRunnerProvider.notifier)
-          .answerUserQuestion(widget.task, question, answer);
+          .answerUserQuestion(
+            ref.read(agentTaskProvider(widget.task.id)) ?? widget.task,
+            question,
+            answer,
+          );
     } on StateError catch (error) {
       if (!mounted) return;
       AppToast.error(context, error.message.toString());

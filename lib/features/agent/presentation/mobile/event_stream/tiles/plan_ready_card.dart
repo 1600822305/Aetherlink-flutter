@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 
 /// Plan 模式收尾后的「方案已就绪」卡（设计初稿 §七）：Plan 任务 done 时
 /// 展示在事件流末尾，一键转 Code 继续执行；需要改方案直接在下方输入继续讨论。
@@ -56,7 +57,9 @@ class PlanReadyCard extends ConsumerWidget {
                 child: FilledButton.icon(
                   onPressed: () => ref
                       .read(agentTaskRunnerProvider.notifier)
-                      .convertPlanToCode(task),
+                      .convertPlanToCode(
+              ref.read(agentTaskProvider(task.id)) ?? task,
+            ),
                   icon: const Icon(LucideIcons.play, size: 16),
                   label: const Text('转 Code 执行'),
                 ),

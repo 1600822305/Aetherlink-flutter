@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/ag
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_send_actions.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_completion_settling.dart';
 
 /// 底部输入区（UI 稿输入区，已拍板）：与普通聊天输入框同款视觉——
 /// 圆角纸面卡片，上层无边框文本区域，下层单独一行按钮工具条
@@ -30,6 +31,15 @@ class AgentInputBar extends ConsumerStatefulWidget {
 }
 
 class _AgentInputBarState extends ConsumerState<AgentInputBar> {
+  /// 操作触发时的最新任务：本栏只在状态 / 模式 / 工作区变化时重建，
+  /// 构建时拿到的快照里轮数 / token 可能已过时，交给 runner copyWith
+  /// 写回会覆盖新值，所以回调里一律现读。
+  AgentTask? _freshTask() {
+    final task = widget.task;
+    if (task == null) return null;
+    return ref.read(agentTaskProvider(task.id)) ?? task;
+  }
+
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   bool _hasText = false;
@@ -97,7 +107,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   }
 
   String? get _workspaceId {
-    final task = widget.task;
+    final task = _freshTask();
     if (task != null) return task.workspaceId;
     final profileId = ref.read(selectedAgentProfileIdProvider);
     return ref
@@ -150,7 +160,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   /// 有文字：任务执行中发送不直接发——弹三选面板（排队/立即打断并
   /// 发送/继续编辑）；草稿态/非执行中任务直接发。
   Future<void> _onSendPressed() async {
-    final task = widget.task;
+    final task = _freshTask();
     var text = _controller.text.trim();
     final attachments = List<AgentUserAttachment>.unmodifiable(_attachments);
     if (text.isEmpty && attachments.isEmpty) return;
@@ -214,15 +224,23 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       return;
     }
 
+    // 完成已定稿、引擎还在后台收尾：等它真正结束再按「已完成」续跑，
+    // 不弹排队/打断面板（用户看到的已经是任务完成）。
+    var target = task;
+    if (ref.read(agentCompletionSettlingProvider(task.id))) {
+      final settled = await _awaitRunEnded(task);
+      if (settled == null) return;
+      target = settled;
+    }
     final executing =
-        task.status == AgentTaskStatus.running ||
-        task.status == AgentTaskStatus.waitingApproval;
+        target.status == AgentTaskStatus.running ||
+        target.status == AgentTaskStatus.waitingApproval;
     if (!executing) {
       // paused/done/failed/cancelled：落消息并续跑（带上
       // chips 当前模式，中途切模式在这里生效）。
       clearInput();
       await runner.sendMessage(
-        task,
+        target,
         text,
         mode: _mode,
         attachments: attachments,
@@ -245,9 +263,26 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     }
   }
 
+  /// 等引擎本次运行真正结束（状态离开 running 且 runner 不再持有该任务），
+  /// 最多 10s；超时返回当时的最新任务（仍在跑就走排队/打断面板）。
+  /// 组件卸载返回 null。
+  Future<AgentTask?> _awaitRunEnded(AgentTask task) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
+    var latest = task;
+    bool busy() =>
+        latest.status == AgentTaskStatus.running ||
+        ref.read(agentTaskRunnerProvider).contains(task.id);
+    while (busy() && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      if (!mounted) return null;
+      latest = ref.read(agentTaskProvider(task.id)) ?? latest;
+    }
+    return latest;
+  }
+
   /// 无文字：点一下=暂停；长按=强制终止二次确认。
   void _onPausePressed() {
-    final task = widget.task;
+    final task = _freshTask();
     if (task != null) {
       ref.read(agentTaskRunnerProvider.notifier).pause(task.id);
     }
@@ -256,7 +291,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   Future<void> _onForceStopLongPress() async {
     final confirmed = await confirmAgentForceStop(context);
     if (!mounted) return;
-    final task = widget.task;
+    final task = _freshTask();
     if (confirmed == true && task != null) {
       ref.read(agentTaskRunnerProvider.notifier).forceStop(task.id);
     }
@@ -268,7 +303,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     final mode = await showAgentModePicker(context, current: _mode);
     if (mode == null || !mounted) return;
     setState(() => _mode = mode);
-    final task = widget.task;
+    final task = _freshTask();
     if (task == null || task.status == AgentTaskStatus.draft) {
       // 新话题/草稿态：写回全局默认模式（持久化，与侧边栏执行设置同步）。
       ref.read(agentUiSettingsControllerProvider.notifier).setDefaultMode(mode);
@@ -285,7 +320,11 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final running = widget.task?.status == AgentTaskStatus.running;
+    // 完成已定稿时视同已结束：不显示暂停/停止，直接回到发送态。
+    final settling = widget.task != null &&
+        ref.watch(agentCompletionSettlingProvider(widget.task!.id));
+    final running =
+        widget.task?.status == AgentTaskStatus.running && !settling;
 
     // 侧边栏「执行设置」改默认模式时同步无话题态的 chip（同源双向）。
     ref.listen(agentUiSettingsControllerProvider, (_, next) {
@@ -460,7 +499,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                     else if (widget.task?.status == AgentTaskStatus.paused)
                       IconButton(
                         onPressed: () {
-                          final task = widget.task;
+                          final task = _freshTask();
                           if (task != null) {
                             ref
                                 .read(agentTaskRunnerProvider.notifier)

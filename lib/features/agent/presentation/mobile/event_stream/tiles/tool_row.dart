@@ -39,8 +39,7 @@ class ToolRow extends StatelessWidget {
         Colors.orange,
       ),
     };
-    final args = _args(event.argsDetail);
-    final command = toolCommandText(event.toolName, event.argsDetail ?? '');
+    final (args, command) = _parsedOf(event);
     final meta = _meta(event);
     final metaColor = failed ? cs.error : (running ? cs.primary : muted);
     final mono = theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace');
@@ -181,6 +180,16 @@ class ToolRow extends StatelessWidget {
     );
   }
 }
+
+/// 每个事件实例的参数解析结果（DAO 对未变行复用同一实例，弱引用随
+/// 事件回收）：行重建不再对完整参数 JSON 反复 jsonDecode 两遍。
+final Expando<(Map<String, dynamic>, String?)> _parsedCache = Expando();
+
+(Map<String, dynamic>, String?) _parsedOf(ToolCallEvent e) =>
+    _parsedCache[e] ??= (
+      _args(e.argsDetail),
+      toolCommandText(e.toolName, e.argsDetail ?? ''),
+    );
 
 Map<String, dynamic> _args(String? raw) {
   if (raw == null || raw.isEmpty) return const {};
