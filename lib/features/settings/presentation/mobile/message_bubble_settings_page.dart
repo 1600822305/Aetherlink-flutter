@@ -534,7 +534,8 @@ class _ToolbarChipsGroup extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final collapsed = _collapsed.toSet();
-    final isPreset = settings.collapsedActionIds == null ||
+    final isPreset =
+        settings.collapsedActionIds == null ||
         (collapsed.length == kDefaultCollapsedActionIds.length &&
             collapsed.containsAll(kDefaultCollapsedActionIds));
     final exposedCount = _kToolbarOrder
@@ -551,9 +552,7 @@ class _ToolbarChipsGroup extends StatelessWidget {
               ),
               child: Text(
                 '恢复预设',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: cs.primary,
-                ),
+                style: theme.textTheme.labelMedium?.copyWith(color: cs.primary),
               ),
             ),
       children: [
@@ -663,10 +662,8 @@ class _SizeGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget pad(Widget child) => Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
-      child: child,
-    );
+    Widget pad(Widget child) =>
+        Padding(padding: const EdgeInsets.fromLTRB(12, 4, 8, 4), child: child);
     return _Group(
       title: '气泡宽度（占聊天区宽度）',
       children: [
@@ -914,13 +911,16 @@ class _LivePreview extends StatelessWidget {
           hideBubble: settings.hideUserBubble,
           maxWidthFactor: settings.userMessageMaxWidth / 100,
         ),
-        const SizedBox(height: 8),
-        if (settings.messageActionMode == MessageActionMode.bubbles &&
-            settings.showMicroBubbles)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: _MicroBubbles(settings: settings),
-          ),
+        const SizedBox(height: 4),
+        // 功能气泡 / 工具栏两个位置都固定占位，切换显示模式时预览高度不变，
+        // 只在占位内淡入淡出，下面的 tab 不会跟着上下跳。
+        _PreviewSlot(
+          child:
+              settings.messageActionMode == MessageActionMode.bubbles &&
+                  settings.showMicroBubbles
+              ? _MicroBubbles(key: const ValueKey('micro'), settings: settings)
+              : null,
+        ),
         _PreviewMessage(
           isUser: false,
           showAvatar: settings.showModelAvatar,
@@ -929,23 +929,54 @@ class _LivePreview extends StatelessWidget {
           avatarText: 'AI',
           name: 'AI助手',
           time: '12:32',
-          sampleText: '好的！下面是一个 bash 启动脚本，保存为 start.sh 后直接运行即可。',
+          sampleText:
+              '好的！下面是一个 bash 启动脚本，保存为 start.sh 后加上执行权限，直接运行即可，也可以放进开机自启。',
           bubbleColor: aiBubble,
           textColor: aiText,
           hideBubble: settings.hideAIBubble,
           maxWidthFactor: settings.messageBubbleMaxWidth / 100,
         ),
-        if (settings.messageActionMode == MessageActionMode.toolbar)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 2),
-            child: _PreviewToolbar(
-              collapsed:
-                  (settings.collapsedActionIds ?? kDefaultCollapsedActionIds)
-                      .toSet(),
-              color: aiText.withValues(alpha: 0.6),
-            ),
-          ),
+        const SizedBox(height: 2),
+        _PreviewSlot(
+          child: settings.messageActionMode == MessageActionMode.toolbar
+              ? Padding(
+                  key: const ValueKey('toolbar'),
+                  padding: const EdgeInsets.only(left: 2),
+                  child: _PreviewToolbar(
+                    collapsed:
+                        (settings.collapsedActionIds ??
+                                kDefaultCollapsedActionIds)
+                            .toSet(),
+                    color: aiText.withValues(alpha: 0.6),
+                  ),
+                )
+              : null,
+        ),
       ],
+    );
+  }
+}
+
+/// 预览里固定高度的一行占位：内容为空时保留空白，切换时淡入淡出。
+class _PreviewSlot extends StatelessWidget {
+  const _PreviewSlot({required this.child});
+
+  static const double height = 24;
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 160),
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.centerLeft,
+          children: [...previous, ?current],
+        ),
+        child: child ?? const SizedBox.shrink(key: ValueKey('empty')),
+      ),
     );
   }
 }
@@ -968,51 +999,57 @@ class _PreviewToolbar extends StatelessWidget {
       for (final id in _kToolbarOrder)
         if (collapsed.contains(id.name)) id,
     ];
-    return Wrap(
-      spacing: 12,
-      runSpacing: 6,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        for (final id in inline)
-          Icon(
-            kMessageActionCatalog[id]!.icon,
-            size: 15,
-            color: id == MessageActionId.delete
-                ? theme.colorScheme.error
-                : color,
-          ),
-        if (hidden.isNotEmpty)
-          PopupMenuButton<void>(
-            tooltip: '更多',
-            padding: EdgeInsets.zero,
-            position: PopupMenuPosition.under,
-            itemBuilder: (_) => [
-              for (final id in hidden)
-                PopupMenuItem<void>(
-                  enabled: false,
-                  height: 36,
-                  child: Row(
-                    children: [
-                      Icon(kMessageActionCatalog[id]!.icon, size: 15),
-                      const SizedBox(width: 8),
-                      Text(
-                        kMessageActionCatalog[id]!.label,
-                        style: theme.textTheme.bodySmall,
+    // 单行不换行：外露按钮再多也不会把预览撑高，超出部分裁掉。
+    return ClipRect(
+      child: OverflowBox(
+        alignment: Alignment.centerLeft,
+        maxWidth: double.infinity,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 12,
+          children: [
+            for (final id in inline)
+              Icon(
+                kMessageActionCatalog[id]!.icon,
+                size: 15,
+                color: id == MessageActionId.delete
+                    ? theme.colorScheme.error
+                    : color,
+              ),
+            if (hidden.isNotEmpty)
+              PopupMenuButton<void>(
+                tooltip: '更多',
+                padding: EdgeInsets.zero,
+                position: PopupMenuPosition.under,
+                itemBuilder: (_) => [
+                  for (final id in hidden)
+                    PopupMenuItem<void>(
+                      enabled: false,
+                      height: 36,
+                      child: Row(
+                        children: [
+                          Icon(kMessageActionCatalog[id]!.icon, size: 15),
+                          const SizedBox(width: 8),
+                          Text(
+                            kMessageActionCatalog[id]!.label,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-            ],
-            child: Icon(LucideIcons.ellipsis, size: 16, color: color),
-          ),
-      ],
+                    ),
+                ],
+                child: Icon(LucideIcons.ellipsis, size: 16, color: color),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
 
 /// 功能气泡模式下 AI 消息上方的小气泡（播放 / 版本）。
 class _MicroBubbles extends StatelessWidget {
-  const _MicroBubbles({required this.settings});
+  const _MicroBubbles({super.key, required this.settings});
 
   final MessageBubbleSettings settings;
 
@@ -1272,10 +1309,26 @@ class _PreviewMessage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: align,
             children: [
-              if (showAvatar || showName) ...[
-                header,
-                const SizedBox(height: 6),
-              ],
+              // 头像 / 名称行始终占位：开关只改可见性，预览高度不变。
+              Visibility(
+                visible: showAvatar || showName,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                // 名称 + 时间两行约 32px，留 34 不溢出；超出时裁掉而不是报溢出。
+                child: SizedBox(
+                  height: 34,
+                  child: ClipRect(
+                    child: Align(
+                      alignment: isUser
+                          ? Alignment.topRight
+                          : Alignment.topLeft,
+                      child: header,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                 child: Container(
@@ -1284,10 +1337,14 @@ class _PreviewMessage extends StatelessWidget {
                     color: hideBubble ? Colors.transparent : bubbleColor,
                     borderRadius: BorderRadius.circular(hideBubble ? 0 : 12),
                   ),
+                  // 固定行数：宽度调窄也不会多折行把预览撑高。
                   child: Text(
                     sampleText,
+                    maxLines: isUser ? 1 : 2,
+                    overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: textColor,
+                      height: 1.4,
                     ),
                   ),
                 ),
@@ -1299,4 +1356,3 @@ class _PreviewMessage extends StatelessWidget {
     );
   }
 }
-
